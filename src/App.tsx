@@ -54,6 +54,7 @@ export default function App() {
   const [proxyBaseUrl, setProxyBaseUrl] = useState<string>('https://chat.trollllm.xyz/v1');
   const [proxyModel, setProxyModel] = useState<string>('gpt-6-astra');
   const [generatingImageSceneId, setGeneratingImageSceneId] = useState<string | null>(null);
+  const [isLightTheme, setIsLightTheme] = useState<boolean>(true);
 
   const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
 

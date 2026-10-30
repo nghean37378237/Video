@@ -16,6 +16,7 @@ import {
   Film,
   FileSpreadsheet,
   Download,
+  Upload,
 } from 'lucide-react';
 import {
   ColorFilter,
