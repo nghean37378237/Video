@@ -1,0 +1,6 @@
+{
+  "name": "LegendCut Studio — Ghép Video Kể Chuyện & Kho Tư Liệu",
+  "description": "Ứng dụng dựng và ghép video kể chuyện phong cách tài liệu Life Legends từ kho video, hình ảnh, phụ đề nhảy từng chữ màu vàng và giọng đọc thuyết minh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
