@@ -918,7 +918,11 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0B0F17] text-slate-100">
+    <div
+      className={`flex flex-col h-screen w-screen overflow-hidden bg-[#0B0F17] text-slate-100 ${
+        isLightTheme ? 'theme-light' : ''
+      }`}
+    >
       {/* Strict 3-Zone Top Navigation Bar Contract */}
       <header className="flex items-center justify-between gap-8 px-6 py-3 border-b border-slate-800/90 bg-[#0B0F17] shrink-0">
         {/* Zone 1: Single text element wordmark */}
@@ -955,19 +959,6 @@ export default function App() {
             Ghép Kho Tự Động
           </a>
           <a
-            href="#subtitles-lang"
-            onClick={(e) => {
-              e.preventDefault();
-              setSettings((prev) => ({
-                ...prev,
-                subtitleLanguage: prev.subtitleLanguage === 'en' ? 'vi' : 'en',
-              }));
-            }}
-            className="hover:text-amber-400 transition-colors whitespace-nowrap shrink-0"
-          >
-            Đổi Phụ Đề ({settings.subtitleLanguage === 'en' ? 'Anh → Việt' : 'Việt → Anh'})
-          </a>
-          <a
             href="#aspect-ratio"
             onClick={(e) => {
               e.preventDefault();
@@ -984,6 +975,16 @@ export default function App() {
             className="hover:text-amber-400 transition-colors whitespace-nowrap shrink-0"
           >
             Khung Hình ({settings.aspectRatio})
+          </a>
+          <a
+            href="#theme-toggle"
+            onClick={(e) => {
+              e.preventDefault();
+              setIsLightTheme((prev) => !prev);
+            }}
+            className="hover:text-amber-400 transition-colors whitespace-nowrap shrink-0"
+          >
+            Giao Diện ({isLightTheme ? '☀️ Sáng Dịu Mắt' : '🌙 Tối Điện Ảnh'})
           </a>
         </nav>
 

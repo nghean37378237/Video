@@ -3,8 +3,8 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #0B0F17;
-    color: #F8FAFC;
+    background-color: #F5F4EF;
+    color: #1E293B;
   }
 
   .font-display {
@@ -25,20 +25,183 @@
   }
 }
 
+/* ==========================================================================
+   SOOTHING WARM DAYLIGHT STUDIO THEME (Default: Easy on the eyes, zero glare)
+   ========================================================================== */
+.theme-light {
+  background-color: #F4F2EC !important;
+  color: #1E293B !important;
+}
+
+/* Primary & recessed studio backgrounds -> Soft Warm Alabaster */
+.theme-light .bg-\[\#0B0F17\],
+.theme-light .bg-\[\#0B0F17\]\/90,
+.theme-light .bg-\[\#0B0F17\]\/80,
+.theme-light .bg-\[\#0B0F17\]\/70,
+.theme-light .bg-\[\#0B0F17\]\/60,
+.theme-light .bg-\[\#0B0F17\]\/40,
+.theme-light .bg-\[\#090D15\],
+.theme-light .bg-\[\#090D14\],
+.theme-light .bg-\[\#070A10\],
+.theme-light .bg-slate-950,
+.theme-light .bg-slate-950\/80 {
+  background-color: #F4F2EC !important;
+}
+
+/* Elevated cards, sidebars, modal surfaces -> Warm Ivory White */
+.theme-light .bg-\[\#111827\],
+.theme-light .bg-\[\#111827\]\/90,
+.theme-light .bg-\[\#111827\]\/70,
+.theme-light .bg-\[\#111827\]\/60,
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-900\/90,
+.theme-light .bg-slate-900\/80,
+.theme-light .bg-slate-900\/70 {
+  background-color: #FFFFFF !important;
+}
+
+/* Secondary buttons, pills, tabs -> Soft Stone */
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/90,
+.theme-light .bg-slate-800\/70 {
+  background-color: #EAE7DF !important;
+}
+
+.theme-light .hover\:bg-slate-800:hover,
+.theme-light .hover\:bg-slate-700:hover {
+  background-color: #DDD9CE !important;
+}
+
+/* Selected / active timeline cards */
+.theme-light .bg-\[\#172033\] {
+  background-color: #FEF7E6 !important;
+}
+
+.theme-light .bg-\[\#131B2E\] {
+  background-color: #F9F5EB !important;
+}
+
+/* Soft tinted status/accent boxes in light mode */
+.theme-light .bg-amber-500\/10,
+.theme-light .bg-amber-500\/15,
+.theme-light .bg-amber-500\/20 {
+  background-color: #FEF3C7 !important;
+}
+
+.theme-light .bg-emerald-500\/10,
+.theme-light .bg-emerald-500\/15,
+.theme-light .bg-emerald-500\/20 {
+  background-color: #D1FAE5 !important;
+}
+
+.theme-light .bg-sky-500\/10,
+.theme-light .bg-sky-500\/15,
+.theme-light .bg-sky-500\/20 {
+  background-color: #E0F2FE !important;
+}
+
+.theme-light .bg-rose-500\/10 {
+  background-color: #FFE4E6 !important;
+}
+
+/* Typography hierarchy for comfortable reading in daylight */
+.theme-light .text-slate-100,
+.theme-light .text-slate-200 {
+  color: #18181B !important;
+}
+
+.theme-light .text-slate-300 {
+  color: #334155 !important;
+}
+
+.theme-light .text-slate-400,
+.theme-light .text-slate-500 {
+  color: #57534E !important;
+}
+
+/* High-contrast readable semantic accent text on light backgrounds */
+.theme-light .text-amber-400,
+.theme-light .text-amber-300,
+.theme-light .text-amber-200 {
+  color: #B45309 !important;
+}
+
+.theme-light .text-emerald-400,
+.theme-light .text-emerald-300,
+.theme-light .text-emerald-200 {
+  color: #047857 !important;
+}
+
+.theme-light .text-sky-400,
+.theme-light .text-sky-300,
+.theme-light .text-sky-200 {
+  color: #0369A1 !important;
+}
+
+.theme-light .text-rose-400,
+.theme-light .text-rose-200 {
+  color: #BE123C !important;
+}
+
+/* Borders: soft warm stone instead of dark slate */
+.theme-light .border-slate-800,
+.theme-light .border-slate-800\/90,
+.theme-light .border-slate-800\/80,
+.theme-light .border-slate-700,
+.theme-light .border-slate-700\/80 {
+  border-color: #DFDCD2 !important;
+}
+
+.theme-light .border-amber-500\/30,
+.theme-light .border-amber-500\/40,
+.theme-light .border-amber-500\/50 {
+  border-color: #F59E0B !important;
+}
+
+.theme-light .border-emerald-500\/30,
+.theme-light .border-emerald-500\/40 {
+  border-color: #34D399 !important;
+}
+
+.theme-light .border-sky-500\/30,
+.theme-light .border-sky-500\/40 {
+  border-color: #38BDF8 !important;
+}
+
+/* Form controls (inputs, selects, textareas) in light mode */
+.theme-light input[type="text"],
+.theme-light input[type="number"],
+.theme-light select,
+.theme-light textarea {
+  background-color: #FFFFFF !important;
+  color: #18181B !important;
+  border-color: #D6D3C9 !important;
+}
+
+.theme-light input[type="text"]::placeholder,
+.theme-light textarea::placeholder {
+  color: #78716C !important;
+}
+
+.theme-light input[type="range"] {
+  background-color: #DCD8CD !important;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  background: #F4F2EC;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: #C7C2B6;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #A8A29E;
 }
