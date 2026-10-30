@@ -229,11 +229,10 @@ const JSON_SCHEMA_INSTRUCTION_FOR_PROXY = `You MUST respond ONLY with a valid JS
 - "frameStyle": "full-bleed" | "rounded-frame" | "cinema-letterbox"
 - "durationSec": number (between 5 and 10)`;
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+export const app = express();
+app.use(express.json({ limit: "25mb" }));
 
-  app.use(express.json({ limit: "25mb" }));
+function registerRoutes() {
 
   // 0. Check Intermediary Proxy API Configuration Status & Test Endpoint
   app.get("/api/proxy/status", (_req, res) => {
@@ -765,6 +764,13 @@ For every scene, generate:
     }
   });
 
+}
+
+registerRoutes();
+
+async function startServer() {
+  const PORT = 3000;
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -784,4 +790,9 @@ For every scene, generate:
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
+

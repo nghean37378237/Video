@@ -144,7 +144,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   const handleDownloadFullFrameForGrok = async (
     scene: StoryScene,
     mediaUrl: string | undefined,
-    mediaKind: 'image' | 'video' | undefined
+    mediaKind: 'image' | 'video' | 'audio' | undefined
   ) => {
     if (!mediaUrl || downloadingSceneId) return;
     setDownloadingSceneId(scene.id);

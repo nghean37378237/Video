@@ -336,7 +336,7 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     archivalKeywords: 'therapeutic riding center children on buckskin horse vintage',
     motionEffect: 'zoom-out',
     colorFilter: 'color-warm',
-    frameStyle: 'cinema-letterbox',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {
@@ -724,7 +724,7 @@ export const YUL_BRYNNER_SCENES: StoryScene[] = [
     archivalKeywords: 'The Magnificent Seven 1960 Yul Brynner Steve McQueen clip',
     motionEffect: 'static',
     colorFilter: 'original',
-    frameStyle: 'cinema-letterbox',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {

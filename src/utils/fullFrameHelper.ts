@@ -29,9 +29,9 @@ export function getAspectRatioSpec(ratio: AspectRatioOption = '3:4'): AspectRati
         arTag: '--ar 9:16',
         labelVi: 'Dọc 9:16 Full Khung (1080×1920px)',
         fullFrameSuffixEn:
-          'Full-frame vertical 9:16 aspect ratio (1080x1920px), edge-to-edge full-bleed composition filling 100% of the canvas, no black bars, no white borders, no vignette frame --ar 9:16',
+          'Full-frame vertical 9:16 aspect ratio (1080x1920px), full head-to-waist portrait with headroom, edge-to-edge full-bleed composition filling 100% of the canvas, no black bars, no cropped head, no borders --ar 9:16',
         fullFrameVideoSuffixEn:
-          'Full-screen vertical 9:16 video (1080x1920px), edge-to-edge full frame motion filling 100% of the screen, no black bars or letterbox --ar 9:16',
+          'Full-screen vertical 9:16 video (1080x1920px), edge-to-edge full frame motion filling 100% of the screen, full subject head in frame, no black bars or letterbox --ar 9:16',
       };
     case '16:9':
       return {
@@ -56,16 +56,17 @@ export function getAspectRatioSpec(ratio: AspectRatioOption = '3:4'): AspectRati
         arTag: '--ar 3:4',
         labelVi: 'Dọc 3:4 Full Khung Chuẩn Life Legends (1080×1440px)',
         fullFrameSuffixEn:
-          'Full-frame vertical 3:4 aspect ratio (1080x1440px), edge-to-edge full-bleed composition filling 100% of the frame, no black bars, no white borders, no letterbox --ar 3:4',
+          'Full-frame vertical 3:4 aspect ratio (1080x1440px), medium portrait with full head and shoulders clearly visible in frame, edge-to-edge full-bleed composition filling 100% of the frame, no black bars, no cropped forehead, no letterbox --ar 3:4',
         fullFrameVideoSuffixEn:
-          'Full-screen vertical 3:4 video (1080x1440px), edge-to-edge full frame motion filling 100% of the screen, no black bars or borders --ar 3:4',
+          'Full-screen vertical 3:4 video (1080x1440px), edge-to-edge full frame motion filling 100% of the screen, subject head and eyes fully visible, no black bars or borders --ar 3:4',
       };
   }
 }
 
 export function buildFullFrameImagePrompt(
   rawPrompt: string | undefined,
-  ratio: AspectRatioOption = '3:4'
+  ratio: AspectRatioOption = '3:4',
+  fallbackTitle?: string
 ): string {
   const spec = getAspectRatioSpec(ratio);
   const cleaned = (rawPrompt || '')
@@ -73,7 +74,8 @@ export function buildFullFrameImagePrompt(
     .replace(/--ar\s+\d+:\d+/gi, '')
     .replace(/\.\s*$/, '');
   if (!cleaned) {
-    return `Vintage 1960s archival documentary photography, dramatic classic lighting. ${spec.fullFrameSuffixEn}`;
+    const subject = fallbackTitle ? `${fallbackTitle}, ` : '';
+    return `${subject}Vintage 1960s archival documentary photography, dramatic classic lighting. ${spec.fullFrameSuffixEn}`;
   }
   if (cleaned.toLowerCase().includes('edge-to-edge full-bleed')) {
     return `${cleaned} ${spec.arTag}`;
@@ -83,11 +85,32 @@ export function buildFullFrameImagePrompt(
 
 export function buildFullFrameVideoPrompt(
   rawVideoPrompt: string | undefined,
-  rawImagePrompt: string | undefined,
-  ratio: AspectRatioOption = '3:4'
+  rawImagePromptOrRatio?: string | AspectRatioOption,
+  maybeRatioOrTitle?: AspectRatioOption | string
 ): string {
+  let ratio: AspectRatioOption = '3:4';
+  let fallbackPrompt = '';
+
+  if (
+    rawImagePromptOrRatio === '3:4' ||
+    rawImagePromptOrRatio === '9:16' ||
+    rawImagePromptOrRatio === '16:9'
+  ) {
+    ratio = rawImagePromptOrRatio;
+  } else if (typeof rawImagePromptOrRatio === 'string') {
+    fallbackPrompt = rawImagePromptOrRatio;
+  }
+
+  if (
+    maybeRatioOrTitle === '3:4' ||
+    maybeRatioOrTitle === '9:16' ||
+    maybeRatioOrTitle === '16:9'
+  ) {
+    ratio = maybeRatioOrTitle;
+  }
+
   const spec = getAspectRatioSpec(ratio);
-  const base = (rawVideoPrompt || rawImagePrompt || '')
+  const base = (rawVideoPrompt || fallbackPrompt || '')
     .trim()
     .replace(/--ar\s+\d+:\d+/gi, '')
     .replace(/\.\s*$/, '');
@@ -101,12 +124,34 @@ export function buildFullFrameVideoPrompt(
 }
 
 /**
+ * Smart full-frame drawing helper that ensures:
+ * - Zero black bars (100% edge-to-edge canvas coverage)
+ * - Never cuts off a person's head/eyes on portrait or square photos (top-weighted vertical alignment)
+ */
+export function drawFullBleedSmartPortrait(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLImageElement | HTMLVideoElement,
+  sourceW: number,
+  sourceH: number,
+  targetW: number,
+  targetH: number
+) {
+  const scaleCover = Math.max(targetW / sourceW, targetH / sourceH);
+  const dw = sourceW * scaleCover;
+  const dh = sourceH * scaleCover;
+  const dx = (targetW - dw) / 2;
+  // Use top-weighted alignment (0.16) when vertical overflow happens so heads/eyes are never cropped off
+  const dy = dh > targetH ? (targetH - dh) * 0.16 : (targetH - dh) / 2;
+  ctx.drawImage(source, dx, dy, dw, dh);
+}
+
+/**
  * Renders an image or video frame onto an offscreen canvas at the exact full-bleed
- * target dimensions (e.g., 1080x1440 for 3:4) using object-fit: cover and triggers a PNG download.
+ * target dimensions (e.g., 1080x1440 for 3:4) and triggers a PNG download for Grok Video.
  */
 export async function downloadFullFrameImageForGrok(
   mediaUrl: string,
-  mediaKind: 'image' | 'video' | undefined,
+  mediaKind: 'image' | 'video' | 'audio' | undefined,
   ratio: AspectRatioOption,
   filenameBase: string
 ): Promise<void> {
@@ -117,7 +162,7 @@ export async function downloadFullFrameImageForGrok(
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = '#07090E';
   ctx.fillRect(0, 0, spec.width, spec.height);
 
   if (mediaKind === 'video') {
@@ -146,12 +191,7 @@ export async function downloadFullFrameImageForGrok(
         clearTimeout(timer);
         const vw = video.videoWidth || spec.width;
         const vh = video.videoHeight || spec.height;
-        const scale = Math.max(spec.width / vw, spec.height / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        const dx = (spec.width - dw) / 2;
-        const dy = (spec.height - dh) / 2;
-        ctx.drawImage(video, dx, dy, dw, dh);
+        drawFullBleedSmartPortrait(ctx, video, vw, vh, spec.width, spec.height);
         cleanup();
         resolve();
       };
@@ -169,12 +209,7 @@ export async function downloadFullFrameImageForGrok(
       img.onload = () => {
         const iw = img.naturalWidth || spec.width;
         const ih = img.naturalHeight || spec.height;
-        const scale = Math.max(spec.width / iw, spec.height / ih);
-        const dw = iw * scale;
-        const dh = ih * scale;
-        const dx = (spec.width - dw) / 2;
-        const dy = (spec.height - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
+        drawFullBleedSmartPortrait(ctx, img, iw, ih, spec.width, spec.height);
         resolve();
       };
       img.onerror = () => resolve();

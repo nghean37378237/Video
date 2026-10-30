@@ -222,9 +222,42 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 <span className="text-[11px] font-bold text-amber-400">
                   {activeScene.sceneType === 'video'
                     ? `🎥 ẢNH GỐC & PROMPT VIDEO FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×${ratioSpec.height}):`
-                    : `🖼️ ẢNH & PROMPT FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×{ratioSpec.height}):`}
+                    : `🖼️ ẢNH & PROMPT FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×${ratioSpec.height}):`}
                 </span>
               </div>
+
+              {/* Visual Full-Frame Reference Keyframe Preview */}
+              {activeScene.mediaUrl && (
+                <div className="flex items-center gap-2.5 p-2 rounded-lg bg-[#0B0F17] border border-slate-800">
+                  <div
+                    style={{ aspectRatio: ratioSpec.cssAspect }}
+                    className="w-16 shrink-0 rounded overflow-hidden bg-black border border-slate-700 relative"
+                  >
+                    {activeScene.mediaKind === 'video' ? (
+                      <video
+                        src={activeScene.mediaUrl}
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover object-top"
+                      />
+                    ) : (
+                      <img
+                        src={activeScene.mediaUrl}
+                        alt={activeScene.title}
+                        className="w-full h-full object-cover object-top"
+                      />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-[11px] font-semibold text-slate-200 truncate">
+                      Ảnh Gốc Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                    </p>
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      Bấm tải ảnh chuẩn kích thước này về để đưa vào Grok tạo Video chuyển động không bị viền đen.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Quick Actions for Full-Frame Keyframe Image */}
               <div className="grid grid-cols-2 gap-1.5">

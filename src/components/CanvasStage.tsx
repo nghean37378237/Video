@@ -280,7 +280,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     onSelectScene,
   ]);
 
-  // Draw cover-fit or letterbox-fit image/video with Ken Burns motion
+  // Draw full-frame image/video with Ken Burns motion and smart portrait head-protection
   const drawMediaWithKenBurns = (
     ctx: CanvasRenderingContext2D,
     source: HTMLVideoElement | HTMLImageElement,
@@ -289,62 +289,49 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     progress: number,
     motion: StoryScene['motionEffect'],
     filter: StoryScene['colorFilter'],
-    frameStyle: StoryScene['frameStyle']
+    _frameStyle: StoryScene['frameStyle']
   ) => {
     if (!sourceW || !sourceH) return;
 
     ctx.save();
 
+    let baseFilter = '';
     if (filter === 'bw-vintage') {
-      ctx.filter = 'grayscale(100%) contrast(115%) brightness(96%)';
+      baseFilter = 'grayscale(100%) contrast(115%) brightness(96%)';
     } else if (filter === 'sepia') {
-      ctx.filter = 'sepia(75%) contrast(110%) brightness(95%)';
+      baseFilter = 'sepia(75%) contrast(110%) brightness(95%)';
     } else if (filter === 'color-warm') {
-      ctx.filter = 'saturate(115%) contrast(106%) sepia(15%)';
-    } else {
-      ctx.filter = 'none';
+      baseFilter = 'saturate(115%) contrast(106%) sepia(15%)';
     }
+
+    ctx.filter = baseFilter || 'none';
 
     let scale = 1.0;
     let translateX = 0;
     const translateY = 0;
 
     if (motion === 'zoom-in') {
-      scale = 1.0 + progress * 0.14;
+      scale = 1.0 + progress * 0.12;
     } else if (motion === 'zoom-out') {
-      scale = 1.14 - progress * 0.14;
+      scale = 1.12 - progress * 0.12;
     } else if (motion === 'pan-left') {
-      scale = 1.12;
-      translateX = (0.5 - progress) * canvasW * 0.08;
+      scale = 1.1;
+      translateX = (0.5 - progress) * canvasW * 0.07;
     } else if (motion === 'pan-right') {
-      scale = 1.12;
-      translateX = (progress - 0.5) * canvasW * 0.08;
+      scale = 1.1;
+      translateX = (progress - 0.5) * canvasW * 0.07;
     }
 
-    if (frameStyle === 'cinema-letterbox') {
-      // Letterboxed horizontal cinema frame (like 0:38, 1:04, 1:45 in Yul Brynner video)
-      const boxTop = canvasH * 0.22;
-      const boxHeight = canvasH * 0.52;
-      ctx.beginPath();
-      ctx.rect(0, boxTop, canvasW, boxHeight);
-      ctx.clip();
+    // Always fill 100% of the canvas edge-to-edge (no black letterbox bars)
+    // and use top-weighted vertical alignment (0.14) when vertical overflow occurs so portrait heads/eyes are never cut off
+    const scaleCover = Math.max(canvasW / sourceW, canvasH / sourceH);
+    const drawW = sourceW * scaleCover * scale;
+    const drawH = sourceH * scaleCover * scale;
+    const drawX = (canvasW - drawW) / 2 + translateX;
+    const verticalBias = drawH > canvasH ? 0.14 : 0.5;
+    const drawY = (canvasH - drawH) * verticalBias + translateY;
 
-      const scaleCover = Math.max(canvasW / sourceW, boxHeight / sourceH);
-      const drawW = sourceW * scaleCover * scale;
-      const drawH = sourceH * scaleCover * scale;
-      const drawX = (canvasW - drawW) / 2 + translateX;
-      const drawY = boxTop + (boxHeight - drawH) / 2 + translateY;
-
-      ctx.drawImage(source, drawX, drawY, drawW, drawH);
-    } else {
-      const scaleCover = Math.max(canvasW / sourceW, canvasH / sourceH);
-      const drawW = sourceW * scaleCover * scale;
-      const drawH = sourceH * scaleCover * scale;
-      const drawX = (canvasW - drawW) / 2 + translateX;
-      const drawY = (canvasH - drawH) / 2 + translateY;
-
-      ctx.drawImage(source, drawX, drawY, drawW, drawH);
-    }
+    ctx.drawImage(source, drawX, drawY, drawW, drawH);
 
     ctx.restore();
   };
