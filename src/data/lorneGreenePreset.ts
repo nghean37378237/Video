@@ -173,7 +173,7 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     archivalKeywords: 'Lorne Greene Ben Cartwright horseback portrait',
     motionEffect: 'zoom-in',
     colorFilter: 'bw-vintage',
-    frameStyle: 'rounded-frame',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {
@@ -311,7 +311,7 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     archivalKeywords: 'Lorne Greene 1970s color portrait',
     motionEffect: 'zoom-in',
     colorFilter: 'color-warm',
-    frameStyle: 'rounded-frame',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {
@@ -515,7 +515,7 @@ export const CLAYTON_MOORE_SCENES: StoryScene[] = [
     archivalKeywords: 'Clayton Moore Lone Ranger standing with Silver photo',
     motionEffect: 'zoom-in',
     colorFilter: 'bw-vintage',
-    frameStyle: 'rounded-frame',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {
@@ -673,7 +673,7 @@ export const YUL_BRYNNER_SCENES: StoryScene[] = [
     archivalKeywords: 'Yul Brynner childhood young boy vintage photo',
     motionEffect: 'zoom-in',
     colorFilter: 'bw-vintage',
-    frameStyle: 'rounded-frame',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {
@@ -698,7 +698,7 @@ export const YUL_BRYNNER_SCENES: StoryScene[] = [
     archivalKeywords: 'Yul Brynner The King and I arms crossed portrait',
     motionEffect: 'zoom-in',
     colorFilter: 'color-warm',
-    frameStyle: 'rounded-frame',
+    frameStyle: 'full-bleed',
     showBottomSubtitles: true,
   },
   {

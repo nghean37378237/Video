@@ -23,6 +23,10 @@ import {
 } from './types';
 import { extractFramesFromVideo, getMediaDuration } from './utils/frameExtractor';
 import { generateVintageArchivalDataUrl } from './utils/vintageCardGenerator';
+import {
+  buildFullFrameImagePrompt,
+  buildFullFrameVideoPrompt,
+} from './utils/fullFrameHelper';
 import { CanvasStage } from './components/CanvasStage';
 import { MediaVaultPanel } from './components/MediaVaultPanel';
 import { SceneInspector } from './components/SceneInspector';
@@ -161,7 +165,7 @@ export default function App() {
     }));
     handleExtractSampleFrames(presetMeta.url, `Ảnh ${presetMeta.title.slice(0, 18)}`);
     setStatusBanner(
-      `Đã chuyển sang ${presetMeta.title} (Đầy đủ kịch bản + Prompt Ảnh/Video cho từng cảnh).`
+      `Đã chuyển sang ${presetMeta.title} (Đầy đủ kịch bản + Prompt Ảnh/Video Full Khung cho từng cảnh).`
     );
   };
 
@@ -194,6 +198,7 @@ export default function App() {
             mediaUrl: numberedMatch.url,
             mediaKind: numberedMatch.type === 'video' ? 'video' : 'image',
             videoTrimStartSec: 0,
+            frameStyle: 'full-bleed',
             showBottomSubtitles: true,
           };
         }
@@ -207,6 +212,7 @@ export default function App() {
             mediaUrl: v.url,
             mediaKind: 'video',
             videoTrimStartSec: 0,
+            frameStyle: 'full-bleed',
             showBottomSubtitles: true,
           };
         }
@@ -219,6 +225,7 @@ export default function App() {
             mediaUrl: img.url,
             mediaKind: 'image',
             videoTrimStartSec: 0,
+            frameStyle: 'full-bleed',
             showBottomSubtitles: true,
           };
         }
@@ -228,7 +235,7 @@ export default function App() {
     );
 
     setStatusBanner(
-      `Đã tự động nhận ${newItems.length} file (${uploadedVideos.length} Video Grok, ${uploadedImages.length} Ảnh) và tự động khớp vào đúng các phân cảnh tương ứng!`
+      `Đã tự động nhận ${newItems.length} file (${uploadedVideos.length} Video Grok, ${uploadedImages.length} Ảnh) và tự động khớp Full Khung vào đúng các phân cảnh tương ứng!`
     );
   };
 
@@ -305,9 +312,10 @@ export default function App() {
       mediaKind: isVideo ? 'video' : 'image',
       videoTrimStartSec: 0,
       videoTrimEndSec: durationSec,
+      frameStyle: 'full-bleed',
       showBottomSubtitles: true,
     });
-    setStatusBanner(`Đã gắn file "${newItem.name}" trực tiếp vào phân cảnh!`);
+    setStatusBanner(`Đã gắn file "${newItem.name}" tràn Full Khung trực tiếp vào phân cảnh!`);
   };
 
   const handleAssignMediaToActiveScene = (item: VaultItem) => {
@@ -319,9 +327,10 @@ export default function App() {
       mediaKind: item.type === 'video' ? 'video' : 'image',
       videoTrimStartSec: 0,
       videoTrimEndSec: item.durationSec || 8,
+      frameStyle: 'full-bleed',
       showBottomSubtitles: true,
     });
-    setStatusBanner(`Đã gán "${item.name}" vào Cảnh #${activeScene.order}.`);
+    setStatusBanner(`Đã gán "${item.name}" (Tràn Full Khung) vào Cảnh #${activeScene.order}.`);
   };
 
   const handleAppendSceneFromMedia = (item: VaultItem) => {
@@ -343,9 +352,19 @@ export default function App() {
         item.type === 'video'
           ? 'CẦN VIDEO: Phân cảnh video tư liệu bổ sung'
           : 'CẦN ẢNH TĨNH: Phân cảnh ảnh tĩnh hiệu ứng Ken Burns',
+      imagePrompt: buildFullFrameImagePrompt(
+        'Vintage 1960s archival photograph, dramatic lighting',
+        settings.aspectRatio,
+        item.name
+      ),
+      videoMotionPrompt: buildFullFrameVideoPrompt(
+        'Natural camera movement and lifelike expression',
+        settings.aspectRatio,
+        item.name
+      ),
       motionEffect: motions[newOrder % motions.length],
       colorFilter: 'color-warm',
-      frameStyle: newOrder % 3 === 0 ? 'rounded-frame' : 'full-bleed',
+      frameStyle: 'full-bleed',
       showBottomSubtitles: true,
     };
 
@@ -383,7 +402,7 @@ export default function App() {
         videoTrimStartSec: chosen.sourceTag === 'sample' ? sc.videoTrimStartSec : 0,
         motionEffect: motions[idx % motions.length],
         colorFilter: sc.colorFilter || filters[idx % filters.length],
-        frameStyle: (idx % 3 === 1 ? 'rounded-frame' : sc.frameStyle) as FrameStyle,
+        frameStyle: 'full-bleed' as FrameStyle,
         showBottomSubtitles: true,
       };
     });
@@ -392,7 +411,7 @@ export default function App() {
     setCurrentTimeSec(0);
     setIsPlaying(true);
     setStatusBanner(
-      `Đã tự động ghép ${pool.length} tư liệu (Video & Ảnh) trong Kho vào ${updatedScenes.length} phân cảnh hoàn chỉnh!`
+      `Đã tự động ghép ${pool.length} tư liệu (Video & Ảnh) trong Kho tràn Full Khung vào ${updatedScenes.length} phân cảnh hoàn chỉnh!`
     );
   };
 
@@ -429,10 +448,11 @@ export default function App() {
         }
       }
 
+      const sceneTitle = raw.title || `Phân cảnh ${i + 1}`;
       return {
         id: `ai-scene-${Date.now()}-${i}`,
         order: i + 1,
-        title: raw.title || `Phân cảnh ${i + 1}`,
+        title: sceneTitle,
         sceneType: sType,
         mediaId: chosenMediaId,
         mediaUrl: chosenMediaUrl,
@@ -444,8 +464,22 @@ export default function App() {
         translationText:
           lang === 'vi' ? raw.narrationText : raw.translationText || raw.narrationText,
         visualPrompt: raw.visualPrompt,
-        imagePrompt: raw.imagePrompt,
-        videoMotionPrompt: raw.videoMotionPrompt,
+        imagePrompt:
+          sType === 'video' || sType === 'image'
+            ? buildFullFrameImagePrompt(
+                raw.imagePrompt || raw.visualPrompt,
+                settings.aspectRatio,
+                sceneTitle
+              )
+            : raw.imagePrompt,
+        videoMotionPrompt:
+          sType === 'video'
+            ? buildFullFrameVideoPrompt(
+                raw.videoMotionPrompt || raw.visualPrompt,
+                settings.aspectRatio,
+                sceneTitle
+              )
+            : raw.videoMotionPrompt,
         archivalKeywords: raw.archivalKeywords,
         motionEffect: (['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'static'].includes(
           raw.motionEffect
@@ -455,11 +489,7 @@ export default function App() {
         colorFilter: (['color-warm', 'bw-vintage', 'sepia', 'original'].includes(raw.colorFilter)
           ? raw.colorFilter
           : 'bw-vintage') as ColorFilter,
-        frameStyle: (['full-bleed', 'rounded-frame', 'cinema-letterbox'].includes(raw.frameStyle)
-          ? raw.frameStyle
-          : sType === 'image'
-          ? 'rounded-frame'
-          : 'full-bleed') as FrameStyle,
+        frameStyle: 'full-bleed' as FrameStyle,
         showBottomSubtitles: sType !== 'quote' && sType !== 'outro',
       };
     });
@@ -539,6 +569,7 @@ export default function App() {
           channelSubtitle: settings.channelMotto,
           customBaseUrl: proxyBaseUrl,
           customModel: proxyModel,
+          aspectRatio: settings.aspectRatio,
         }),
       });
       const storyData = await storyRes.json();
@@ -580,7 +611,7 @@ export default function App() {
       setCurrentTimeSec(0);
       setIsPlaying(true);
       setStatusBanner(
-        `⚡ Đã dựng tự động hoàn tất video về "${characterOrTopic}" (${builtScenes.length} cảnh, đã gắn ${fetchedPhotos.length} ảnh lịch sử + giọng đọc thuyết minh + nhạc nền)!`
+        `⚡ Đã dựng tự động hoàn tất video về "${characterOrTopic}" (${builtScenes.length} cảnh Full Khung ${settings.aspectRatio}, đã gắn ${fetchedPhotos.length} ảnh lịch sử + giọng đọc thuyết minh + nhạc nền)!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Lỗi khi chạy tự động A-Z.');
@@ -612,6 +643,7 @@ export default function App() {
           channelSubtitle: settings.channelMotto,
           customBaseUrl: proxyBaseUrl,
           customModel: proxyModel,
+          aspectRatio: settings.aspectRatio,
         }),
       });
 
@@ -640,7 +672,7 @@ export default function App() {
       setCurrentTimeSec(0);
       setIsPromptStudioOpen(true);
       setStatusBanner(
-        `Đã tạo ${builtScenes.length} phân cảnh kèm bộ Prompt Video & Ảnh chi tiết (${data.provider || 'AI'})!`
+        `Đã tạo ${builtScenes.length} phân cảnh kèm bộ Ảnh Gốc & Prompt Video/Ảnh Full Khung ${settings.aspectRatio} (${data.provider || 'AI'})!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Có lỗi khi tạo kịch bản AI.');
@@ -672,6 +704,7 @@ export default function App() {
           channelSubtitle: settings.channelMotto,
           customBaseUrl: proxyBaseUrl,
           customModel: proxyModel,
+          aspectRatio: settings.aspectRatio,
         }),
       });
 
@@ -714,11 +747,11 @@ export default function App() {
         setCurrentTimeSec(0);
         setIsPlaying(true);
         setStatusBanner(
-          `⚡ Đã dựng tự động hoàn chỉnh từ kịch bản (${builtScenes.length} cảnh + Ảnh tư liệu + Giọng đọc thuyết minh)!`
+          `⚡ Đã dựng tự động hoàn chỉnh từ kịch bản (${builtScenes.length} cảnh Full Khung ${settings.aspectRatio} + Ảnh tư liệu + Giọng đọc thuyết minh)!`
         );
       } else {
         setStatusBanner(
-          `Đã chia kịch bản thành ${builtScenes.length} đoạn (chỉ rõ đoạn nào cần Video, đoạn nào cần Ảnh tĩnh) kèm bộ Prompt!`
+          `Đã chia kịch bản thành ${builtScenes.length} đoạn kèm Ảnh Gốc & bộ Prompt Full Khung ${settings.aspectRatio}!`
         );
       }
     } catch (err: any) {
@@ -730,17 +763,18 @@ export default function App() {
     }
   };
 
-  // Generate an image directly via the Intermediary Proxy API (/v1/images/generations) and attach to scene
+  // Generate a full-frame image directly via the server-side Image Generator and attach to scene
   const handleGenerateImageViaProxyForScene = async (scene: StoryScene) => {
     if (generatingImageSceneId) return;
     setGeneratingImageSceneId(scene.id);
     setStatusBanner(null);
 
     try {
-      const prompt =
-        scene.imagePrompt ||
-        scene.visualPrompt ||
-        `${scene.title}, vintage 1960s archival photograph, vertical 3:4 portrait`;
+      const prompt = buildFullFrameImagePrompt(
+        scene.imagePrompt || scene.visualPrompt,
+        settings.aspectRatio,
+        scene.title
+      );
       const res = await fetch('/api/proxy/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -748,22 +782,23 @@ export default function App() {
           prompt,
           customBaseUrl: proxyBaseUrl,
           imageModel: 'dall-e-3',
+          aspectRatio: settings.aspectRatio,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.imageDataUrl) {
-        throw new Error(data.error || 'Không thể vẽ ảnh qua API trung gian.');
+        throw new Error(data.error || 'Không thể vẽ ảnh.');
       }
 
       const newItem: VaultItem = {
         id: `proxy-img-${Date.now()}`,
-        name: `Ảnh AI Cảnh #${scene.order} (${scene.title.slice(0, 18)})`,
+        name: `Ảnh Full ${settings.aspectRatio} Cảnh #${scene.order} (${scene.title.slice(0, 18)})`,
         type: 'image',
         url: data.imageDataUrl,
         thumbnailUrl: data.imageDataUrl,
         durationSec: scene.durationSec || 7,
         sourceTag: 'uploaded',
-        createdAt: 'Vẽ qua API Trung Gian',
+        createdAt: `Ảnh Full ${settings.aspectRatio}`,
       };
 
       setVaultItems((prev) => [newItem, ...prev]);
@@ -771,11 +806,14 @@ export default function App() {
         mediaId: newItem.id,
         mediaUrl: newItem.url,
         mediaKind: 'image',
+        frameStyle: 'full-bleed',
         showBottomSubtitles: true,
       });
-      setStatusBanner(`Đã vẽ ảnh qua API trung gian và tự động gắn vào Cảnh #${scene.order}!`);
+      setStatusBanner(
+        `Đã vẽ xong Ảnh Gốc Full Khung (${settings.aspectRatio}) cho Cảnh #${scene.order}! Bạn có thể bấm tải ảnh này về đưa qua Grok tạo Video.`
+      );
     } catch (err: any) {
-      setStatusBanner(err?.message || 'Lỗi khi vẽ ảnh qua API trung gian.');
+      setStatusBanner(err?.message || 'Lỗi khi vẽ ảnh Full Khung.');
     } finally {
       setGeneratingImageSceneId(null);
     }
@@ -805,16 +843,17 @@ export default function App() {
   const handleAddScene = (type: SceneType) => {
     const newOrder = scenes.length + 1;
     const defaultImg = vaultItems.find((v) => v.type === 'image') || vaultItems[0];
+    const sceneTitle =
+      type === 'quote'
+        ? 'Thẻ Chữ Trích Dẫn Đen'
+        : type === 'outro'
+        ? 'Huy Hiệu Life Legends'
+        : `Phân cảnh mới #${newOrder}`;
 
     const newScene: StoryScene = {
       id: `scene-${Date.now()}`,
       order: newOrder,
-      title:
-        type === 'quote'
-          ? 'Thẻ Chữ Trích Dẫn Đen'
-          : type === 'outro'
-          ? 'Huy Hiệu Life Legends'
-          : `Phân cảnh mới #${newOrder}`,
+      title: sceneTitle,
       sceneType: type,
       mediaId: type === 'image' || type === 'video' ? defaultImg?.id : undefined,
       mediaUrl: type === 'image' || type === 'video' ? defaultImg?.url : undefined,
@@ -832,15 +871,21 @@ export default function App() {
         type === 'video'
           ? 'CẦN VIDEO: Cảnh nhân vật nói chuyện hoặc cử động'
           : type === 'image'
-          ? 'CẦN ẢNH TĨNH: Ảnh chân dung cổ điển đóng khung bo tròn'
+          ? 'CẦN ẢNH TĨNH: Ảnh chân dung cổ điển tràn full khung'
           : 'THẺ CHỮ ĐEN TỰ ĐỘNG',
-      imagePrompt:
-        'Vintage 1960s black and white portrait photography, dramatic lighting, 3:4 vertical aspect ratio.',
-      videoMotionPrompt:
-        'The subject speaks calmly with subtle head movement, realistic vintage film texture.',
+      imagePrompt: buildFullFrameImagePrompt(
+        'Vintage 1960s black and white portrait photography, dramatic lighting',
+        settings.aspectRatio,
+        sceneTitle
+      ),
+      videoMotionPrompt: buildFullFrameVideoPrompt(
+        'The subject speaks calmly with subtle head movement, realistic vintage film texture',
+        settings.aspectRatio,
+        sceneTitle
+      ),
       motionEffect: 'zoom-in',
       colorFilter: 'bw-vintage',
-      frameStyle: type === 'image' ? 'rounded-frame' : 'full-bleed',
+      frameStyle: 'full-bleed',
       showBottomSubtitles: type === 'image' || type === 'video',
     };
 
@@ -1022,6 +1067,8 @@ export default function App() {
             isGeneratingAllTTS={isGeneratingAllTTS}
             ttsProgressText={ttsProgressText}
             onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
+            onGenerateImageViaProxyForScene={handleGenerateImageViaProxyForScene}
+            generatingImageSceneId={generatingImageSceneId}
           />
         </div>
       </div>
@@ -1046,6 +1093,7 @@ export default function App() {
         onClose={() => setIsPromptStudioOpen(false)}
         scenes={scenes}
         vaultItems={vaultItems}
+        aspectRatio={settings.aspectRatio}
         onParseRawScript={handleParseRawScript}
         isParsingScript={isParsingScript}
         onGenerateAIStory={handleGenerateAIStory}

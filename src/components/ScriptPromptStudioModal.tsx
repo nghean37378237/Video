@@ -19,14 +19,24 @@ import {
   Server,
   CheckCircle2,
   AlertCircle,
+  Download,
+  Maximize2,
 } from 'lucide-react';
 import { StoryScene, VaultItem } from '../types';
+import {
+  AspectRatioOption,
+  buildFullFrameImagePrompt,
+  buildFullFrameVideoPrompt,
+  downloadFullFrameImageForGrok,
+  getAspectRatioSpec,
+} from '../utils/fullFrameHelper';
 
 interface ScriptPromptStudioModalProps {
   isOpen: boolean;
   onClose: () => void;
   scenes: StoryScene[];
   vaultItems: VaultItem[];
+  aspectRatio?: AspectRatioOption;
   onParseRawScript: (
     rawScript: string,
     lang: 'en' | 'vi',
@@ -54,6 +64,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   onClose,
   scenes,
   vaultItems,
+  aspectRatio = '3:4',
   onParseRawScript,
   isParsingScript,
   onGenerateAIStory,
@@ -72,7 +83,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
 }) => {
   const [activeTab, setActiveTab] = useState<
     'checklist' | 'proxy-api' | 'chatgpt-bridge' | 'paste-script'
-  >('proxy-api');
+  >('checklist');
   const [rawScriptInput, setRawScriptInput] = useState(
     `A circus performer. A nightclub singer. A king. A gunfighter. Yul Brynner lived more lives than most men could ever dream of.\n\nThe shaved head, the piercing eyes, that slow confident walk. He didn't need to raise his voice. He just stood there, and the scene was his.\n\nBut his story didn't begin in Hollywood. It began far away, in Vladivostok, Russia, on July eleventh, nineteen twenty.\n\nAs a boy, he moved to China, then to France. New countries, new languages, and a restless young heart that never stood still.`
   );
@@ -81,6 +92,9 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   const [chatGptCharacter, setChatGptCharacter] = useState('Clint Eastwood');
   const [chatGptLang, setChatGptLang] = useState<'en' | 'vi'>('en');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [downloadingSceneId, setDownloadingSceneId] = useState<string | null>(null);
+
+  const ratioSpec = getAspectRatioSpec(aspectRatio);
 
   // Proxy status state
   const [proxyKeyConfigured, setProxyKeyConfigured] = useState<boolean>(false);
@@ -125,6 +139,25 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleDownloadFullFrameForGrok = async (
+    scene: StoryScene,
+    mediaUrl: string | undefined,
+    mediaKind: 'image' | 'video' | undefined
+  ) => {
+    if (!mediaUrl || downloadingSceneId) return;
+    setDownloadingSceneId(scene.id);
+    try {
+      await downloadFullFrameImageForGrok(
+        mediaUrl,
+        mediaKind,
+        aspectRatio,
+        `Canh-${String(scene.order).padStart(2, '0')}-Grok`
+      );
+    } finally {
+      setDownloadingSceneId(null);
+    }
   };
 
   const handleFetchProxyModels = async () => {
@@ -206,48 +239,61 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
         ? 'Viết lời bình (Narration) bằng Tiếng Anh chuẩn giọng kể chuyện trầm ấm, câu ngắn gọn giàu nhịp điệu như kênh "Life Legends", kèm dịch nghĩa Tiếng Việt.'
         : 'Viết lời bình (Narration) bằng Tiếng Việt trầm ấm, giàu cảm xúc điện ảnh như kênh "Life Legends", kèm bản Tiếng Anh.';
 
-    return `Tôi đang sản xuất video kể chuyện dọc (tỷ lệ 3:4, thời lượng ~2.5 phút) chuẩn kênh "Life Legends" bằng bộ 3 công cụ: ChatGPT Pro (viết kịch bản & vẽ ảnh), Grok (tạo video chuyển động), và LegendCut Studio (tự động ghép phim, đọc thuyết minh & làm phụ đề vàng).
+    return `Tôi đang sản xuất video kể chuyện (${ratioSpec.labelVi}, thời lượng ~2.5 phút) chuẩn kênh "Life Legends" bằng bộ 3 công cụ: ChatGPT Pro (viết kịch bản & vẽ ảnh), Grok (tạo video chuyển động), và LegendCut Studio (tự động ghép phim, đọc thuyết minh & làm phụ đề vàng).
 
 Hãy viết kịch bản tối ưu hóa công sức nhất (10 phân cảnh) về nhân vật: "${chatGptCharacter}".
 ${langNote}
 
-QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
+QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.width}x${ratioSpec.height}px):
 1. Trong 10 phân cảnh:
-   - Chỉ dùng ĐÚNG 3-4 cảnh là [CẦN VIDEO - Tạo bằng Grok]: Cảnh #01 (Mở đầu gây ấn tượng), 1-2 cảnh giữa video, và Cảnh áp chót (Kết thúc cảm xúc).
-   - 4-5 cảnh là [CẦN ẢNH TĨNH - Vẽ bằng ChatGPT hoặc tìm Google]: Ảnh chân dung cổ điển (App của tôi sẽ tự động làm hiệu ứng Zoom Ken Burns + Khung bo tròn + Bụi phim nên không cần làm video).
+   - Chỉ dùng ĐÚNG 3-4 cảnh là [CẦN VIDEO - Tạo bằng Grok]: Cảnh #01 (Mở đầu gây ấn tượng), 1-2 cảnh giữa video, và Cảnh áp chót (Kết thúc cảm xúc). Mỗi cảnh Video phải có cả Prompt Ảnh Gốc Full Khung (${ratioSpec.ratio}, ${ratioSpec.width}x${ratioSpec.height}px, tràn viền 100%, không viền đen) VÀ Prompt Chuyển Động Grok Video Full Khung.
+   - 4-5 cảnh là [CẦN ẢNH TĨNH - Full Khung ${ratioSpec.ratio}]: Ảnh chân dung cổ điển tràn viền ${ratioSpec.width}x${ratioSpec.height}px.
    - 2 cảnh là [THẺ CHỮ ĐEN - Quote Intertitle] và 1 cảnh cuối là [LOGO KẾT - Life Legends] (App của tôi tự động dựng 100%).
 2. Ở cuối câu trả lời, hãy gom riêng cho tôi:
-   - DANH SÁCH 4 PROMPT TẠO VIDEO GROK (bằng Tiếng Anh ngắn gọn, súc tích chuẩn Grok) để tôi copy làm 1 lượt trên Grok.
-   - Và hãy hỏi tôi: "Bạn có muốn tôi (ChatGPT Pro) vẽ luôn 4 bức ảnh tĩnh tỷ lệ 3:4 cổ điển cho các cảnh [CẦN ẢNH TĨNH] ngay bây giờ không?"`;
+   - DANH SÁCH 4 PROMPT TẠO VIDEO GROK + ẢNH GỐC FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px, ${ratioSpec.arTag}) bằng Tiếng Anh để tôi copy làm 1 lượt trên Grok.
+   - Và hãy hỏi tôi: "Bạn có muốn tôi (ChatGPT Pro) vẽ luôn bộ ảnh gốc Full Khung tỷ lệ ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px) ngay bây giờ không?"`;
   };
 
   const copyOnlyGrokVideoPrompts = () => {
     const videoScenes = scenes.filter((s) => s.sceneType === 'video');
     const text = videoScenes
-      .map(
-        (sc) =>
-          `[CẢNH #${String(sc.order).padStart(2, '0')} - ${sc.title}]\n` +
-          `• Prompt Ảnh Gốc (nếu dùng Image-to-Video trên Grok): ${sc.imagePrompt || sc.visualPrompt}\n` +
-          `• Prompt Chuyển Động Grok Video: ${sc.videoMotionPrompt || sc.imagePrompt || sc.visualPrompt}\n` +
-          `• Lời thoại của cảnh (${sc.durationSec}s): "${sc.narrationText}"`
-      )
-      .join('\n\n-----------------------------------\n\n');
+      .map((sc) => {
+        const fullImgPrompt = buildFullFrameImagePrompt(
+          sc.imagePrompt || sc.visualPrompt,
+          aspectRatio
+        );
+        const fullVidPrompt = buildFullFrameVideoPrompt(
+          sc.videoMotionPrompt,
+          sc.imagePrompt || sc.visualPrompt,
+          aspectRatio
+        );
+        return (
+          `[CẢNH VIDEO #${String(sc.order).padStart(2, '0')} - ${sc.title} | KHUNG HÌNH FULL: ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px)]\n` +
+          `• 1. Prompt Tạo Ảnh Gốc Full Khung (Dùng làm ảnh đầu vào cho Grok Video):\n${fullImgPrompt}\n\n` +
+          `• 2. Prompt Tạo Chuyển Động Grok Video (Full Khung Hình ${ratioSpec.ratio}):\n${fullVidPrompt}\n\n` +
+          `• Lời thoại trong cảnh (${sc.durationSec}s): "${sc.narrationText}"`
+        );
+      })
+      .join('\n\n==================================================\n\n');
 
     copyToClipboard(text, 'copy-grok-only');
   };
 
   const copyOnlyChatGptImagePrompts = () => {
     const imgScenes = scenes.filter((s) => s.sceneType === 'image' || s.sceneType === 'video');
-    const header = `Hãy vẽ lần lượt cho tôi các bức ảnh tỷ lệ dọc 3:4 (phong cách nhiếp ảnh phim tư liệu cổ điển thập niên 1950s-1970s) theo danh sách phân cảnh dưới đây:\n\n`;
+    const header = `Hãy vẽ lần lượt cho tôi các bức ảnh FULL KHUNG HÌNH tỷ lệ ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px, tràn viền 100% edge-to-edge full-bleed, tuyệt đối không có viền đen hay khung bo) theo danh sách phân cảnh dưới đây:\n\n`;
     const body = imgScenes
-      .map(
-        (sc) =>
-          `Ảnh Cảnh #${String(sc.order).padStart(2, '0')} (${
-            sc.sceneType === 'video'
-              ? 'Dùng làm ảnh gốc đưa qua Grok tạo Video'
-              : 'Ảnh tĩnh đóng khung bo tròn'
-          }):\n${sc.imagePrompt || sc.visualPrompt}`
-      )
+      .map((sc) => {
+        const fullImgPrompt = buildFullFrameImagePrompt(
+          sc.imagePrompt || sc.visualPrompt,
+          aspectRatio
+        );
+        return `Ảnh Cảnh #${String(sc.order).padStart(2, '0')} (${
+          sc.sceneType === 'video'
+            ? `Ảnh Gốc Full Khung ${ratioSpec.ratio} để đưa vào Grok tạo Video`
+            : `Ảnh Tĩnh Full Khung ${ratioSpec.ratio}`
+        }):\n${fullImgPrompt}`;
+      })
       .join('\n\n');
 
     copyToClipboard(header + body, 'copy-chatgpt-images');
@@ -639,21 +685,51 @@ QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <p className="text-xs font-bold text-amber-300">
-                  Mẹo Bớt Làm Tay 90% Khi Ghép File Từ Grok & ChatGPT / API Trung Gian:
+                <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                  Chế Độ Full Khung Hình Chuẩn {ratioSpec.labelVi}:
                 </p>
                 <p className="text-xs text-slate-300">
-                  Bạn có thể bấm nút <strong>"Vẽ Ảnh Qua API Trung Gian"</strong> ở từng cảnh, hoặc tải các file Video từ <strong>Grok</strong> và Ảnh về máy rồi bấm nút <strong>"Thả Tất Cả Video Grok & Ảnh Vào 1 Lần"</strong> ở góc trên: App sẽ <strong>tự động đưa các file Video vào đúng các cảnh CẦN VIDEO</strong> và <strong>đưa các file Ảnh vào đúng các cảnh CẦN ẢNH TĨNH</strong>!
+                  Mọi cảnh <strong>CẦN VIDEO</strong> và <strong>CẦN ẢNH</strong> dưới đây đều kèm sẵn{' '}
+                  <strong>Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}px)</strong> +{' '}
+                  <strong>Prompt Full Khung ({ratioSpec.arTag})</strong>. Khi làm Video trên <strong>Grok</strong>, bạn chỉ cần bấm{' '}
+                  <strong className="text-sky-300">"Tải Ảnh Gốc Full Khung Đưa Qua Grok"</strong> +{' '}
+                  <strong className="text-sky-300">"Copy Prompt Grok Full Khung"</strong> là Video Grok tạo ra sẽ khớp khít 100% khung hình!
                 </p>
               </div>
+              <button
+                onClick={() => {
+                  scenes.forEach((sc) => {
+                    if (sc.sceneType === 'video' || sc.sceneType === 'image') {
+                      onUpdateScene(sc.id, { frameStyle: 'full-bleed' });
+                    }
+                  });
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                Đặt Tất Cả Cảnh Tràn Full Khung 100%
+              </button>
             </div>
 
             {scenes.map((scene, idx) => {
               const assignedVaultItem = vaultItems.find((v) => v.id === scene.mediaId);
+              const previewUrl = assignedVaultItem?.url || scene.mediaUrl;
+              const previewKind = assignedVaultItem?.type || scene.mediaKind;
               const isVisualScene = scene.sceneType === 'video' || scene.sceneType === 'image';
               const googleImgSearchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(
                 scene.archivalKeywords || `${scene.title} vintage photo`
               )}`;
+
+              const fullFrameImgPrompt = buildFullFrameImagePrompt(
+                scene.imagePrompt || scene.visualPrompt,
+                aspectRatio
+              );
+              const fullFrameVidPrompt = buildFullFrameVideoPrompt(
+                scene.videoMotionPrompt,
+                scene.imagePrompt || scene.visualPrompt,
+                aspectRatio
+              );
 
               return (
                 <div
@@ -671,13 +747,13 @@ QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
                       {scene.sceneType === 'video' && (
                         <span className="text-xs font-bold text-sky-400 flex items-center gap-1">
                           <Film className="w-3.5 h-3.5" />
-                          CẦN VIDEO GROK (Tạo 1 clip 5-6s trên Grok hoặc dùng Ảnh tĩnh thay thế)
+                          CẦN VIDEO GROK — Đã Có Sẵn Ảnh Gốc & Prompt Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
                         </span>
                       )}
                       {scene.sceneType === 'image' && (
                         <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
                           <ImageIcon className="w-3.5 h-3.5" />
-                          CHỈ CẦN ẢNH TĨNH (App tự Zoom Ken Burns & Bo viền)
+                          CẦN ẢNH TĨNH — Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
                         </span>
                       )}
                       {scene.sceneType === 'quote' && (
@@ -696,7 +772,7 @@ QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
 
                     {isVisualScene && (
                       <div className="flex flex-wrap items-center gap-2">
-                        {/* 1-Click Generate Image via Intermediary Proxy API (DALL-E 3) */}
+                        {/* 1-Click Generate Full-Frame Image via AI */}
                         <button
                           onClick={() => onGenerateImageViaProxyForScene(scene)}
                           disabled={generatingImageSceneId === scene.id}
@@ -705,15 +781,38 @@ QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
                           {generatingImageSceneId === scene.id ? (
                             <>
                               <Loader2 className="w-3 h-3 animate-spin" />
-                              Đang vẽ qua API...
+                              Đang vẽ Full Khung {ratioSpec.ratio}...
                             </>
                           ) : (
                             <>
                               <Sparkles className="w-3 h-3" />
-                              Vẽ Ảnh Qua API Trung Gian
+                              Vẽ Ảnh Gốc Full Khung ({ratioSpec.ratio})
                             </>
                           )}
                         </button>
+
+                        {/* 1-Click Download Full-Frame Reference Image for Grok Video */}
+                        {previewUrl && (
+                          <button
+                            onClick={() =>
+                              handleDownloadFullFrameForGrok(scene, previewUrl, previewKind)
+                            }
+                            disabled={downloadingSceneId === scene.id}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 rounded-md transition-colors whitespace-nowrap shrink-0"
+                          >
+                            {downloadingSceneId === scene.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Đang xuất {ratioSpec.width}×{ratioSpec.height}...
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-3 h-3" />
+                                Tải Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}) Đưa Qua Grok
+                              </>
+                            )}
+                          </button>
+                        )}
 
                         <a
                           href={googleImgSearchUrl}
@@ -753,97 +852,138 @@ QUY TẮC TỐI ƯU HÓA ĐỂ TÔI ÍT PHẢI LÀM TAY NHẤT:
                     )}
                   </div>
 
-                  {/* Script Text Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-slate-800/80">
-                      <span className="block text-[11px] font-medium text-slate-400 mb-1">
-                        Lời bình Tiếng Anh (Tự động nhảy chữ vàng):
-                      </span>
-                      <p className="text-xs text-slate-100 leading-relaxed">
-                        {scene.narrationText}
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-slate-800/80">
-                      <span className="block text-[11px] font-medium text-slate-400 mb-1">
-                        Nghĩa / Lời bình Tiếng Việt:
-                      </span>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {scene.translationText || '—'}
-                      </p>
+                  {/* Main Body: Left Full-Frame Visual Preview + Right Script & Full-Frame Prompts */}
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {isVisualScene && (
+                      <div className="w-full md:w-44 shrink-0 flex flex-col gap-2">
+                        <div
+                          style={{ aspectRatio: ratioSpec.cssAspect }}
+                          className="w-full rounded-lg overflow-hidden bg-black border border-slate-700 relative"
+                        >
+                          {previewUrl ? (
+                            previewKind === 'video' ? (
+                              <video
+                                src={previewUrl}
+                                muted
+                                playsInline
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <img
+                                src={previewUrl}
+                                alt={scene.title}
+                                className="w-full h-full object-cover"
+                              />
+                            )
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-500 text-center p-2">
+                              Chưa có ảnh/video
+                            </div>
+                          )}
+                          <div className="absolute bottom-1.5 left-1.5 right-1.5 px-2 py-0.5 bg-black/75 backdrop-blur-sm rounded text-[10px] font-mono text-amber-300 text-center">
+                            Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height})
+                          </div>
+                        </div>
+
+                        {previewUrl && (
+                          <button
+                            onClick={() =>
+                              handleDownloadFullFrameForGrok(scene, previewUrl, previewKind)
+                            }
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded-md transition-colors"
+                          >
+                            <Download className="w-3 h-3 shrink-0" />
+                            Tải Ảnh {ratioSpec.ratio} Cho Grok
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex-1 space-y-3 min-w-0">
+                      {/* Script Text Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-slate-800/80">
+                          <span className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Lời bình Tiếng Anh (Tự động nhảy chữ vàng):
+                          </span>
+                          <p className="text-xs text-slate-100 leading-relaxed">
+                            {scene.narrationText}
+                          </p>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-slate-800/80">
+                          <span className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Nghĩa / Lời bình Tiếng Việt:
+                          </span>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {scene.translationText || '—'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Prompts Row for Visual Scenes (Both Video & Image scenes get Full-Frame Image Prompt + Full-Frame Grok Video Prompt) */}
+                      {isVisualScene && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                          <div className="p-3 rounded-lg bg-[#090D14] border border-emerald-500/30 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-emerald-400">
+                                1. Prompt Ảnh Gốc Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                              </span>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(fullFrameImgPrompt, `img-${scene.id}`)
+                                }
+                                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 rounded transition-colors shrink-0"
+                              >
+                                {copiedKey === `img-${scene.id}` ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    Đã Copy Full Khung
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    Copy Prompt Ảnh {ratioSpec.ratio}
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
+                              {fullFrameImgPrompt}
+                            </p>
+                          </div>
+
+                          <div className="p-3 rounded-lg bg-[#090D14] border border-sky-500/30 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-sky-400">
+                                2. Prompt Tạo Video GROK Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                              </span>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(fullFrameVidPrompt, `vid-${scene.id}`)
+                                }
+                                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors shrink-0"
+                              >
+                                {copiedKey === `vid-${scene.id}` ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    Đã Copy Full Khung
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    Copy Prompt Grok {ratioSpec.ratio}
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
+                              {fullFrameVidPrompt}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Prompts Row for Visual Scenes */}
-                  {isVisualScene && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pt-1">
-                      <div className="p-3 rounded-lg bg-[#090D14] border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-emerald-400">
-                            Prompt Vẽ Ảnh (Dán vào ChatGPT Pro / Grok Image)
-                          </span>
-                          <button
-                            onClick={() =>
-                              copyToClipboard(
-                                scene.imagePrompt || scene.visualPrompt || '',
-                                `img-${scene.id}`
-                              )
-                            }
-                            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition-colors"
-                          >
-                            {copiedKey === `img-${scene.id}` ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                Đã Copy
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                Copy Prompt Ảnh
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
-                          {scene.imagePrompt || scene.visualPrompt}
-                        </p>
-                      </div>
-
-                      <div className="p-3 rounded-lg bg-[#090D14] border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-sky-400">
-                            {scene.sceneType === 'video'
-                              ? 'Prompt Tạo Video Chuyển Động Trên GROK'
-                              : 'Gợi ý Chuyển Động & Từ Khóa Tìm Ảnh Thật'}
-                          </span>
-                          <button
-                            onClick={() =>
-                              copyToClipboard(
-                                scene.videoMotionPrompt || scene.archivalKeywords || '',
-                                `vid-${scene.id}`
-                              )
-                            }
-                            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition-colors"
-                          >
-                            {copiedKey === `vid-${scene.id}` ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                Đã Copy
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                Copy Prompt Grok Video
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
-                          {scene.videoMotionPrompt ||
-                            'Dùng ảnh tĩnh — App tự động tạo chuyển động Ken Burns.'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}

@@ -15,6 +15,7 @@ import {
   Check,
   Film,
   FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import {
   ColorFilter,
@@ -25,6 +26,12 @@ import {
   StoryScene,
 } from '../types';
 import { getMediaDuration } from '../utils/frameExtractor';
+import {
+  buildFullFrameImagePrompt,
+  buildFullFrameVideoPrompt,
+  downloadFullFrameImageForGrok,
+  getAspectRatioSpec,
+} from '../utils/fullFrameHelper';
 
 interface SceneInspectorProps {
   activeScene: StoryScene | undefined;
@@ -37,6 +44,8 @@ interface SceneInspectorProps {
   isGeneratingAllTTS: boolean;
   ttsProgressText: string;
   onOpenPromptStudio: () => void;
+  onGenerateImageViaProxyForScene?: (scene: StoryScene) => Promise<void>;
+  generatingImageSceneId?: string | null;
 }
 
 export const SceneInspector: React.FC<SceneInspectorProps> = ({
@@ -50,16 +59,36 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   isGeneratingAllTTS,
   ttsProgressText,
   onOpenPromptStudio,
+  onGenerateImageViaProxyForScene,
+  generatingImageSceneId,
 }) => {
   const [activeTab, setActiveTab] = useState<'scene' | 'style'>('scene');
   const [isGeneratingSceneTTS, setIsGeneratingSceneTTS] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isDownloadingFullFrame, setIsDownloadingFullFrame] = useState(false);
+
+  const ratioSpec = getAspectRatioSpec(settings.aspectRatio);
 
   const copyPrompt = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 1800);
+  };
+
+  const handleDownloadFullFrame = async () => {
+    if (!activeScene?.mediaUrl || isDownloadingFullFrame) return;
+    setIsDownloadingFullFrame(true);
+    try {
+      await downloadFullFrameImageForGrok(
+        activeScene.mediaUrl,
+        activeScene.mediaKind,
+        settings.aspectRatio,
+        `Canh-${String(activeScene.order).padStart(2, '0')}-Grok`
+      );
+    } finally {
+      setIsDownloadingFullFrame(false);
+    }
   };
 
   const handleGenerateSceneTTS = async () => {
@@ -154,13 +183,14 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   const newType = e.target.value as SceneType;
                   onUpdateScene(activeScene.id, {
                     sceneType: newType,
+                    frameStyle: 'full-bleed',
                     showBottomSubtitles: newType === 'video' || newType === 'image',
                   });
                 }}
                 className="w-full px-2 py-1.5 text-xs font-semibold bg-[#0B0F17] border border-slate-700 rounded-md text-amber-300 focus:outline-none focus:border-amber-500"
               >
-                <option value="video">🎥 CẦN VIDEO (Lip-sync / Chuyển động)</option>
-                <option value="image">🖼️ CẦN ẢNH TĨNH (Ken Burns / Bo viền)</option>
+                <option value="video">🎥 CẦN VIDEO (Full Khung {ratioSpec.ratio})</option>
+                <option value="image">🖼️ CẦN ẢNH TĨNH (Full Khung {ratioSpec.ratio})</option>
                 <option value="quote">⬛ THẺ CHỮ ĐEN (Tự động dựng)</option>
                 <option value="outro">🦅 LOGO KẾT (Huy hiệu Life Legends)</option>
               </select>
@@ -185,99 +215,144 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             </div>
           </div>
 
-          {/* Ready-to-Copy Image & Video Prompts for this Segment */}
+          {/* Ready-to-Copy Full-Frame Image & Video Prompts + Keyframe Image for this Segment */}
           {(activeScene.sceneType === 'video' || activeScene.sceneType === 'image') && (
             <div className="p-3 rounded-lg bg-[#090D15] border border-slate-800 space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-bold text-amber-400">
                   {activeScene.sceneType === 'video'
-                    ? '🎥 ĐOẠN NÀY CẦN LÀM VIDEO:'
-                    : '🖼️ ĐOẠN NÀY CHỈ CẦN ẢNH TĨNH:'}
+                    ? `🎥 ẢNH GỐC & PROMPT VIDEO FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×${ratioSpec.height}):`
+                    : `🖼️ ẢNH & PROMPT FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×{ratioSpec.height}):`}
                 </span>
               </div>
 
-              {activeScene.visualPrompt && (
-                <p className="text-[11px] text-slate-300 leading-snug">
-                  {activeScene.visualPrompt}
-                </p>
-              )}
+              {/* Quick Actions for Full-Frame Keyframe Image */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {onGenerateImageViaProxyForScene && (
+                  <button
+                    onClick={() => onGenerateImageViaProxyForScene(activeScene)}
+                    disabled={generatingImageSceneId === activeScene.id}
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 rounded-md transition-colors"
+                  >
+                    {generatingImageSceneId === activeScene.id ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Đang vẽ {ratioSpec.ratio}...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3" />
+                        Vẽ Ảnh Gốc {ratioSpec.ratio}
+                      </>
+                    )}
+                  </button>
+                )}
 
-              {/* Image Generation Prompt Box */}
+                {activeScene.mediaUrl && (
+                  <button
+                    onClick={handleDownloadFullFrame}
+                    disabled={isDownloadingFullFrame}
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 rounded-md transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    {isDownloadingFullFrame
+                      ? 'Đang xuất...'
+                      : `Tải Ảnh ${ratioSpec.width}×${ratioSpec.height} Cho Grok`}
+                  </button>
+                )}
+              </div>
+
+              {/* Image Generation Prompt Box (Full-Frame) */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium text-emerald-400">
-                    1. Prompt Tạo Ảnh Gốc (Midjourney / Flux / ChatGPT):
+                    1. Prompt Ảnh Gốc Full Khung ({ratioSpec.ratio} - {ratioSpec.width}×{ratioSpec.height}px):
                   </span>
                   <button
                     onClick={() =>
                       copyPrompt(
-                        activeScene.imagePrompt || activeScene.visualPrompt || '',
+                        buildFullFrameImagePrompt(
+                          activeScene.imagePrompt || activeScene.visualPrompt,
+                          settings.aspectRatio
+                        ),
                         'img'
                       )
                     }
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100 rounded transition-colors"
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 rounded transition-colors"
                   >
                     {copiedField === 'img' ? (
                       <>
                         <Check className="w-3 h-3 text-emerald-400" />
-                        Đã Copy
+                        Đã Copy Full {ratioSpec.ratio}
                       </>
                     ) : (
                       <>
                         <Copy className="w-3 h-3" />
-                        Copy Prompt Ảnh
+                        Copy Prompt Ảnh {ratioSpec.ratio}
                       </>
                     )}
                   </button>
                 </div>
                 <textarea
                   rows={2}
-                  value={activeScene.imagePrompt || ''}
+                  value={buildFullFrameImagePrompt(
+                    activeScene.imagePrompt || activeScene.visualPrompt,
+                    settings.aspectRatio
+                  )}
                   onChange={(e) =>
                     onUpdateScene(activeScene.id, { imagePrompt: e.target.value })
                   }
-                  placeholder="Prompt tiếng Anh để tạo ảnh cổ điển 3:4..."
+                  placeholder={`Prompt tiếng Anh tạo ảnh Full Khung ${ratioSpec.ratio}...`}
                   className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 focus:outline-none focus:border-amber-500"
                 />
               </div>
 
-              {/* Video Animation Prompt Box */}
-              {activeScene.sceneType === 'video' && (
-                <div className="space-y-1 pt-1 border-t border-slate-800/80">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-sky-400">
-                      2. Prompt Tạo Video (Kling / Veo / Runway / Hailuo):
-                    </span>
-                    <button
-                      onClick={() =>
-                        copyPrompt(activeScene.videoMotionPrompt || '', 'vid')
-                      }
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100 rounded transition-colors"
-                    >
-                      {copiedField === 'vid' ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          Đã Copy
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          Copy Prompt Video
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={activeScene.videoMotionPrompt || ''}
-                    onChange={(e) =>
-                      onUpdateScene(activeScene.id, { videoMotionPrompt: e.target.value })
+              {/* Video Animation Prompt Box (Full-Frame) */}
+              <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-sky-400">
+                    2. Prompt Tạo Video Grok Full Khung ({ratioSpec.ratio} - {ratioSpec.width}×{ratioSpec.height}px):
+                  </span>
+                  <button
+                    onClick={() =>
+                      copyPrompt(
+                        buildFullFrameVideoPrompt(
+                          activeScene.videoMotionPrompt,
+                          activeScene.imagePrompt || activeScene.visualPrompt,
+                          settings.aspectRatio
+                        ),
+                        'vid'
+                      )
                     }
-                    placeholder="Prompt tiếng Anh mô tả chuyển động / lip-sync..."
-                    className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 focus:outline-none focus:border-amber-500"
-                  />
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors"
+                  >
+                    {copiedField === 'vid' ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        Đã Copy Full {ratioSpec.ratio}
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        Copy Prompt Grok {ratioSpec.ratio}
+                      </>
+                    )}
+                  </button>
                 </div>
-              )}
+                <textarea
+                  rows={2}
+                  value={buildFullFrameVideoPrompt(
+                    activeScene.videoMotionPrompt,
+                    activeScene.imagePrompt || activeScene.visualPrompt,
+                    settings.aspectRatio
+                  )}
+                  onChange={(e) =>
+                    onUpdateScene(activeScene.id, { videoMotionPrompt: e.target.value })
+                  }
+                  placeholder={`Prompt tiếng Anh tạo Video Grok Full Khung ${ratioSpec.ratio}...`}
+                  className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
           )}
 

@@ -349,10 +349,23 @@ async function startServer() {
     }
   });
 
-  // 0b. Generate Scene Image Automatically (tries Proxy /images/generations if supported, otherwise uses Gemini 3.1 Flash Image 3:4)
+  // 0b. Generate Scene Image Automatically (tries Proxy /images/generations if supported, otherwise uses Gemini 3.1 Flash Image at exact aspectRatio)
   app.post("/api/proxy/generate-image", async (req, res) => {
     try {
-      const { prompt, customBaseUrl, imageModel = "dall-e-3" } = req.body || {};
+      const {
+        prompt,
+        customBaseUrl,
+        imageModel = "dall-e-3",
+        aspectRatio = "3:4",
+      } = req.body || {};
+      const validRatio: "3:4" | "9:16" | "16:9" =
+        aspectRatio === "9:16" || aspectRatio === "16:9" ? aspectRatio : "3:4";
+      const dSize =
+        validRatio === "16:9"
+          ? "1792x1024"
+          : validRatio === "9:16"
+          ? "1024x1792"
+          : "1024x1024";
       const cfg = getProxyConfig(customBaseUrl);
 
       // 1. If the user's proxy is NOT trollllm.xyz (which only routes chat/messages), try /v1/images/generations first
@@ -368,9 +381,9 @@ async function startServer() {
             },
             body: JSON.stringify({
               model: imageModel,
-              prompt,
+              prompt: `${prompt}. Full-frame ${validRatio} edge-to-edge composition filling 100% of the canvas, no black bars, no borders.`,
               n: 1,
-              size: "1024x1024",
+              size: dSize,
               response_format: "b64_json",
             }),
           });
@@ -401,9 +414,9 @@ async function startServer() {
         }
       }
 
-      // 2. Built-in Automatic 3:4 Documentary Image Generator via Gemini 3.1 Flash Image
+      // 2. Built-in Automatic Full-Frame Documentary Image Generator via Gemini 3.1 Flash Image
       const ai = getGenAIClient();
-      const enhancedPrompt = `${prompt}. Authentic 1960s archival documentary photograph, vertical 3:4 portrait composition, natural film grain, dramatic classic lighting, photorealistic historical capture, no text or watermarks.`;
+      const enhancedPrompt = `${prompt}. Authentic 1960s archival documentary photograph, full-frame ${validRatio} edge-to-edge full-bleed composition filling 100% of the canvas, natural film grain, dramatic classic lighting, photorealistic historical capture, NO borders, NO frames, NO black bars, NO text or watermarks.`;
 
       const genRes = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
@@ -412,7 +425,7 @@ async function startServer() {
         },
         config: {
           imageConfig: {
-            aspectRatio: "3:4",
+            aspectRatio: validRatio,
           },
         },
       });
@@ -447,6 +460,7 @@ async function startServer() {
         includeQuotes = true,
         channelTitle = "LIFE LEGENDS",
         channelSubtitle = "THEIR LEGACY. YOUR INSPIRATION.",
+        aspectRatio = "3:4",
         customBaseUrl,
         customModel,
         preferProxy = true,
@@ -456,6 +470,13 @@ async function startServer() {
         res.status(400).json({ error: "Vui lòng nhập tên nhân vật, chủ đề hoặc kịch bản." });
         return;
       }
+
+      const ratioDesc =
+        aspectRatio === "9:16"
+          ? "vertical 9:16 full-frame (1080x1920px) --ar 9:16"
+          : aspectRatio === "16:9"
+          ? "widescreen 16:9 full-frame (1920x1080px) --ar 16:9"
+          : "vertical 3:4 full-frame (1080x1440px) --ar 3:4";
 
       const langInstruction =
         language === "en"
@@ -467,13 +488,16 @@ ${langInstruction}
 
 Follow the exact viral "Life Legends" video formula:
 1. Scene 1 MUST be 'video' (a captivating hook where the character speaks/moves or performs a signature action, 5-9 seconds).
-2. To minimize manual video work, use ONLY 3 or 4 'video' scenes (for Grok Video generation), 4 or 5 'image' scenes (vintage still photo with 'rounded-frame' border, film dust, and slow Ken Burns zoom), and ${
+2. To minimize manual video work, use ONLY 3 or 4 'video' scenes (for Grok Video generation), 4 or 5 'image' scenes (vintage still photo with slow Ken Burns zoom), and ${
         includeQuotes
           ? "2 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
           : "visual scenes"
       }.
 3. Final scene MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
-4. For every 'video' and 'image' scene, provide a high-detail English 'imagePrompt' (3:4 vertical portrait, period-accurate archival photography) AND a 'videoMotionPrompt' (for Grok Video describing the exact motion/lip-sync).`;
+4. CRITICAL FOR FULL-FRAME VIDEO & IMAGE PROMPTS: Every 'video' and 'image' scene MUST have:
+   - 'frameStyle': "full-bleed" (filling 100% of the frame edge-to-edge).
+   - 'imagePrompt': High-detail English prompt for generating the starting full-frame keyframe photo in exact ${ratioDesc}, edge-to-edge full-bleed composition filling 100% of the frame, no black bars, no borders.
+   - 'videoMotionPrompt': High-detail English prompt for Grok Video / Kling describing the exact camera movement, subject motion, and lip-sync speaking action in full-screen ${ratioDesc} filling 100% of the frame.`;
 
       const proxyCfg = getProxyConfig(customBaseUrl, customModel);
 
@@ -521,6 +545,7 @@ Follow the exact viral "Life Legends" video formula:
         language = "en",
         channelTitle = "LIFE LEGENDS",
         channelSubtitle = "THEIR LEGACY. YOUR INSPIRATION.",
+        aspectRatio = "3:4",
         customBaseUrl,
         customModel,
         preferProxy = true,
@@ -531,6 +556,13 @@ Follow the exact viral "Life Legends" video formula:
         return;
       }
 
+      const ratioDesc =
+        aspectRatio === "9:16"
+          ? "vertical 9:16 full-frame (1080x1920px) --ar 9:16"
+          : aspectRatio === "16:9"
+          ? "widescreen 16:9 full-frame (1920x1080px) --ar 16:9"
+          : "vertical 3:4 full-frame (1080x1440px) --ar 3:4";
+
       const prompt = `You are a senior documentary video director for the "Life Legends" channel.
 The user has provided the following script/story text:
 """
@@ -538,15 +570,15 @@ ${rawScript}
 """
 
 Break this script down into sequential scenes (each 12-28 words of narration, keeping the user's core script faithfully) and decide for EACH segment whether the user should provide:
-- 'video' (CẦN VIDEO GROK: use for only 3-4 key scenes like the opening hook, mid-story action, and closing shot)
-- 'image' (CẦN ẢNH TĨNH: archival portrait with rounded vintage border 'rounded-frame' and Ken Burns zoom)
+- 'video' (CẦN VIDEO GROK: use for only 3-4 key scenes like the opening hook, mid-story action, and closing shot; set frameStyle to 'full-bleed')
+- 'image' (CẦN ẢNH TĨNH: archival portrait with Ken Burns zoom; set frameStyle to 'full-bleed')
 - 'quote' (THẺ CHỮ ĐEN: 2-3 dramatic turning-point sentences rendered as white italic text on a pitch-black screen — no image/video needed)
 - 'outro' (Final scene: "${channelTitle} - ${channelSubtitle}" brand crest)
 
 For every scene, generate:
 1. 'visualPrompt' in Vietnamese clearly stating "CẦN VIDEO:" or "CẦN ẢNH TĨNH:" or "THẺ CHỮ ĐEN TỰ ĐỘNG".
-2. 'imagePrompt' in English (ready to copy into ChatGPT Pro / Midjourney, 3:4 portrait aspect ratio).
-3. 'videoMotionPrompt' in English (ready to copy into Grok Video to animate the image into a video clip).
+2. 'imagePrompt' in English (ready to copy into ChatGPT Pro / Grok Image, explicitly specifying full-frame ${ratioDesc}, edge-to-edge full-bleed composition filling 100% of the frame, no borders).
+3. 'videoMotionPrompt' in English (ready to copy into Grok Video to animate the starting image into a full-screen ${ratioDesc} video clip).
 4. 'archivalKeywords' in English for searching real historical photos/clips.
 5. Both English and Vietnamese text in 'narrationText' and 'translationText' (primary language: ${language}).`;
 
