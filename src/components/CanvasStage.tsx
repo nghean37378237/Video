@@ -1034,27 +1034,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg">
             <button
               onClick={() => {
-                const evt = new CustomEvent('legendcut:audiomode', { detail: 'reference-video' });
-                window.dispatchEvent(evt);
-              }}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                settings.audioMode === 'reference-video'
-                  ? 'bg-amber-500 text-slate-950 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Âm thanh Video Mẫu
-            </button>
-            <button
-              onClick={() => {
                 const evt = new CustomEvent('legendcut:audiomode', { detail: 'stitched-scenes' });
                 window.dispatchEvent(evt);
               }}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                settings.audioMode === 'stitched-scenes'
-                  ? 'bg-amber-500 text-slate-950 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 text-slate-950 transition-colors whitespace-nowrap shrink-0"
             >
               Nhạc Nền + Giọng Đọc Ghép
             </button>

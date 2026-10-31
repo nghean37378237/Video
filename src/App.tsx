@@ -69,13 +69,14 @@ export default function App() {
     return () => window.removeEventListener('legendcut:audiomode', handler);
   }, []);
 
-  // Extract 8 vintage frames from the currently selected reference video into the Vault
+  // Extract frames helper if needed
   const handleExtractSampleFrames = useCallback(
     async (overrideUrl?: string, overrideLabel?: string) => {
       if (isExtractingFrames) return;
+      const videoUrl = overrideUrl || settings.referenceVideoUrl;
+      if (!videoUrl) return;
       setIsExtractingFrames(true);
       try {
-        const videoUrl = overrideUrl || settings.referenceVideoUrl;
         const label = overrideLabel || 'Ảnh Tư Liệu';
         const timestamps = [2, 12, 29, 48, 76, 114, 142, 168];
         const extracted = await extractFramesFromVideo(videoUrl, timestamps, label);
@@ -91,10 +92,6 @@ export default function App() {
     },
     [isExtractingFrames, settings.referenceVideoUrl]
   );
-
-  useEffect(() => {
-    handleExtractSampleFrames(REFERENCE_VIDEOS['lorne-greene'].url, 'Ảnh Lorne & Buck');
-  }, []);
 
   // Automatically fetch real historical photos of any character from Wikimedia Commons
   const fetchArchivalPhotosInternal = async (characterQuery: string): Promise<VaultItem[]> => {
@@ -147,7 +144,6 @@ export default function App() {
     }
   };
 
-  // Switch between the 3 uploaded reference video presets (Lorne Greene, Clayton Moore, Yul Brynner)
   const handleSelectPreset = (presetId: PresetId) => {
     const presetMeta = REFERENCE_VIDEOS[presetId];
     const presetScenes = PRESET_SCENES_MAP[presetId];
@@ -161,10 +157,9 @@ export default function App() {
       ...prev,
       activePresetId: presetId,
       projectTitle: presetMeta.title,
-      referenceVideoUrl: presetMeta.url,
-      audioMode: 'reference-video',
+      referenceVideoUrl: '',
+      audioMode: 'stitched-scenes',
     }));
-    handleExtractSampleFrames(presetMeta.url, `Ảnh ${presetMeta.title.slice(0, 18)}`);
     setStatusBanner(
       `Đã chuyển sang ${presetMeta.title} (Đầy đủ kịch bản + Prompt Ảnh/Video Full Khung cho từng cảnh).`
     );
@@ -275,6 +270,18 @@ export default function App() {
 
   const handleRemoveVaultItem = (id: string) => {
     setVaultItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleClearVault = () => {
+    setVaultItems([]);
+    setScenes((prev) =>
+      prev.map((sc) => ({
+        ...sc,
+        mediaId: undefined,
+        mediaUrl: undefined,
+      }))
+    );
+    setStatusBanner('Đã xóa sạch toàn bộ ảnh và video cũ khỏi Kho tư liệu và các phân cảnh.');
   };
 
   const handleUpdateScene = (sceneId: string, patch: Partial<StoryScene>) => {
@@ -1021,6 +1028,7 @@ export default function App() {
             vaultItems={vaultItems}
             onAddVaultItems={handleAddVaultItems}
             onRemoveVaultItem={handleRemoveVaultItem}
+            onClearVault={handleClearVault}
             activeScene={activeScene}
             onAssignMediaToActiveScene={handleAssignMediaToActiveScene}
             onAppendSceneFromMedia={handleAppendSceneFromMedia}

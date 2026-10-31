@@ -2,30 +2,30 @@ import { PresetId, ProjectSettings, StoryScene, VaultItem } from '../types';
 
 export const REFERENCE_VIDEOS: Record<PresetId, { title: string; url: string; durationSec: number }> = {
   'lorne-greene': {
-    title: 'Mẫu 1: Lorne Greene & Chú Ngựa Buck (Bonanza)',
-    url: '/assets/aistudio/M_i_anh_h_ng___u_c_n_m_t_con_ng_a_t_t.__Xem_th_m__n_b_n_d_ch_02d78c3f.mp4',
-    durationSec: 185,
+    title: 'Kịch Bản Mẫu 1: Lorne Greene & Chú Ngựa Buck',
+    url: '',
+    durationSec: 120,
   },
   'clayton-moore': {
-    title: 'Mẫu 2: Clayton Moore — Chiếc Mặt Nạ Lone Ranger',
-    url: '/assets/aistudio/A_white_hat._A_black_mask._A_thundering_Hi-Yo__Silver__Away___Xem_th_m_8bd3d962.mp4',
-    durationSec: 180,
+    title: 'Kịch Bản Mẫu 2: Clayton Moore — Mặt Nạ Lone Ranger',
+    url: '',
+    durationSec: 90,
   },
   'yul-brynner': {
-    title: 'Mẫu 3: Yul Brynner — Nhà Vua & Tay Súng Huyền Thoại',
-    url: '/assets/aistudio/Remembering_Yul_Brynner__19201985__The_shaved_head._The_piercing_eyes._That_slow__confident_walk._Yul_Brynner_didnt_need_to_raise_his_voice._He_just_stood_there__and_the_whole_scene_belonged_to_him._His_life_before_2d650c8d.mp4',
-    durationSec: 171,
+    title: 'Kịch Bản Mẫu 3: Yul Brynner — Nhà Vua & Tay Súng',
+    url: '',
+    durationSec: 90,
   },
 };
 
-export const REFERENCE_VIDEO_URL = REFERENCE_VIDEOS['lorne-greene'].url;
+export const REFERENCE_VIDEO_URL = '';
 
 export const INITIAL_PROJECT_SETTINGS: ProjectSettings = {
-  projectTitle: 'Lorne Greene & Chú Ngựa Buck — Huyền Thoại Bonanza',
+  projectTitle: 'Dự Án Video Kể Chuyện Mới',
   activePresetId: 'lorne-greene',
-  referenceVideoUrl: REFERENCE_VIDEOS['lorne-greene'].url,
+  referenceVideoUrl: '',
   aspectRatio: '3:4',
-  audioMode: 'reference-video',
+  audioMode: 'stitched-scenes',
   subtitleLanguage: 'en',
   activeWordColor: '#FFD700',
   wordsPerLine: 4,
@@ -41,35 +41,8 @@ export const INITIAL_PROJECT_SETTINGS: ProjectSettings = {
   channelMotto: 'THEIR LEGACY. YOUR INSPIRATION.',
 };
 
-export const INITIAL_VAULT_ITEMS: VaultItem[] = [
-  {
-    id: 'vault-ref-lorne',
-    name: 'Video Mẫu 1: Lorne Greene & Buck (03:05)',
-    type: 'video',
-    url: REFERENCE_VIDEOS['lorne-greene'].url,
-    durationSec: 185,
-    sourceTag: 'sample',
-    createdAt: 'Video Mẫu 1',
-  },
-  {
-    id: 'vault-ref-clayton',
-    name: 'Video Mẫu 2: Clayton Moore - Lone Ranger (03:00)',
-    type: 'video',
-    url: REFERENCE_VIDEOS['clayton-moore'].url,
-    durationSec: 180,
-    sourceTag: 'sample',
-    createdAt: 'Video Mẫu 2',
-  },
-  {
-    id: 'vault-ref-yul',
-    name: 'Video Mẫu 3: Yul Brynner - Huyền Thoại (02:51)',
-    type: 'video',
-    url: REFERENCE_VIDEOS['yul-brynner'].url,
-    durationSec: 171,
-    sourceTag: 'sample',
-    createdAt: 'Video Mẫu 3',
-  },
-];
+// Kho tư liệu khởi đầu hoàn toàn trống (đã bỏ toàn bộ video và ảnh cũ lưu sẵn)
+export const INITIAL_VAULT_ITEMS: VaultItem[] = [];
 
 export const LORNE_GREENE_SCENES: StoryScene[] = [
   {
@@ -77,17 +50,12 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     order: 1,
     title: 'Mở đầu: Anh hùng & Ngựa quý',
     sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 0,
-    videoTrimEndSec: 9,
-    durationSec: 9,
+    durationSec: 8,
     narrationText:
       'Every hero needs a good horse. For Lorne Greene, that horse was named Buck. And what happened after Bonanza ended, nobody saw coming.',
     translationText:
       'Mỗi anh hùng đều cần một con ngựa tốt. Với Lorne Greene, chú ngựa ấy tên là Buck. Và điều xảy ra sau khi Bonanza kết thúc không ai ngờ tới.',
-    visualPrompt: 'CẦN VIDEO: Cảnh Lorne Greene cưỡi chú ngựa vàng Buck bên hồ nước xanh và nói chuyện trực diện',
+    visualPrompt: 'CẦN VIDEO: Cảnh nhân vật cưỡi ngựa bên hồ nước xanh và nói chuyện trực diện',
     imagePrompt:
       'Cinematic 1960s color photograph of older cowboy actor Lorne Greene wearing a tan cowboy hat and brown leather vest, sitting on a golden buckskin horse with dark mane beside a calm mountain lake, natural sunlight, 3:4 portrait aspect ratio, photorealistic.',
     videoMotionPrompt:
@@ -102,18 +70,13 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     id: 'lg-2',
     order: 2,
     title: 'Đêm Chủ Nhật năm 1959',
-    sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 9,
-    videoTrimEndSec: 19,
-    durationSec: 10,
+    sceneType: 'image',
+    durationSec: 8,
     narrationText:
       'Sunday nights, 1959. That galloping theme song filled living rooms all across America, and a whole country met the Cartwright family.',
     translationText:
       'Những đêm Chủ Nhật năm 1959. Bản nhạc phim rộn ràng vang khắp các phòng khách nước Mỹ, đưa cả đất nước gặp gỡ gia đình Cartwright.',
-    visualPrompt: 'CẦN VIDEO (từ ảnh cổ): 4 cha con nhà Cartwright trò chuyện trước hiên nhà gỗ',
+    visualPrompt: 'CẦN ẢNH TĨNH: 4 cha con nhà Cartwright trước hiên nhà gỗ',
     imagePrompt:
       '1959 black and white archival promotional portrait of the four Bonanza actors (Lorne Greene, Pernell Roberts, Dan Blocker, Michael Landon) in western attire on a wooden ranch porch, crisp vintage film grain, 3:4 aspect ratio.',
     videoMotionPrompt:
@@ -127,61 +90,9 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
   {
     id: 'lg-3',
     order: 3,
-    title: 'Người cha Ben Cartwright',
-    sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 19,
-    videoTrimEndSec: 30.5,
-    durationSec: 11.5,
-    narrationText:
-      'At the head of the table sat Ben Cartwright. A widower, a rancher, a father of three very different sons. And under his saddle every week rode Buck.',
-    translationText:
-      'Ngồi đầu bàn là Ben Cartwright. Một người góa vợ, chủ trang trại, người cha của ba cậu con trai khác biệt. Và đồng hành cùng ông mỗi tuần là Buck.',
-    visualPrompt: 'CẦN VIDEO/ẢNH: Gia đình Cartwright tựa hàng rào gỗ mỉm cười ấm áp',
-    imagePrompt:
-      'Warm sepia studio portrait of Ben Cartwright and his three sons leaning over a rustic wooden ranch fence, smiling warmly, coiled lasso on fence post, 1960s studio lighting, 3:4 portrait.',
-    videoMotionPrompt:
-      'Sepia vintage studio shot: the father and three sons smile, laugh, and speak warmly to the camera while leaning on the wooden fence, natural head nods.',
-    archivalKeywords: 'Bonanza Cartwright family leaning on fence portrait',
-    motionEffect: 'zoom-out',
-    colorFilter: 'sepia',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-4',
-    order: 4,
-    title: 'Chú ngựa Buck điềm tĩnh (Khung bo tròn)',
-    sceneType: 'image',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 30.5,
-    videoTrimEndSec: 39,
-    durationSec: 8.5,
-    narrationText:
-      'Buck was a steady golden buckskin with a dark mane. Calm, patient, never in a hurry. A lot like the man who rode him.',
-    translationText:
-      'Buck là chú ngựa lông vàng bờm sẫm vững chãi. Điềm tĩnh, kiên nhẫn, chẳng bao giờ vội vã. Rất giống người đàn ông cưỡi nó.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Chân dung Lorne Greene trên lưng ngựa (Tự động đóng khung bo tròn + bụi phim)',
-    imagePrompt:
-      'Classic black and white portrait of Lorne Greene wearing a cowboy hat, leather vest, and gloves seated on horseback against blurred pine trees, calm dignified expression, 3:4 portrait.',
-    videoMotionPrompt:
-      'Chỉ cần dùng Ảnh tĩnh — Ứng dụng sẽ tự động tạo hiệu ứng Zoom chậm (Ken Burns) + Khung bo tròn + Bụi phim.',
-    archivalKeywords: 'Lorne Greene Ben Cartwright horseback portrait',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-5',
-    order: 5,
-    title: 'Thẻ Chữ Đen 1: Giọng nói từ Ottawa',
+    title: 'Thẻ Chữ Đen: Giọng nói từ Ottawa',
     sceneType: 'quote',
-    durationSec: 7.5,
+    durationSec: 7,
     narrationText:
       'Lorne Greene was born in Ottawa, Canada, in nineteen fifteen. And long before Bonanza, people knew him by his voice.',
     translationText:
@@ -195,197 +106,8 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     showBottomSubtitles: false,
   },
   {
-    id: 'lg-6',
-    order: 6,
-    title: 'Phát thanh viên Thế chiến II',
-    sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 46.5,
-    videoTrimEndSec: 56.5,
-    durationSec: 10,
-    narrationText:
-      'During World War 2, he read the war news on Canadian radio. His voice was so deep and serious that people gave him a nickname: The Voice of Doom.',
-    translationText:
-      'Trong Thế chiến II, ông đọc tin chiến sự trên đài phát thanh Canada. Giọng ông trầm và uy nghiêm đến mức được gọi là: Giọng Nói Định Mệnh.',
-    visualPrompt: 'CẦN VIDEO: Lorne Greene mặc vest đọc bản tin trước chiếc micro cổ điển RCA',
-    imagePrompt:
-      '1940s black and white photograph of broadcaster Lorne Greene in a formal suit and patterned tie sitting at a vintage radio control desk speaking into a silver RCA ribbon microphone, 3:4 portrait.',
-    videoMotionPrompt:
-      '1940s radio broadcaster in a suit speaks with deep authority into a vintage RCA microphone in a broadcast studio, subtle hand gesture, black and white film.',
-    archivalKeywords: 'Lorne Greene CBC radio announcer RCA microphone',
-    motionEffect: 'pan-right',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-7',
-    order: 7,
-    title: 'Bước ngoặt Hollywood 1959 & Chân dung hiền từ',
-    sceneType: 'image',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 66,
-    videoTrimEndSec: 75,
-    durationSec: 9,
-    narrationText:
-      'Ben Cartwright was calm and fair, strong when it counted, gentle when it mattered most. He became the father everyone wished they had.',
-    translationText:
-      'Ben Cartwright điềm tĩnh và công bằng, mạnh mẽ khi cần thiết, dịu dàng vào lúc quan trọng nhất. Ông trở thành người cha mà ai cũng ước ao.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Chân dung cận cảnh Lorne Greene tóc bạc mỉm cười hiền hậu',
-    imagePrompt:
-      'Close-up black and white portrait of older Lorne Greene with silver hair and a warm fatherly smile, wearing a suede vest outdoors with soft bokeh foliage background, 3:4 aspect ratio.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động chạy hiệu ứng Zoom chậm (Ken Burns).',
-    archivalKeywords: 'Lorne Greene smiling portrait close up black and white',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-8',
-    order: 8,
-    title: '14 mùa phim và hơn 400 tập',
-    sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 75,
-    videoTrimEndSec: 85,
-    durationSec: 10,
-    narrationText:
-      'Season after season, Buck carried him through rivers, over hills, and into every adventure. 14 seasons, more than 400 episodes.',
-    translationText:
-      'Mùa này qua mùa khác, Buck đưa ông băng qua sông suối, đồi cao và mọi cuộc phiêu lưu. 14 mùa phim, hơn 400 tập phim.',
-    visualPrompt: 'CẦN VIDEO: Cảnh cưỡi ngựa phi nước kiệu dọc hàng rào trang trại',
-    imagePrompt:
-      'Vintage sepia western photograph of Ben Cartwright riding his buckskin horse along a wooden ranch fence with rolling hills in the background, 3:4 portrait.',
-    videoMotionPrompt:
-      'Cowboy rides his horse at a steady trot from left to right along a wooden ranch fence in vintage sepia tone, smooth tracking camera.',
-    archivalKeywords: 'Bonanza Ben Cartwright riding horse Ponderosa ranch',
-    motionEffect: 'pan-left',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-9',
-    order: 9,
-    title: 'Thẻ Chữ Đen 2: Năm 1973 máy quay ngừng chạy',
-    sceneType: 'quote',
-    durationSec: 11.5,
-    narrationText:
-      'Then, in nineteen seventy-three, the cameras stopped rolling. The Ponderosa went quiet. And one big question was left behind. What would happen to Buck?',
-    translationText:
-      'Rồi năm 1973, máy quay ngừng chạy. Trang trại Ponderosa chìm vào tĩnh lặng. Một câu hỏi lớn bỏ ngỏ: Chuyện gì sẽ xảy ra với Buck?',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG: Câu hỏi cao trào giữa video',
-    imagePrompt: 'Không cần tạo ảnh (Ứng dụng tự động dựng thẻ chữ trên nền đen).',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'lg-10',
-    order: 10,
-    title: 'Quyết định mua lại chú ngựa Buck',
-    sceneType: 'image',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 96.5,
-    videoTrimEndSec: 112,
-    durationSec: 15.5,
-    narrationText:
-      'Not every TV horse got a happy ending. Lorne Greene wasn’t willing to take that chance. So he reportedly bought Buck himself. The horse who had carried him for 14 years would always be cared for.',
-    translationText:
-      'Không phải chú ngựa đóng phim nào cũng có cái kết đẹp. Lorne Greene không chấp nhận rủi ro đó. Ông đã tự mình mua lại Buck để chăm sóc suốt đời.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Ảnh chân dung màu cổ điển đóng khung bo tròn + Ảnh cưỡi ngựa',
-    imagePrompt:
-      '1970s warm vintage color portrait of Lorne Greene looking kindly at the camera, soft studio lighting, classic film texture, 3:4 portrait.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động áp khung bo tròn và hiệu ứng Zoom.',
-    archivalKeywords: 'Lorne Greene 1970s color portrait',
-    motionEffect: 'zoom-in',
-    colorFilter: 'color-warm',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-11',
-    order: 11,
-    title: 'Trung tâm cưỡi ngựa trị liệu cho trẻ em',
-    sceneType: 'image',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 120,
-    videoTrimEndSec: 137,
-    durationSec: 17,
-    narrationText:
-      'Buck was donated to a therapeutic riding center, a place where children with physical and mental challenges learn to ride a horse. Little hands holding the reins, nervous faces turning into big proud smiles.',
-    translationText:
-      'Buck được hiến tặng cho một trung tâm cưỡi ngựa trị liệu cho trẻ em khuyết tật. Những bàn tay nhỏ nắm dây cương, gương mặt lo âu hóa thành nụ cười tự hào.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Những đứa trẻ mỉm cười hạnh phúc trên lưng ngựa vàng tại trang trại gỗ',
-    imagePrompt:
-      'Warm 1970s documentary color photograph of two young smiling children sitting proudly on gentle horses in front of a rustic wooden western barn, golden afternoon sunlight, 4:3 letterboxed in 3:4 frame.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động căn khung điện ảnh và Zoom nhẹ.',
-    archivalKeywords: 'therapeutic riding center children on buckskin horse vintage',
-    motionEffect: 'zoom-out',
-    colorFilter: 'color-warm',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-12',
-    order: 12,
-    title: 'Thẻ Chữ Đen 3: Chở che những anh hùng nhỏ',
-    sceneType: 'quote',
-    durationSec: 10.5,
-    narrationText:
-      'The horse who once carried a TV hero now carried real little heroes. Balance. Strength. Confidence. One slow, careful step at a time.',
-    translationText:
-      'Chú ngựa từng chở một người hùng truyền hình nay nâng bước những anh hùng nhỏ ngoài đời thực. Thăng bằng. Sức mạnh. Tự tin. Từng bước chậm rãi.',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG: Tổng kết cảm xúc',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'lg-13',
-    order: 13,
-    title: 'Trái tim dịu dàng bốn chân',
-    sceneType: 'video',
-    mediaId: 'vault-ref-lorne',
-    mediaUrl: REFERENCE_VIDEOS['lorne-greene'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 174,
-    videoTrimEndSec: 181.5,
-    durationSec: 7.5,
-    narrationText:
-      'Some heroes wear a hat on TV. Some have four legs and a gentle heart. Did you know this story about Lorne Greene and Buck?',
-    translationText:
-      'Có những anh hùng đội mũ trên TV. Có những anh hùng có bốn chân và trái tim dịu dàng. Bạn đã biết câu chuyện về Lorne Greene và Buck chưa?',
-    visualPrompt: 'CẦN VIDEO: Lorne Greene mỉm cười vỗ về chú ngựa ở câu kết',
-    imagePrompt:
-      'Black and white vintage photograph of Lorne Greene smiling affectionately and petting his horse’s neck, warm emotional bond, 3:4 portrait.',
-    videoMotionPrompt:
-      'The older cowboy actor smiles warmly and gently pets the neck of his loyal horse, emotional closing shot, vintage black and white film.',
-    archivalKeywords: 'Lorne Greene petting Buck horse Bonanza',
-    motionEffect: 'zoom-out',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'lg-14',
-    order: 14,
+    id: 'lg-4',
+    order: 4,
     title: 'Outro: Huy Hiệu Life Legends',
     sceneType: 'outro',
     durationSec: 4,
@@ -401,367 +123,8 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
   },
 ];
 
-export const CLAYTON_MOORE_SCENES: StoryScene[] = [
-  {
-    id: 'cm-1',
-    order: 1,
-    title: 'Mở đầu: Lệnh tòa án năm 1979',
-    sceneType: 'video',
-    mediaId: 'vault-ref-clayton',
-    mediaUrl: REFERENCE_VIDEOS['clayton-moore'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 0,
-    videoTrimEndSec: 5,
-    durationSec: 5,
-    narrationText: 'In 1979, a court told Clayton Moore to take off his mask.',
-    translationText: 'Năm 1979, tòa án ra lệnh cho Clayton Moore phải tháo chiếc mặt nạ của ông xuống.',
-    visualPrompt: 'CẦN VIDEO: Clayton Moore đeo mặt nạ đen Lone Ranger cầm súng lục nói chuyện',
-    imagePrompt:
-      'Sepia 1950s western portrait of Clayton Moore as The Lone Ranger wearing a white cowboy hat, black domino mask, and holding a silver revolver, desert rock background, 3:4 portrait.',
-    videoMotionPrompt:
-      'The masked cowboy in a white hat speaks directly to the camera while holding his silver revolver, vintage sepia film look.',
-    archivalKeywords: 'Clayton Moore Lone Ranger mask revolver sepia',
-    motionEffect: 'static',
-    colorFilter: 'sepia',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'cm-2',
-    order: 2,
-    title: 'Cặp kính râm thay thế mặt nạ',
-    sceneType: 'image',
-    mediaId: 'vault-ref-clayton',
-    mediaUrl: REFERENCE_VIDEOS['clayton-moore'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 5,
-    videoTrimEndSec: 9,
-    durationSec: 4,
-    narrationText: 'He obeyed, sort of. And America loved him for it.',
-    translationText: 'Ông đã tuân lệnh, theo cách riêng của mình. Và cả nước Mỹ yêu mến ông vì điều đó.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Chân dung Clayton Moore lớn tuổi đeo kính râm lớn thay cho mặt nạ',
-    imagePrompt:
-      'Dramatic black and white studio portrait of older Clayton Moore wearing a white cowboy hat, western suit, and large dark wraparound sunglasses instead of his mask, 3:4 portrait.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động Zoom chậm (Ken Burns).',
-    archivalKeywords: 'Clayton Moore wraparound sunglasses cowboy hat portrait',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'cm-3',
-    order: 3,
-    title: 'Chú ngựa trắng Silver tung vó',
-    sceneType: 'video',
-    mediaId: 'vault-ref-clayton',
-    mediaUrl: REFERENCE_VIDEOS['clayton-moore'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 9,
-    videoTrimEndSec: 18,
-    durationSec: 9,
-    narrationText:
-      'To understand why, you have to go back to a white hat, a black mask, and a horse named Silver thundering across the screen.',
-    translationText:
-      'Để hiểu lý do, hãy quay lại với chiếc mũ trắng, mặt nạ đen và chú ngựa bạch Silver tung vó trên màn ảnh.',
-    visualPrompt: 'CẦN VIDEO: Lone Ranger cưỡi ngựa trắng Silver chồm lên và phi qua sa mạc',
-    imagePrompt:
-      'Vintage sepia action shot of The Lone Ranger in white hat and black mask rearing up on his majestic white stallion Silver in a dusty desert landscape, 3:4 portrait.',
-    videoMotionPrompt:
-      'The masked cowboy on a white horse rears up DRAMATICALLY and gallops forward kicking up desert dust, sepia western cinema style.',
-    archivalKeywords: 'Lone Ranger rearing white horse Silver desert',
-    motionEffect: 'pan-right',
-    colorFilter: 'sepia',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'cm-4',
-    order: 4,
-    title: 'Thẻ Chữ Đen 1: Hi-Yo, Silver! Away!',
-    sceneType: 'quote',
-    durationSec: 9.5,
-    narrationText:
-      'Hi-Yo, Silver! Away! For kids in the nineteen fifties, those words meant only one thing. The Lone Ranger was coming.',
-    translationText:
-      'Hi-Yo, Silver! Tiến lên! Với trẻ em thập niên 1950, câu hô đó chỉ mang một ý nghĩa duy nhất: Kỵ sĩ Cô độc đang tới.',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG: Tiếng hô huyền thoại',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'cm-5',
-    order: 5,
-    title: '169 tập phim & Biểu tượng chính nghĩa (Khung bo tròn)',
-    sceneType: 'image',
-    mediaId: 'vault-ref-clayton',
-    mediaUrl: REFERENCE_VIDEOS['clayton-moore'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 114.5,
-    videoTrimEndSec: 123,
-    durationSec: 8.5,
-    narrationText:
-      '169 episodes, two big screen movies, and a whole generation of kids who learned right from wrong from a masked man.',
-    translationText:
-      '169 tập phim, hai bộ phim điện ảnh, và cả một thế hệ trẻ em học điều đúng lẽ phải từ người hùng đeo mặt nạ.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Lone Ranger bên ngựa trắng Silver đóng khung bo tròn cổ điển',
-    imagePrompt:
-      '1950s black and white publicity photo of Clayton Moore as The Lone Ranger standing beside his white horse Silver against desert boulders, 3:4 portrait.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động đóng khung bo tròn + Bụi phim.',
-    archivalKeywords: 'Clayton Moore Lone Ranger standing with Silver photo',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'cm-6',
-    order: 6,
-    title: 'Thẻ Chữ Đen 2: Giữ mãi chiếc mặt nạ',
-    sceneType: 'quote',
-    durationSec: 7,
-    narrationText:
-      'Then the show ended. But Clayton Moore did something no one could have predicted. He kept the mask on.',
-    translationText:
-      'Rồi bộ phim kết thúc. Nhưng Clayton Moore đã làm một điều không ai đoán trước: Ông giữ nguyên chiếc mặt nạ.',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'cm-7',
-    order: 7,
-    title: 'Sống như một người hùng ngoài đời thực',
-    sceneType: 'video',
-    mediaId: 'vault-ref-clayton',
-    mediaUrl: REFERENCE_VIDEOS['clayton-moore'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 140,
-    videoTrimEndSec: 150,
-    durationSec: 10,
-    narrationText:
-      'His message never changed: be honest, be fair, do the right thing. He didn’t just play the Lone Ranger, he tried to live like him.',
-    translationText:
-      'Thông điệp của ông không bao giờ thay đổi: Trung thực, công bằng, làm điều đúng đắn. Ông không chỉ đóng vai Lone Ranger, ông sống như nhân vật ấy.',
-    visualPrompt: 'CẦN VIDEO: Clayton Moore bế em nhỏ và bắt tay các em thiếu nhi',
-    imagePrompt:
-      '1960s black and white photo of The Lone Ranger holding a toddler in one arm and shaking hands with smiling children at a community event, 3:4 portrait.',
-    videoMotionPrompt:
-      'The masked cowboy hero holds a small child and warmly shakes hands with smiling children around him, vintage black and white documentary footage.',
-    archivalKeywords: 'Clayton Moore Lone Ranger with children hospital charity',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'cm-8',
-    order: 8,
-    title: 'Outro: Huy Hiệu Life Legends',
-    sceneType: 'outro',
-    durationSec: 4,
-    narrationText: 'Life Legends. Their Legacy. Your Inspiration.',
-    translationText: 'Huyền Thoại Cuộc Đời. Di sản của họ. Cảm hứng của bạn.',
-    visualPrompt: 'LOGO KẾT TỰ ĐỘNG: Huy hiệu đại bàng vàng Life Legends',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'zoom-in',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-];
-
-export const YUL_BRYNNER_SCENES: StoryScene[] = [
-  {
-    id: 'yb-1',
-    order: 1,
-    title: 'Mở đầu: Nghệ sĩ xiếc, Nhà vua & Tay súng',
-    sceneType: 'video',
-    mediaId: 'vault-ref-yul',
-    mediaUrl: REFERENCE_VIDEOS['yul-brynner'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 0,
-    videoTrimEndSec: 10,
-    durationSec: 10,
-    narrationText:
-      'A circus performer, a nightclub singer, a king, a gunfighter. Yul Brynner lived more lives than most men could ever dream of.',
-    translationText:
-      'Nghệ sĩ xiếc, ca sĩ hộp đêm, nhà vua, tay súng miền Tây. Yul Brynner đã sống nhiều cuộc đời hơn bất kỳ ai dám mơ ước.',
-    visualPrompt: 'CẦN VIDEO: Yul Brynner đội mũ cao bồi đen nói chuyện đầy uy lực',
-    imagePrompt:
-      '1960s color western close-up portrait of Yul Brynner as Chris Adams in The Magnificent Seven wearing a black cowboy hat and dark shirt, intense piercing eyes, 3:4 portrait.',
-    videoMotionPrompt:
-      'Charismatic bald cowboy actor in a black hat speaks with quiet intensity and touches the brim of his hat, realistic lip-sync, 1960s Technicolor film look.',
-    archivalKeywords: 'Yul Brynner Magnificent Seven black hat close up',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'yb-2',
-    order: 2,
-    title: 'Ánh mắt sắc lạnh làm chủ khung hình',
-    sceneType: 'video',
-    mediaId: 'vault-ref-yul',
-    mediaUrl: REFERENCE_VIDEOS['yul-brynner'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 10,
-    videoTrimEndSec: 20,
-    durationSec: 10,
-    narrationText:
-      'The shaved head, the piercing eyes, that slow confident walk. He didn’t need to raise his voice. He just stood there, and the scene was his.',
-    translationText:
-      'Mái đầu trọc, đôi mắt sắc lạnh, dáng đi chậm rãi tự tin. Ông không cần lên giọng. Chỉ cần đứng đó, cả khung hình đã thuộc về ông.',
-    visualPrompt: 'CẦN VIDEO: Cận cảnh gương mặt và ánh mắt Yul Brynner zoom chậm',
-    imagePrompt:
-      'Extreme close-up color portrait of Yul Brynner with piercing brown eyes and shaved head wearing a black western hat, dramatic film lighting, 3:4 portrait.',
-    videoMotionPrompt:
-      'Slow push-in close-up on Yul Brynner’s intense eyes as he speaks calmly and deliberately, commanding screen presence.',
-    archivalKeywords: 'Yul Brynner piercing eyes close up portrait',
-    motionEffect: 'zoom-in',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'yb-3',
-    order: 3,
-    title: 'Thẻ Chữ Đen 1: Khởi nguồn từ Vladivostok 1920',
-    sceneType: 'quote',
-    durationSec: 8.5,
-    narrationText:
-      'But his story didn’t begin in Hollywood. It began far away, in Vladivostok, Russia, on July eleventh, nineteen twenty.',
-    translationText:
-      'Nhưng câu chuyện của ông không bắt đầu ở Hollywood. Nó bắt đầu tại Vladivostok, Nga vào ngày 11 tháng 7 năm 1920.',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'yb-4',
-    order: 4,
-    title: 'Thời niên thiếu phiêu bạt (Khung bo tròn)',
-    sceneType: 'image',
-    mediaId: 'vault-ref-yul',
-    mediaUrl: REFERENCE_VIDEOS['yul-brynner'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 28.5,
-    videoTrimEndSec: 37.5,
-    durationSec: 9,
-    narrationText:
-      'As a boy, he moved to China, then to France. New countries, new languages, and a restless young heart that never stood still.',
-    translationText:
-      'Thuở nhỏ, ông chuyển đến Trung Quốc rồi sang Pháp. Những vùng đất mới, ngôn ngữ mới và một trái tim trẻ không ngừng dịch chuyển.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Chân dung thời niên thiếu đen trắng đóng khung bo tròn + bụi phim',
-    imagePrompt:
-      '1930s vintage black and white studio portrait of a young boy with dark expressive eyes, classic archival photography, soft vignette, 3:4 portrait.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động đóng khung bo tròn + Bụi phim.',
-    archivalKeywords: 'Yul Brynner childhood young boy vintage photo',
-    motionEffect: 'zoom-in',
-    colorFilter: 'bw-vintage',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'yb-5',
-    order: 5,
-    title: 'Vai diễn để đời: The King and I (1951)',
-    sceneType: 'image',
-    mediaId: 'vault-ref-yul',
-    mediaUrl: REFERENCE_VIDEOS['yul-brynner'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 112.5,
-    videoTrimEndSec: 120,
-    durationSec: 7.5,
-    narrationText:
-      'He shaved his head for the part, and he kept that look for the rest of his life. It became his trademark, unforgettable.',
-    translationText:
-      'Ông cạo trọc đầu cho vai diễn Nhà Vua, và giữ diện mạo đó suốt phần đời còn lại. Nó trở thành dấu ấn không thể quên của ông.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Yul Brynner khoanh tay trong trang phục Nhà Vua đính ngọc (Khung bo tròn)',
-    imagePrompt:
-      '1956 Technicolor portrait of Yul Brynner as King Mongkut in The King and I, arms crossed in an ornate black and gold jeweled royal jacket, shaved head, 3:4 portrait.',
-    videoMotionPrompt: 'Chỉ cần Ảnh tĩnh — App tự động đóng khung bo tròn + Bụi phim.',
-    archivalKeywords: 'Yul Brynner The King and I arms crossed portrait',
-    motionEffect: 'zoom-in',
-    colorFilter: 'color-warm',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'yb-6',
-    order: 6,
-    title: 'The Magnificent Seven (Khung Letterbox Điện Ảnh)',
-    sceneType: 'video',
-    mediaId: 'vault-ref-yul',
-    mediaUrl: REFERENCE_VIDEOS['yul-brynner'].url,
-    mediaKind: 'video',
-    videoTrimStartSec: 145,
-    videoTrimEndSec: 154,
-    durationSec: 9,
-    narrationText:
-      'The Magnificent Seven. Yul Brynner was Chris Adams, the calm gunfighter who gathered six men to protect a poor Mexican village.',
-    translationText:
-      'Bảy Tay Súng Huyền Thoại. Yul Brynner vào vai Chris Adams, tay súng điềm tĩnh tập hợp sáu người đồng đội bảo vệ ngôi làng nghèo.',
-    visualPrompt: 'CẦN VIDEO TRÍCH ĐOẠN PHIM: Khung ngang Cinema Letterbox cảnh phim The Magnificent Seven',
-    imagePrompt:
-      '1960 widescreen film still from The Magnificent Seven showing Yul Brynner and Steve McQueen in western attire.',
-    videoMotionPrompt:
-      'Widescreen archival movie clip from The Magnificent Seven placed in cinema-letterbox frame.',
-    archivalKeywords: 'The Magnificent Seven 1960 Yul Brynner Steve McQueen clip',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: true,
-  },
-  {
-    id: 'yb-7',
-    order: 7,
-    title: 'Thẻ Chữ Đen 2: Thông điệp cuối cùng lay động triệu người',
-    sceneType: 'quote',
-    durationSec: 8,
-    narrationText:
-      'He recorded a message, asking people never to smoke. It aired after he was gone. And it moved millions across America.',
-    translationText:
-      'Ông đã ghi hình một thông điệp khuyên mọi người đừng bao giờ hút thuốc. Đoạn băng phát sóng sau khi ông qua đời và làm lay động hàng triệu người.',
-    visualPrompt: 'THẺ CHỮ ĐEN TỰ ĐỘNG',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'static',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-  {
-    id: 'yb-8',
-    order: 8,
-    title: 'Outro: Huy Hiệu Life Legends',
-    sceneType: 'outro',
-    durationSec: 4,
-    narrationText: 'Life Legends. Their Legacy. Your Inspiration.',
-    translationText: 'Huyền Thoại Cuộc Đời. Di sản của họ. Cảm hứng của bạn.',
-    visualPrompt: 'LOGO KẾT TỰ ĐỘNG: Huy hiệu đại bàng vàng Life Legends',
-    imagePrompt: 'Không cần tạo ảnh.',
-    videoMotionPrompt: 'Không cần tạo video.',
-    motionEffect: 'zoom-in',
-    colorFilter: 'original',
-    frameStyle: 'full-bleed',
-    showBottomSubtitles: false,
-  },
-];
+export const CLAYTON_MOORE_SCENES: StoryScene[] = LORNE_GREENE_SCENES;
+export const YUL_BRYNNER_SCENES: StoryScene[] = LORNE_GREENE_SCENES;
 
 export const PRESET_SCENES_MAP: Record<PresetId, StoryScene[]> = {
   'lorne-greene': LORNE_GREENE_SCENES,
