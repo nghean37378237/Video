@@ -20,12 +20,16 @@ export const REFERENCE_VIDEOS: Record<PresetId, { title: string; url: string; du
 
 export const REFERENCE_VIDEO_URL = '';
 
+export const FIXED_OUTRO_LOGO_URL = '/assets/aistudio/image_4653598d.png';
+
 export const INITIAL_PROJECT_SETTINGS: ProjectSettings = {
   projectTitle: 'Dự Án Video Kể Chuyện Mới',
   activePresetId: 'lorne-greene',
   referenceVideoUrl: '',
   aspectRatio: '3:4',
   audioMode: 'stitched-scenes',
+  transitionStyle: 'crossfade',
+  transitionDurationSec: 0.75,
   subtitleLanguage: 'en',
   activeWordColor: '#FFD700',
   wordsPerLine: 4,
@@ -37,7 +41,7 @@ export const INITIAL_PROJECT_SETTINGS: ProjectSettings = {
   voiceoverVolume: 1.0,
   ttsVoice: 'Charon',
   channelTitle: 'LIFE LEGENDS',
-  channelInitials: 'LL',
+  channelInitials: 'HM',
   channelMotto: 'THEIR LEGACY. YOUR INSPIRATION.',
 };
 
@@ -59,7 +63,7 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     imagePrompt:
       'Cinematic 1960s color photograph of older cowboy actor Lorne Greene wearing a tan cowboy hat and brown leather vest, sitting on a golden buckskin horse with dark mane beside a calm mountain lake, natural sunlight, 3:4 portrait aspect ratio, photorealistic.',
     videoMotionPrompt:
-      'The cowboy on the golden buckskin horse speaks calmly to the camera while the horse trots slowly forward along the grassy lakeside, gentle breeze, realistic lip movements, steady tracking shot.',
+      "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from the uploaded reference frame of the older cowboy actor in a tan hat and brown leather vest sitting tall in the saddle on a golden buckskin horse beside a sunlit mountain lake, he gently pats the horse's neck with a warm, nostalgic smile -> [2-4s Story Action & Speech]: Preserving 100% exact facial identity from the reference image, the subject turns his gaze directly toward the camera and speaks soulfully with natural lip movement while the horse takes two slow, steady steps forward along the grassy shoreline -> [4-6s Camera Control & Climax]: Smooth Kling camera dolly push-in to a medium close-up as a gentle breeze stirs his tan cowboy hat and the horse's dark mane in golden-hour light.",
     archivalKeywords: 'Lorne Greene riding Buck horse Bonanza color photo',
     motionEffect: 'static',
     colorFilter: 'original',
@@ -80,7 +84,7 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     imagePrompt:
       '1959 black and white archival promotional portrait of the four Bonanza actors (Lorne Greene, Pernell Roberts, Dan Blocker, Michael Landon) in western attire on a wooden ranch porch, crisp vintage film grain, 3:4 aspect ratio.',
     videoMotionPrompt:
-      'Vintage black and white film scene: the four western ranch brothers and father exchange warm glances and speak naturally on the wooden porch, subtle camera push-in.',
+      '[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from the vintage 1959 black-and-white ranch porch reference photo, the father and his three sons stand proudly in classic western attire with natural breathing -> [2-4s Story Action & Interaction]: Preserving 100% exact facial features of all four subjects in the frame, they exchange a warm camaraderie-filled glance while the father places a steady paternal hand on his youngest son’s shoulder -> [4-6s Camera Control & Climax]: Slow nostalgic Kling camera dolly push-in toward the family portrait as warm afternoon sunlight filters through the wooden porch rafters.',
     archivalKeywords: 'Bonanza 1959 cast Cartwright family black and white',
     motionEffect: 'zoom-in',
     colorFilter: 'bw-vintage',
@@ -108,13 +112,13 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
   {
     id: 'lg-4',
     order: 4,
-    title: 'Outro: Huy Hiệu Life Legends',
+    title: 'Logo Kết Cố Định: LIFE LEGENDS (HM)',
     sceneType: 'outro',
     durationSec: 4,
     narrationText: 'Life Legends. Their Legacy. Your Inspiration.',
     translationText: 'Huyền Thoại Cuộc Đời. Di sản của họ. Cảm hứng của bạn.',
-    visualPrompt: 'LOGO KẾT TỰ ĐỘNG: Huy hiệu đại bàng vàng Life Legends',
-    imagePrompt: 'Không cần tạo ảnh (Ứng dụng tự động vẽ Huy hiệu Kênh).',
+    visualPrompt: 'LOGO KẾT CỐ ĐỊNH: Huy hiệu vàng LIFE LEGENDS — HM — THEIR LEGACY. YOUR INSPIRATION.',
+    imagePrompt: 'Không cần tạo ảnh (Ứng dụng đã khóa cố định Logo LIFE LEGENDS - HM).',
     videoMotionPrompt: 'Không cần tạo video.',
     motionEffect: 'zoom-in',
     colorFilter: 'original',

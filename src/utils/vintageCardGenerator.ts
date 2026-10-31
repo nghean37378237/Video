@@ -7,7 +7,8 @@
 export function generateVintageArchivalDataUrl(
   characterOrTitle: string,
   subtitle: string,
-  sceneIndex: number
+  sceneIndex: number,
+  sceneType: 'video' | 'image' = 'image'
 ): string {
   const canvas = document.createElement('canvas');
   canvas.width = 720;
@@ -15,11 +16,11 @@ export function generateVintageArchivalDataUrl(
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
-  // Warm sepia / vintage silver gelatin darkroom background
+  // Deep studio blueprint darkroom background
   const palettes = [
-    ['#1C1917', '#292524', '#D6D3D1'],
-    ['#18181B', '#27272A', '#E4E4E7'],
-    ['#1F1A14', '#33291F', '#E7D8C5'],
+    ['#0B111E', '#162238', '#F8FAFC'],
+    ['#111827', '#1E293B', '#F1F5F9'],
+    ['#14111F', '#251E3E', '#F5F3FF'],
   ];
   const pal = palettes[sceneIndex % palettes.length];
 
@@ -30,46 +31,64 @@ export function generateVintageArchivalDataUrl(
   ctx.fillRect(0, 0, 720, 960);
 
   // Subtle vintage archival frame lines
-  ctx.strokeStyle = 'rgba(214, 211, 209, 0.22)';
+  ctx.strokeStyle = 'rgba(245, 158, 11, 0.32)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(44, 44, 632, 872);
+  ctx.strokeRect(40, 40, 640, 880);
 
-  ctx.strokeStyle = 'rgba(214, 211, 209, 0.1)';
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(56, 56, 608, 848);
+  ctx.strokeRect(54, 54, 612, 852);
 
-  // Classic film reel / western star emblem in center top
-  ctx.save();
-  ctx.translate(360, 340);
-  ctx.strokeStyle = 'rgba(212, 175, 55, 0.35)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, 88, 0, Math.PI * 2);
-  ctx.stroke();
+  // Top Pill: CHƯA CÓ ẢNH THẬT — ĐÃ TẠO PROMPT CHUẨN KLING AI
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
+  ctx.fillRect(110, 95, 500, 46);
+  ctx.strokeStyle = 'rgba(245, 158, 11, 0.65)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(110, 95, 500, 46);
 
-  ctx.beginPath();
-  ctx.arc(0, 0, 72, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.fillStyle = 'rgba(212, 175, 55, 0.75)';
-  ctx.font = '700 44px "Playfair Display", Georgia, serif';
+  ctx.fillStyle = '#FBBF24';
+  ctx.font = '700 20px "Plus Jakarta Sans", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`SCENE ${String(sceneIndex + 1).padStart(2, '0')}`, 0, 0);
+  ctx.fillText('CHƯA CÓ ẢNH THẬT • CÓ SẴN PROMPT KLING AI', 360, 118);
+
+  // Classic film reel emblem in center top
+  ctx.save();
+  ctx.translate(360, 310);
+  ctx.strokeStyle =
+    sceneType === 'video' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(16, 185, 129, 0.55)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 92, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, 76, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = sceneType === 'video' ? '#38BDF8' : '#34D399';
+  ctx.font = '700 38px "Playfair Display", Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`CẢNH #${String(sceneIndex + 1).padStart(2, '0')}`, 0, -14);
+
+  ctx.fillStyle = '#FDE68A';
+  ctx.font = '700 18px "Plus Jakarta Sans", sans-serif';
+  ctx.fillText(sceneType === 'video' ? 'CẦN VIDEO KLING' : 'CẦN ẢNH KLING', 0, 24);
   ctx.restore();
 
   // Character / Scene Title
   ctx.fillStyle = pal[2];
-  ctx.font = '700 32px "Playfair Display", Georgia, serif';
+  ctx.font = '700 30px "Playfair Display", Georgia, serif';
   ctx.textAlign = 'center';
-  ctx.fillText(characterOrTitle.slice(0, 34).toUpperCase(), 360, 500);
+  ctx.fillText(characterOrTitle.slice(0, 32).toUpperCase(), 360, 465);
 
   // Subtitle / Visual description wrapped
-  ctx.fillStyle = 'rgba(214, 211, 209, 0.75)';
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
   ctx.font = 'italic 500 22px "Plus Jakarta Sans", sans-serif';
   const words = subtitle.split(/\s+/);
   let line = '';
-  let y = 555;
+  let y = 520;
   for (let i = 0; i < words.length; i++) {
     const test = line + words[i] + ' ';
     if (ctx.measureText(test).width > 520 && line) {
@@ -82,5 +101,11 @@ export function generateVintageArchivalDataUrl(
   }
   if (line) ctx.fillText(line.trim(), 360, y);
 
-  return canvas.toDataURL('image/jpeg', 0.85);
+  // Bottom instruction
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.9)';
+  ctx.font = '600 18px "Plus Jakarta Sans", sans-serif';
+  ctx.fillText('Mở "Bảng Prompt" để Copy Prompt Chuẩn Kling AI vẽ cảnh này', 360, 845);
+
+  return canvas.toDataURL('image/jpeg', 0.88);
 }
+

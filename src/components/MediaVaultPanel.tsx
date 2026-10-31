@@ -18,7 +18,12 @@ import {
   Globe,
 } from 'lucide-react';
 import { PresetId, StoryScene, VaultItem } from '../types';
-import { getMediaDuration } from '../utils/frameExtractor';
+import {
+  cleanDisplayFileName,
+  detectMediaKindFromFile,
+  extractVideoThumbnail,
+  getMediaDuration,
+} from '../utils/frameExtractor';
 
 interface MediaVaultPanelProps {
   vaultItems: VaultItem[];
@@ -75,24 +80,30 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
     const newItems: VaultItem[] = [];
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
+      const detectedKind = detectMediaKindFromFile(file);
+      if (!detectedKind) continue;
+
       const objectUrl = URL.createObjectURL(file);
-      const isVideo = file.type.startsWith('video/');
-      const isImage = file.type.startsWith('image/');
+      const isVideo = detectedKind === 'video';
 
-      if (!isVideo && !isImage) continue;
-
-      let durationSec: number | undefined;
+      let durationSec: number = 7;
+      let thumbnailUrl: string | undefined = !isVideo ? objectUrl : undefined;
       if (isVideo) {
-        durationSec = await getMediaDuration(objectUrl, 'video');
+        const [dur, thumb] = await Promise.all([
+          getMediaDuration(objectUrl, 'video'),
+          extractVideoThumbnail(objectUrl),
+        ]);
+        durationSec = dur;
+        thumbnailUrl = thumb;
       }
 
       newItems.push({
         id: `upload-${Date.now()}-${i}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        type: isVideo ? 'video' : 'image',
+        name: cleanDisplayFileName(file.name),
+        type: detectedKind,
         url: objectUrl,
-        thumbnailUrl: isImage ? objectUrl : undefined,
-        durationSec: isVideo ? durationSec : 7,
+        thumbnailUrl,
+        durationSec,
         sourceTag: 'uploaded',
         createdAt: 'Vừa tải lên',
       });
@@ -233,8 +244,36 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 >
                   <option value={6}>6 cảnh (Nhanh ~45s)</option>
                   <option value={8}>8 cảnh (Chuẩn ~65s)</option>
+                  <option value={10}>10 cảnh (Vừa ~85s)</option>
                   <option value={12}>12 cảnh (Dài ~100s)</option>
+                  <option value={14}>14 cảnh (Sâu ~120s)</option>
+                  <option value={16}>16 cảnh (Đầy đủ ~140s)</option>
+                  <option value={18}>18 cảnh (Chi tiết ~160s)</option>
+                  <option value={20}>20 cảnh (Trọn bộ ~180s)</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Quick Scene Count Selector Buttons (including 14, 16, 18, and 20 scenes) */}
+            <div className="space-y-1">
+              <span className="block text-[10px] font-medium text-slate-400">
+                Chọn nhanh dạng phân cảnh:
+              </span>
+              <div className="grid grid-cols-4 gap-1">
+                {[6, 8, 10, 12, 14, 16, 18, 20].map((cnt) => (
+                  <button
+                    key={cnt}
+                    type="button"
+                    onClick={() => setSceneCount(cnt)}
+                    className={`py-1 text-[11px] font-mono-tabular rounded border transition-colors ${
+                      sceneCount === cnt
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                        : 'bg-[#111827] border-slate-800 text-slate-300 hover:border-amber-500/50'
+                    }`}
+                  >
+                    {cnt} cảnh
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -282,21 +321,21 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             </div>
           </div>
 
-          {/* ChatGPT Pro & Grok Connection Card */}
+          {/* ChatGPT Pro & Kling AI Connection Card */}
           <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-slate-800 space-y-2">
             <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
               <MessageSquareCode className="w-4 h-4 text-emerald-400" />
-              Trạm Vẽ Ảnh Full Khung & Tạo Video Grok
+              Trạm Vẽ Ảnh Full Khung & Tạo Video Kling AI
             </h4>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Mở bảng phân cảnh để <strong>Tạo Ảnh Gốc chuẩn 3:4 (1080×1440px)</strong> chỉ với 1 click, tải Ảnh Gốc + Prompt chuyển động sang <strong>Grok</strong> làm video, rồi thả lại vào đây!
+              Mở bảng phân cảnh để <strong>Tạo Ảnh Gốc chuẩn 3:4 (1080×1440px)</strong> chỉ với 1 click, tải Ảnh Gốc + Prompt chuyển động sang <strong>Kling AI (Image-to-Video)</strong> làm video người nổi tiếng không bị chặn, rồi thả lại vào đây!
             </p>
             <button
               onClick={onOpenPromptStudio}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               <MessageSquareCode className="w-3.5 h-3.5" />
-              Mở Bảng Phân Cảnh & Tạo Ảnh/Video Grok
+              Mở Bảng Phân Cảnh & Tạo Ảnh/Video Kling AI
             </button>
           </div>
         </div>
@@ -333,7 +372,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             >
               <Upload className="w-4 h-4 text-amber-400 mx-auto mb-1" />
               <p className="text-xs font-semibold text-slate-200">
-                Thả Video (Grok) & Ảnh Mới Của Bạn Vào Kho
+                Thả Video (Kling AI) & Ảnh Mới Của Bạn Vào Kho
               </p>
               <p className="text-[11px] text-slate-400">
                 Chọn nhiều file .MP4, .MOV, .JPG, .PNG cùng lúc
@@ -408,7 +447,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                   Kho tư liệu đang trống (Đã dọn sạch ảnh/video cũ)
                 </p>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Hãy tải video Grok / ảnh mới của bạn lên, hoặc qua tab <strong>Tự Động A-Z</strong> để tạo ảnh mới!
+                  Hãy tải video Kling AI / ảnh mới của bạn lên, hoặc qua tab <strong>Tự Động A-Z</strong> để tạo ảnh mới!
                 </p>
               </div>
             ) : (

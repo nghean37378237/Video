@@ -58,9 +58,19 @@ export interface StoryScene {
   frameStyle: FrameStyle;
   /** Custom AI TTS or uploaded voiceover audio URL for this specific scene */
   voiceoverUrl?: string;
+  /** Which TTS engine/voice profile generated this scene's audio so all scenes stay 100% locked */
+  voiceEngineUsed?: string;
   /** Whether to show the bottom word-by-word yellow subtitles on this scene */
   showBottomSubtitles: boolean;
+  /** True only when a verified real archival photo of the subject (or user-uploaded media) is assigned; false when no real photo was found and the user should use the Kling AI prompt to draw */
+  hasRealPhoto?: boolean;
+  /** Title/source of the verified real archival photo if found */
+  realPhotoTitle?: string;
+  /** Complete ready-to-copy Standard Kling AI Prompt (Text-to-Image + 3-Beat Image-to-Video) in chronological order */
+  klingStandardPrompt?: string;
 }
+
+export type TransitionStyle = 'crossfade' | 'dip-to-black' | 'film-glow' | 'cut';
 
 export interface ProjectSettings {
   projectTitle: string;
@@ -69,8 +79,16 @@ export interface ProjectSettings {
   aspectRatio: AspectRatioOption;
   /** Audio source mode: 'reference-video' uses the original sample video audio track; 'stitched-scenes' plays per-scene voiceovers + background music */
   audioMode: 'reference-video' | 'stitched-scenes';
+  /** Smooth scene transition style between segments */
+  transitionStyle?: TransitionStyle;
+  /** Duration of crossfade/transition in seconds (default 0.75s) */
+  transitionDurationSec?: number;
   /** Subtitle display language */
   subtitleLanguage: 'en' | 'vi' | 'bilingual';
+  /** Locked voiceover language across all scenes ('vi' or 'en') so voice never switches language mid-video */
+  voiceLanguage?: 'vi' | 'en';
+  /** Locked TTS engine across the entire project so Scene 1 and Scene N never use different engines */
+  lockedTtsEngine?: 'gemini-single-pass' | 'standard-locked';
   /** Highlight color for active spoken word (default #FFD700 gold yellow) */
   activeWordColor: string;
   /** Number of words per subtitle phrase line */

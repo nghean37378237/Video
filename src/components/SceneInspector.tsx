@@ -31,8 +31,16 @@ import {
   buildFullFrameImagePrompt,
   buildFullFrameVideoPrompt,
   downloadFullFrameImageForGrok,
+  generateScriptedVideoMotionPrompt,
   getAspectRatioSpec,
+  KLING_NEGATIVE_PROMPT,
+  VideoScriptStyle,
 } from '../utils/fullFrameHelper';
+import {
+  masterAudioToConsistentStudioWav,
+  resolveConsistentSceneText,
+  VOICE_PERSONA_PROFILES,
+} from '../utils/voiceConsistencyEngine';
 
 interface SceneInspectorProps {
   activeScene: StoryScene | undefined;
@@ -47,6 +55,7 @@ interface SceneInspectorProps {
   onOpenPromptStudio: () => void;
   onGenerateImageViaProxyForScene?: (scene: StoryScene) => Promise<void>;
   generatingImageSceneId?: string | null;
+  onUploadFileForScene?: (sceneId: string, file: File) => void;
 }
 
 export const SceneInspector: React.FC<SceneInspectorProps> = ({
@@ -62,12 +71,14 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   onOpenPromptStudio,
   onGenerateImageViaProxyForScene,
   generatingImageSceneId,
+  onUploadFileForScene,
 }) => {
   const [activeTab, setActiveTab] = useState<'scene' | 'style'>('scene');
   const [isGeneratingSceneTTS, setIsGeneratingSceneTTS] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isDownloadingFullFrame, setIsDownloadingFullFrame] = useState(false);
+  const [isFetchingRealPhoto, setIsFetchingRealPhoto] = useState(false);
 
   const ratioSpec = getAspectRatioSpec(settings.aspectRatio);
 
@@ -75,6 +86,42 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 1800);
+  };
+
+  const handleFetchRealPhotoForScene = async () => {
+    if (!activeScene || isFetchingRealPhoto) return;
+    setIsFetchingRealPhoto(true);
+    try {
+      const res = await fetch('/api/archival/match-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: settings.projectTitle,
+          scenes: [
+            {
+              id: activeScene.id,
+              title: activeScene.title,
+              sceneType: activeScene.sceneType,
+              archivalKeywords: activeScene.archivalKeywords || activeScene.title,
+            },
+          ],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const matched = data?.matchedBySceneId?.[activeScene.id];
+        if (matched?.dataUrl) {
+          onUpdateScene(activeScene.id, {
+            mediaUrl: matched.dataUrl,
+            mediaKind: 'image',
+            frameStyle: 'full-bleed',
+            showBottomSubtitles: true,
+          });
+        }
+      }
+    } finally {
+      setIsFetchingRealPhoto(false);
+    }
   };
 
   const handleDownloadFullFrame = async () => {
@@ -85,22 +132,25 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         activeScene.mediaUrl,
         activeScene.mediaKind,
         settings.aspectRatio,
-        `Canh-${String(activeScene.order).padStart(2, '0')}-Grok`
+        `Canh-${String(activeScene.order).padStart(2, '0')}-KlingAI`
       );
     } finally {
       setIsDownloadingFullFrame(false);
     }
   };
 
+  const activeVoiceLang: 'vi' | 'en' =
+    settings.voiceLanguage ||
+    (settings.subtitleLanguage === 'en' ? 'en' : 'vi');
+
   const handleGenerateSceneTTS = async () => {
     if (!activeScene) return;
     setIsGeneratingSceneTTS(true);
     setTtsError(null);
 
-    const textToSpeak =
-      settings.subtitleLanguage === 'vi' && activeScene.translationText
-        ? activeScene.translationText
-        : activeScene.narrationText;
+    const voiceName = settings.ttsVoice || 'Charon';
+    const persona = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
+    const textToSpeak = resolveConsistentSceneText(activeScene, activeVoiceLang);
 
     try {
       const response = await fetch('/api/tts/generate', {
@@ -108,8 +158,10 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: textToSpeak,
-          voiceName: settings.ttsVoice,
-          style: 'Deep, warm, calm documentary storyteller voice with emotional gravitas',
+          voiceName,
+          language: activeVoiceLang,
+          preferredEngine: settings.lockedTtsEngine,
+          style: persona.geminiAnchorPrompt,
         }),
       });
 
@@ -118,12 +170,31 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         throw new Error(data.error || 'Không thể tạo giọng đọc AI.');
       }
 
-      const exactDur = await getMediaDuration(data.audioDataUrl, 'audio');
-      onUpdateScene(activeScene.id, {
-        voiceoverUrl: data.audioDataUrl,
-        durationSec: Math.max(4, Math.ceil(exactDur * 10) / 10 + 0.4),
+      const engineUsed = data.engine || settings.lockedTtsEngine || 'standard-locked';
+      try {
+        const { masteredAudioUrl, durationSec } = await masterAudioToConsistentStudioWav(
+          data.audioDataUrl,
+          voiceName,
+          engineUsed
+        );
+        onUpdateScene(activeScene.id, {
+          voiceoverUrl: masteredAudioUrl,
+          voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
+          durationSec: Math.max(4, Math.ceil(durationSec * 10) / 10 + 0.35),
+        });
+      } catch {
+        const exactDur = await getMediaDuration(data.audioDataUrl, 'audio');
+        onUpdateScene(activeScene.id, {
+          voiceoverUrl: data.audioDataUrl,
+          voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
+          durationSec: Math.max(4, Math.ceil(exactDur * 10) / 10 + 0.35),
+        });
+      }
+
+      onUpdateSettings({
+        audioMode: 'stitched-scenes',
+        voiceLanguage: activeVoiceLang,
       });
-      onUpdateSettings({ audioMode: 'stitched-scenes' });
     } catch (err: any) {
       setTtsError(err?.message || 'Lỗi khi tạo giọng đọc.');
     } finally {
@@ -193,7 +264,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 <option value="video">🎥 CẦN VIDEO (Full Khung {ratioSpec.ratio})</option>
                 <option value="image">🖼️ CẦN ẢNH TĨNH (Full Khung {ratioSpec.ratio})</option>
                 <option value="quote">⬛ THẺ CHỮ ĐEN (Tự động dựng)</option>
-                <option value="outro">🦅 LOGO KẾT (Huy hiệu Life Legends)</option>
+                <option value="outro">🦅 LOGO KẾT CỐ ĐỊNH (LIFE LEGENDS — HM)</option>
               </select>
             </div>
             <div>
@@ -215,6 +286,27 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               />
             </div>
           </div>
+
+          {activeScene.sceneType === 'outro' && (
+            <div className="p-3 rounded-lg bg-[#090D15] border border-amber-500/40 flex items-center gap-3">
+              <div className="w-16 h-20 rounded overflow-hidden border border-amber-500/60 shrink-0 bg-[#070E1A]">
+                <img
+                  src="/assets/aistudio/image_4653598d.png"
+                  alt="LIFE LEGENDS HM Fixed Logo"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 shrink-0" />
+                  <span>Logo Cuối Đã Cố Định (HM — LIFE LEGENDS)</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  Mọi video tạo mới hoặc xuất file đều tự động gắn logo kết chuẩn <strong>LIFE LEGENDS • HM • THEIR LEGACY. YOUR INSPIRATION.</strong> với độ nét cao.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Ready-to-Copy Full-Frame Image & Video Prompts + Keyframe Image for this Segment */}
           {(activeScene.sceneType === 'video' || activeScene.sceneType === 'image') && (
@@ -254,14 +346,52 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                       Ảnh Gốc Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
                     </p>
                     <p className="text-[10px] text-slate-400 leading-snug">
-                      Bấm tải ảnh chuẩn kích thước này về để đưa vào Grok tạo Video chuyển động không bị viền đen.
+                      Bấm tải ảnh chuẩn kích thước này đưa vào <strong>Kling AI (Image-to-Video)</strong> để tạo chuyển động người nổi tiếng mượt mà, không bị chặn.
                     </p>
                   </div>
                 </div>
               )}
 
+              {/* Direct 1-Click Upload / Replace New Image or Video into this Scene */}
+              {onUploadFileForScene && (
+                <label className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md cursor-pointer transition-colors shadow-sm">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Chèn / Thay Ảnh Hoặc Video Mới Vào Cảnh #{activeScene.order}</span>
+                  <input
+                    type="file"
+                    accept="video/*,image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        onUploadFileForScene(activeScene.id, file);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              )}
+
               {/* Quick Actions for Full-Frame Keyframe Image */}
               <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={handleFetchRealPhotoForScene}
+                  disabled={isFetchingRealPhoto}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-md transition-colors"
+                >
+                  {isFetchingRealPhoto ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Đang tìm ảnh thật...
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="w-3 h-3" />
+                      Lấy Ảnh Thực Tế
+                    </>
+                  )}
+                </button>
+
                 {onGenerateImageViaProxyForScene && (
                   <button
                     onClick={() => onGenerateImageViaProxyForScene(activeScene)}
@@ -276,25 +406,25 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                     ) : (
                       <>
                         <Sparkles className="w-3 h-3" />
-                        Vẽ Ảnh Gốc {ratioSpec.ratio}
+                        Vẽ Lại Bằng AI ({ratioSpec.ratio})
                       </>
                     )}
                   </button>
                 )}
-
-                {activeScene.mediaUrl && (
-                  <button
-                    onClick={handleDownloadFullFrame}
-                    disabled={isDownloadingFullFrame}
-                    className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 rounded-md transition-colors"
-                  >
-                    <Download className="w-3 h-3" />
-                    {isDownloadingFullFrame
-                      ? 'Đang xuất...'
-                      : `Tải Ảnh ${ratioSpec.width}×${ratioSpec.height} Cho Grok`}
-                  </button>
-                )}
               </div>
+
+              {activeScene.mediaUrl && (
+                <button
+                  onClick={handleDownloadFullFrame}
+                  disabled={isDownloadingFullFrame}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 rounded-md transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  {isDownloadingFullFrame
+                    ? 'Đang xuất ảnh chuẩn...'
+                    : `Tải Ảnh ${ratioSpec.width}×${ratioSpec.height}px Đưa Sang Kling AI Tạo Video`}
+                </button>
+              )}
 
               {/* Image Generation Prompt Box (Full-Frame) */}
               <div className="space-y-1">
@@ -341,51 +471,105 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 />
               </div>
 
-              {/* Video Animation Prompt Box (Full-Frame) */}
-              <div className="space-y-1 pt-1 border-t border-slate-800/80">
-                <div className="flex items-center justify-between">
+              {/* Video Animation Prompt Box (3-Beat Scripted Full-Frame for KLING AI) */}
+              <div className="space-y-1.5 pt-1.5 border-t border-slate-800/80">
+                <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-medium text-sky-400">
-                    2. Prompt Tạo Video Grok Full Khung ({ratioSpec.ratio} - {ratioSpec.width}×{ratioSpec.height}px):
+                    2. Kịch Bản Video KLING AI 3 Nhịp (Chuẩn Người Nổi Tiếng):
                   </span>
-                  <button
-                    onClick={() =>
-                      copyPrompt(
-                        buildFullFrameVideoPrompt(
-                          activeScene.videoMotionPrompt,
-                          activeScene.imagePrompt || activeScene.visualPrompt,
-                          settings.aspectRatio
-                        ),
-                        'vid'
-                      )
-                    }
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors"
-                  >
-                    {copiedField === 'vid' ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-400" />
-                        Đã Copy Full {ratioSpec.ratio}
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        Copy Prompt Grok {ratioSpec.ratio}
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() =>
+                        copyPrompt(
+                          buildFullFrameVideoPrompt(
+                            activeScene.videoMotionPrompt,
+                            activeScene.imagePrompt || activeScene.visualPrompt,
+                            settings.aspectRatio,
+                            activeScene.narrationText
+                          ),
+                          'vid'
+                        )
+                      }
+                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors"
+                    >
+                      {copiedField === 'vid' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          Đã Copy Prompt Kling
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          Copy Prompt Kling {ratioSpec.ratio}
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => copyPrompt(KLING_NEGATIVE_PROMPT, 'neg-vid')}
+                      title="Copy Negative Prompt cho Kling AI để giữ nguyên khuôn mặt không bị biến dạng"
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors"
+                    >
+                      {copiedField === 'neg-vid' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          Đã Copy Negative
+                        </>
+                      ) : (
+                        <span>+Negative</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Quick 1-Click Scripted Motion Style Presets for Kling AI */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {(
+                    [
+                      { id: 'narrative-hook', label: '🎬 Kling Tự sự & Nhép môi' },
+                      { id: 'cinematic-action', label: '🐎 Kling Hành động' },
+                      { id: 'emotional-closeup', label: '🌅 Kling Nội tâm' },
+                    ] as { id: VideoScriptStyle; label: string }[]
+                  ).map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() =>
+                        onUpdateScene(activeScene.id, {
+                          videoMotionPrompt: generateScriptedVideoMotionPrompt({
+                            title: activeScene.title,
+                            narrationText: activeScene.narrationText,
+                            imagePrompt: activeScene.imagePrompt,
+                            visualPrompt: activeScene.visualPrompt,
+                            style: preset.id,
+                            ratio: settings.aspectRatio,
+                          }),
+                        })
+                      }
+                      className="px-2 py-0.5 text-[10px] font-medium bg-slate-800/90 hover:bg-sky-500/25 text-sky-200 border border-slate-700 hover:border-sky-500/40 rounded transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
                 <textarea
-                  rows={2}
+                  rows={4}
                   value={buildFullFrameVideoPrompt(
                     activeScene.videoMotionPrompt,
                     activeScene.imagePrompt || activeScene.visualPrompt,
-                    settings.aspectRatio
+                    settings.aspectRatio,
+                    activeScene.narrationText
                   )}
                   onChange={(e) =>
                     onUpdateScene(activeScene.id, { videoMotionPrompt: e.target.value })
                   }
-                  placeholder={`Prompt tiếng Anh tạo Video Grok Full Khung ${ratioSpec.ratio}...`}
-                  className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 focus:outline-none focus:border-amber-500"
+                  placeholder={`Kịch bản 3 nhịp [0-2s] -> [2-4s] -> [4-6s] cho Kling AI Image-to-Video Full Khung ${ratioSpec.ratio}...`}
+                  className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 leading-relaxed focus:outline-none focus:border-amber-500"
                 />
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  💡 <strong>Chuẩn Kling AI Người Nổi Tiếng:</strong> Tải <em>Ảnh Gốc Full Khung</em> ở trên thả vào mục <strong>Image to Video</strong> của Kling AI + Dán Prompt này (đã tự động ẩn tên nhạy cảm & khóa giữ nguyên 100% khuôn mặt từ ảnh gốc).
+                </p>
               </div>
             </div>
           )}
@@ -494,21 +678,39 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
           {/* AI Documentary Voiceover Generator & Custom Audio Upload */}
           <div className="p-3 rounded-lg bg-[#0B0F17] border border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-amber-400" />
-                Giọng Đọc Thuyết Minh & Ghép Voice
+                Voice Đồng Nhất Từ Đầu Đến Cuối
               </span>
               {activeScene.voiceoverUrl && (
-                <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                <span className="text-[11px] text-emerald-400 flex items-center gap-1 whitespace-nowrap">
                   <CheckCircle2 className="w-3 h-3" />
-                  Đã khớp thời lượng ({activeScene.durationSec}s)
+                  Đã chuẩn hóa ({activeScene.durationSec}s)
                 </span>
               )}
             </div>
 
-            {/* Option 1: Built-in AI Voiceover */}
-            <div className="flex items-center gap-2">
+            <div className="px-2.5 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 leading-relaxed">
+              🔒 Khóa đồng nhất 100%: Toàn bộ các cảnh dùng chung 1 giọng, 1 ngôn ngữ, cùng tốc độ và chuẩn hóa âm lượng phòng thu (-16 LUFS) xuyên suốt.
+            </div>
+
+            {/* Locked Voice Language + Voice Persona Selector */}
+            <div className="grid grid-cols-5 gap-1.5">
+              <select
+                value={activeVoiceLang}
+                onChange={(e) =>
+                  onUpdateSettings({
+                    voiceLanguage: e.target.value as 'vi' | 'en',
+                  })
+                }
+                title="Khóa ngôn ngữ giọng đọc xuyên suốt từ đầu đến cuối"
+                className="col-span-2 px-2 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-700 rounded text-amber-300"
+              >
+                <option value="vi">🇻🇳 Đọc Tiếng Việt</option>
+                <option value="en">🇺🇸 Đọc Tiếng Anh</option>
+              </select>
+
               <select
                 value={settings.ttsVoice}
                 onChange={(e) =>
@@ -516,54 +718,56 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                     ttsVoice: e.target.value as ProjectSettings['ttsVoice'],
                   })
                 }
-                className="flex-1 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
+                className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
               >
-                <option value="Charon">Charon (Trầm ấm Documentary)</option>
+                <option value="Charon">Charon (Nam trầm ấm Documentary)</option>
                 <option value="Fenrir">Fenrir (Nam trầm uy nghiêm)</option>
                 <option value="Puck">Puck (Truyền cảm tự nhiên)</option>
                 <option value="Kore">Kore (Nữ dịu dàng sâu lắng)</option>
-                <option value="Zephyr">Zephyr (Trong trẻo kể chuyện)</option>
+                <option value="Zephyr">Zephyr (Nữ trong trẻo kể chuyện)</option>
               </select>
+            </div>
 
+            {/* 1-Click Generate & Lock Uniform AI Voiceover for ALL scenes */}
+            <button
+              onClick={onGenerateAllVoiceovers}
+              disabled={isGeneratingAllTTS}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              {isGeneratingAllTTS ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                  {ttsProgressText || 'Đang đồng bộ giọng đọc xuyên suốt...'}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Đồng Bộ Voice Đồng Nhất Từ Đầu Đến Cuối (1 Click)
+                </>
+              )}
+            </button>
+
+            <div className="flex items-center justify-between gap-2">
               <button
                 onClick={handleGenerateSceneTTS}
                 disabled={isGeneratingSceneTTS}
-                className="px-2.5 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                className="flex-1 px-2.5 py-1.5 text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-amber-300 border border-amber-500/40 rounded transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
               >
                 {isGeneratingSceneTTS ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Đang tạo...
+                    Đang thu âm cảnh #{activeScene.order}...
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-3.5 h-3.5" />
-                    AI Đọc Cảnh Này
+                    Thu Lại Riêng Cảnh #{activeScene.order} (Giữ Đồng Nhất)
                   </>
                 )}
               </button>
             </div>
 
             {ttsError && <p className="text-[11px] text-rose-400">{ttsError}</p>}
-
-            {/* 1-Click Generate AI Voiceover for ALL scenes */}
-            <button
-              onClick={onGenerateAllVoiceovers}
-              disabled={isGeneratingAllTTS}
-              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-amber-300 rounded border border-amber-500/40 transition-colors whitespace-nowrap shrink-0"
-            >
-              {isGeneratingAllTTS ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                  {ttsProgressText || 'Đang tạo giọng đọc toàn bộ...'}
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  Tự Động Đọc & Khớp Nhịp Toàn Bộ Các Cảnh (1 Click)
-                </>
-              )}
-            </button>
 
             {/* Option 2: Upload External Voice File (.mp3 / .wav from ElevenLabs, CapCut, etc.) */}
             <div className="pt-1.5 border-t border-slate-800/80 space-y-2">
@@ -577,11 +781,24 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                     const file = e.target.files?.[0];
                     if (!file) return;
                     const audioUrl = URL.createObjectURL(file);
-                    const exactDur = await getMediaDuration(audioUrl, 'audio');
-                    onUpdateScene(activeScene.id, {
-                      voiceoverUrl: audioUrl,
-                      durationSec: Math.max(3, Math.ceil(exactDur * 10) / 10 + 0.3),
-                    });
+                    try {
+                      const { masteredAudioUrl, durationSec } =
+                        await masterAudioToConsistentStudioWav(
+                          audioUrl,
+                          settings.ttsVoice,
+                          'gemini-tts'
+                        );
+                      onUpdateScene(activeScene.id, {
+                        voiceoverUrl: masteredAudioUrl,
+                        durationSec: Math.max(3, Math.ceil(durationSec * 10) / 10 + 0.3),
+                      });
+                    } catch {
+                      const exactDur = await getMediaDuration(audioUrl, 'audio');
+                      onUpdateScene(activeScene.id, {
+                        voiceoverUrl: audioUrl,
+                        durationSec: Math.max(3, Math.ceil(exactDur * 10) / 10 + 0.3),
+                      });
+                    }
                     onUpdateSettings({ audioMode: 'stitched-scenes' });
                   }}
                   className="hidden"
@@ -597,7 +814,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   />
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-slate-400">
-                      Đã tự động khớp độ dài cảnh theo giọng đọc
+                      Đã chuẩn hóa âm lượng & khớp thời lượng cảnh
                     </span>
                     <a
                       href={activeScene.voiceoverUrl}
@@ -715,10 +932,58 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
           <div>
             <h3 className="text-xs font-semibold text-slate-200 mb-2">
-              02. Nhạc Nền Documentary & Hiệu Ứng Phim
+              02. Hiệu Ứng Chuyển Cảnh Mượt & Nhạc Nền
             </h3>
             <div className="space-y-3 p-3 rounded-lg bg-[#0B0F17] border border-slate-800">
               <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Kiểu chuyển cảnh giữa các đoạn (Smooth Transitions)
+                </label>
+                <select
+                  value={settings.transitionStyle || 'crossfade'}
+                  onChange={(e) =>
+                    onUpdateSettings({
+                      transitionStyle: e.target.value as ProjectSettings['transitionStyle'],
+                    })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-100"
+                >
+                  <option value="crossfade">
+                    Mượt Đan Xen (Cross-Dissolve 60fps — Khuyên dùng)
+                  </option>
+                  <option value="dip-to-black">
+                    Mờ Qua Đen Điện Ảnh (Cinema Dip-to-Black)
+                  </option>
+                  <option value="film-glow">
+                    Ánh Chớp Phim Cổ Điển (Vintage Film Glow)
+                  </option>
+                  <option value="cut">
+                    Cắt Trực Tiếp Làm Mềm Cạnh (Soft Cut)
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-300">Độ mượt chuyển cảnh (Thời gian hòa trộn)</span>
+                  <span className="font-mono-tabular text-amber-400">
+                    {(settings.transitionDurationSec ?? 0.75).toFixed(2)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.3}
+                  max={1.5}
+                  step={0.05}
+                  value={settings.transitionDurationSec ?? 0.75}
+                  onChange={(e) =>
+                    onUpdateSettings({ transitionDurationSec: parseFloat(e.target.value) })
+                  }
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+              </div>
+
+              <div className="pt-1 border-t border-slate-800/80">
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   Giai điệu nhạc nền (Khi ghép video mới)
                 </label>
@@ -785,10 +1050,35 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold text-slate-200 mb-2">
-              03. Huy Hiệu Kênh Cuối Video (Outro Crest)
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-slate-200">
+                03. Logo Kênh Cố Định Cuối Video (Outro Crest)
+              </h3>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    channelTitle: 'LIFE LEGENDS',
+                    channelInitials: 'HM',
+                    channelMotto: 'THEIR LEGACY. YOUR INSPIRATION.',
+                  })
+                }
+                className="text-[10px] font-semibold text-amber-400 hover:text-amber-300"
+              >
+                Khóa chuẩn HM
+              </button>
+            </div>
             <div className="space-y-2.5 p-3 rounded-lg bg-[#0B0F17] border border-slate-800">
+              <div className="flex items-center gap-2.5 pb-2 border-b border-slate-800">
+                <img
+                  src="/assets/aistudio/image_4653598d.png"
+                  alt="LIFE LEGENDS HM"
+                  className="w-12 h-14 rounded object-cover border border-amber-500/50 shrink-0"
+                />
+                <div className="text-[11px] text-slate-300 leading-snug">
+                  Đã khóa mặc định logo <strong>LIFE LEGENDS — HM — THEIR LEGACY. YOUR INSPIRATION.</strong> ở cảnh kết thúc của toàn bộ video.
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   Tên kênh (Vòng cung trên)

@@ -27,8 +27,13 @@ import {
   AspectRatioOption,
   buildFullFrameImagePrompt,
   buildFullFrameVideoPrompt,
+  buildStandardKlingDrawPrompt,
   downloadFullFrameImageForGrok,
+  generateScriptedVideoMotionPrompt,
   getAspectRatioSpec,
+  getChronologicalStageInfo,
+  KLING_NEGATIVE_PROMPT,
+  VideoScriptStyle,
 } from '../utils/fullFrameHelper';
 
 interface ScriptPromptStudioModalProps {
@@ -41,7 +46,8 @@ interface ScriptPromptStudioModalProps {
     rawScript: string,
     lang: 'en' | 'vi',
     runAutoPilotAfter?: boolean,
-    characterHint?: string
+    characterHint?: string,
+    targetSceneCount?: number
   ) => Promise<void>;
   isParsingScript: boolean;
   onGenerateAIStory: (topic: string, lang: 'vi' | 'en', sceneCount: number) => Promise<void>;
@@ -84,13 +90,16 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   const [activeTab, setActiveTab] = useState<
     'checklist' | 'proxy-api' | 'chatgpt-bridge' | 'paste-script'
   >('checklist');
+  const [sceneFilter, setSceneFilter] = useState<'all' | 'missing-photo' | 'has-photo'>('all');
   const [rawScriptInput, setRawScriptInput] = useState(
     `A circus performer. A nightclub singer. A king. A gunfighter. Yul Brynner lived more lives than most men could ever dream of.\n\nThe shaved head, the piercing eyes, that slow confident walk. He didn't need to raise his voice. He just stood there, and the scene was his.\n\nBut his story didn't begin in Hollywood. It began far away, in Vladivostok, Russia, on July eleventh, nineteen twenty.\n\nAs a boy, he moved to China, then to France. New countries, new languages, and a restless young heart that never stood still.`
   );
   const [scriptCharacterHint, setScriptCharacterHint] = useState('Yul Brynner');
   const [scriptLang, setScriptLang] = useState<'en' | 'vi'>('en');
+  const [pasteSceneCount, setPasteSceneCount] = useState<number>(14);
   const [chatGptCharacter, setChatGptCharacter] = useState('Clint Eastwood');
   const [chatGptLang, setChatGptLang] = useState<'en' | 'vi'>('en');
+  const [chatGptSceneCount, setChatGptSceneCount] = useState<number>(14);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [downloadingSceneId, setDownloadingSceneId] = useState<string | null>(null);
 
@@ -101,14 +110,14 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   const [isTestingProxy, setIsTestingProxy] = useState<boolean>(false);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [availableModels, setAvailableModels] = useState<string[]>([
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
+    'claude-opus-4-6',
     'gpt-6-astra',
     'gpt-6-sol',
     'gpt-6-luna',
     'gpt-6.1-sol',
-    'gpt-6.1-terra',
     'gpt-5.6-sol',
-    'claude-sonnet-4-6',
-    'claude-opus-4-6',
     'deepseek-v4-pro',
     'deepseek-v4-flash',
     'gemini-3-8-flash',
@@ -119,7 +128,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   } | null>(null);
 
   const sceneFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const batchFileInputRef = useRef<HTMLInputElement | null>(null);
+  const batchFileInputRef = useRef<Record<string, HTMLInputElement | null> | any>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -153,7 +162,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
         mediaUrl,
         mediaKind,
         aspectRatio,
-        `Canh-${String(scene.order).padStart(2, '0')}-Grok`
+        `Canh-${String(scene.order).padStart(2, '0')}-KlingAI`
       );
     } finally {
       setDownloadingSceneId(null);
@@ -175,9 +184,9 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
         setAvailableModels(data.models);
         if (data.models.length > 0 && !data.models.includes(proxyModel)) {
           const preferred =
-            data.models.find((m: string) => m.includes('gpt-6-astra')) ||
-            data.models.find((m: string) => m.includes('gpt-')) ||
+            data.models.find((m: string) => m.includes('claude-sonnet-4-6')) ||
             data.models.find((m: string) => m.includes('claude-')) ||
+            data.models.find((m: string) => m.includes('gpt-')) ||
             data.models[0];
           if (preferred) onChangeProxyModel(preferred);
         }
@@ -216,6 +225,9 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
       const data = await res.json();
       if (res.ok && data.ok) {
         setProxyKeyConfigured(true);
+        if (data.switchedModel && data.switchedModel !== proxyModel) {
+          onChangeProxyModel(data.switchedModel);
+        }
         setProxyTestResult({ ok: true, message: data.message });
       } else {
         setProxyTestResult({
@@ -239,18 +251,44 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
         ? 'Viết lời bình (Narration) bằng Tiếng Anh chuẩn giọng kể chuyện trầm ấm, câu ngắn gọn giàu nhịp điệu như kênh "Life Legends", kèm dịch nghĩa Tiếng Việt.'
         : 'Viết lời bình (Narration) bằng Tiếng Việt trầm ấm, giàu cảm xúc điện ảnh như kênh "Life Legends", kèm bản Tiếng Anh.';
 
-    return `Tôi đang sản xuất video kể chuyện (${ratioSpec.labelVi}, thời lượng ~2.5 phút) chuẩn kênh "Life Legends" bằng bộ 3 công cụ: ChatGPT Pro (viết kịch bản & vẽ ảnh), Grok (tạo video chuyển động), và LegendCut Studio (tự động ghép phim, đọc thuyết minh & làm phụ đề vàng).
+    const vidCount =
+      chatGptSceneCount >= 20
+        ? '6'
+        : chatGptSceneCount >= 18
+        ? '5-6'
+        : chatGptSceneCount >= 16
+        ? '5'
+        : chatGptSceneCount >= 14
+        ? '4-5'
+        : '3-4';
+    const quoteCount = chatGptSceneCount >= 18 ? '3-4' : chatGptSceneCount >= 14 ? '3' : '2';
+    const imgCount =
+      chatGptSceneCount >= 20
+        ? '9-10'
+        : chatGptSceneCount >= 18
+        ? '8-9'
+        : chatGptSceneCount >= 16
+        ? '7-8'
+        : chatGptSceneCount >= 14
+        ? '6-7'
+        : chatGptSceneCount >= 12
+        ? '5-6'
+        : '4-5';
 
-Hãy viết kịch bản tối ưu hóa công sức nhất (10 phân cảnh) về nhân vật: "${chatGptCharacter}".
+    return `Tôi đang sản xuất video kể chuyện (${ratioSpec.labelVi}, dạng ${chatGptSceneCount} phân cảnh) chuẩn kênh "Life Legends" bằng bộ 3 công cụ: ChatGPT Pro (viết kịch bản & vẽ ảnh), Kling AI (tạo video chuyển động Image-to-Video không chặn người nổi tiếng), và LegendCut Studio (tự động ghép phim, đọc thuyết minh đồng nhất & làm phụ đề vàng + khóa cố định Logo kết LIFE LEGENDS - HM).
+
+Hãy viết kịch bản tối ưu hóa công sức nhất (${chatGptSceneCount} phân cảnh) về nhân vật: "${chatGptCharacter}".
 ${langNote}
 
-QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.width}x${ratioSpec.height}px):
-1. Trong 10 phân cảnh:
-   - Chỉ dùng ĐÚNG 3-4 cảnh là [CẦN VIDEO - Tạo bằng Grok]: Cảnh #01 (Mở đầu gây ấn tượng), 1-2 cảnh giữa video, và Cảnh áp chót (Kết thúc cảm xúc). Mỗi cảnh Video phải có cả Prompt Ảnh Gốc Full Khung (${ratioSpec.ratio}, ${ratioSpec.width}x${ratioSpec.height}px, tràn viền 100%, không viền đen) VÀ Prompt Chuyển Động Grok Video Full Khung.
-   - 4-5 cảnh là [CẦN ẢNH TĨNH - Full Khung ${ratioSpec.ratio}]: Ảnh chân dung cổ điển tràn viền ${ratioSpec.width}x${ratioSpec.height}px.
-   - 2 cảnh là [THẺ CHỮ ĐEN - Quote Intertitle] và 1 cảnh cuối là [LOGO KẾT - Life Legends] (App của tôi tự động dựng 100%).
+QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL KHUNG (${ratioSpec.ratio} - ${ratioSpec.width}x${ratioSpec.height}px):
+1. Trong ${chatGptSceneCount} phân cảnh:
+   - Chỉ dùng ĐÚNG ${vidCount} cảnh là [CẦN VIDEO - Tạo bằng Kling AI Image-to-Video]: Cảnh #01 (Mở đầu gây ấn tượng), các cảnh cao trào giữa video, và Cảnh áp chót (Kết thúc cảm xúc). Mỗi cảnh Video phải có:
+     + Prompt Ảnh Gốc Full Khung (${ratioSpec.ratio}, ${ratioSpec.width}x${ratioSpec.height}px, tràn viền 100%, không viền đen).
+     + Prompt Chuyển Động Kling AI (Image-to-Video) viết theo KỊCH BẢN DIỄN XUẤT 3 NHỊP THỜI GIAN và KHÔNG nhắc tên người nổi tiếng trong câu lệnh video để tránh bộ lọc (chỉ gọi là "the subject in the reference frame" + mô tả ngoại hình/trang phục): "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: tư thế mở đầu từ ảnh gốc & bối cảnh -> [2-4s Story Action & Speech]: giữ nguyên 100% khuôn mặt từ ảnh gốc, hành động tương tác cụ thể, biểu cảm & cử động môi khớp lời thoại -> [4-6s Camera Control & Climax]: chuyển động máy quay Kling dolly push-in & ánh sáng cảm xúc".
+   - ${imgCount} cảnh là [CẦN ẢNH TĨNH - Full Khung ${ratioSpec.ratio}]: Ảnh chân dung cổ điển tràn viền ${ratioSpec.width}x${ratioSpec.height}px.
+   - ${quoteCount} cảnh là [THẺ CHỮ ĐEN - Quote Intertitle] và 1 cảnh cuối (#${chatGptSceneCount}) là [LOGO KẾT CỐ ĐỊNH - LIFE LEGENDS (HM)] (App của tôi tự động dựng 100%).
 2. Ở cuối câu trả lời, hãy gom riêng cho tôi:
-   - DANH SÁCH 4 PROMPT TẠO VIDEO GROK + ẢNH GỐC FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px, ${ratioSpec.arTag}) bằng Tiếng Anh để tôi copy làm 1 lượt trên Grok.
+   - DANH SÁCH ${vidCount} PROMPT KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP (Chuẩn Người Nổi Tiếng) + ẢNH GỐC FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px, ${ratioSpec.arTag}) bằng Tiếng Anh để tôi copy làm 1 lượt trên Kling AI.
    - Và hãy hỏi tôi: "Bạn có muốn tôi (ChatGPT Pro) vẽ luôn bộ ảnh gốc Full Khung tỷ lệ ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px) ngay bây giờ không?"`;
   };
 
@@ -265,12 +303,14 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
         const fullVidPrompt = buildFullFrameVideoPrompt(
           sc.videoMotionPrompt,
           sc.imagePrompt || sc.visualPrompt,
-          aspectRatio
+          aspectRatio,
+          sc.narrationText
         );
         return (
-          `[CẢNH VIDEO #${String(sc.order).padStart(2, '0')} - ${sc.title} | KHUNG HÌNH FULL: ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px)]\n` +
-          `• 1. Prompt Tạo Ảnh Gốc Full Khung (Dùng làm ảnh đầu vào cho Grok Video):\n${fullImgPrompt}\n\n` +
-          `• 2. Prompt Tạo Chuyển Động Grok Video (Full Khung Hình ${ratioSpec.ratio}):\n${fullVidPrompt}\n\n` +
+          `[CẢNH VIDEO KLING AI #${String(sc.order).padStart(2, '0')} - ${sc.title} | KHUNG HÌNH FULL: ${ratioSpec.ratio} (${ratioSpec.width}x${ratioSpec.height}px)]\n` +
+          `• 1. Prompt Tạo Ảnh Gốc Full Khung (Dùng làm ảnh đầu vào Start Frame cho Kling AI Image-to-Video):\n${fullImgPrompt}\n\n` +
+          `• 2. Prompt Tạo Chuyển Động Kling AI (Chuẩn Người Nổi Tiếng - Giữ 100% Mặt Thật):\n${fullVidPrompt}\n\n` +
+          `• 3. Negative Prompt Kling AI (Dán vào ô Negative Prompt):\n${KLING_NEGATIVE_PROMPT}\n\n` +
           `• Lời thoại trong cảnh (${sc.durationSec}s): "${sc.narrationText}"`
         );
       })
@@ -290,7 +330,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
         );
         return `Ảnh Cảnh #${String(sc.order).padStart(2, '0')} (${
           sc.sceneType === 'video'
-            ? `Ảnh Gốc Full Khung ${ratioSpec.ratio} để đưa vào Grok tạo Video`
+            ? `Ảnh Gốc Full Khung ${ratioSpec.ratio} để đưa vào Kling AI tạo Video`
             : `Ảnh Tĩnh Full Khung ${ratioSpec.ratio}`
         }):\n${fullImgPrompt}`;
       })
@@ -302,20 +342,57 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
   const videoScenesCount = scenes.filter((s) => s.sceneType === 'video').length;
   const imageScenesCount = scenes.filter((s) => s.sceneType === 'image').length;
   const quoteScenesCount = scenes.filter((s) => s.sceneType === 'quote').length;
+  const visualScenesList = scenes.filter(
+    (s) => s.sceneType === 'video' || s.sceneType === 'image'
+  );
+  const missingRealPhotoScenes = visualScenesList.filter((s) => s.hasRealPhoto === false);
+  const verifiedRealPhotoScenes = visualScenesList.filter((s) => s.hasRealPhoto !== false);
+
+  const copyMissingRealPhotoKlingPrompts = () => {
+    const targetList =
+      missingRealPhotoScenes.length > 0 ? missingRealPhotoScenes : visualScenesList;
+    const header =
+      `DANH SÁCH PROMPT CHUẨN KLING AI THEO THỨ TỰ MƯỢT MÀ (#01 -> #${String(scenes.length).padStart(2, '0')})\n` +
+      `(Dành cho ${targetList.length} phân cảnh chưa có ảnh thật trên mạng — tuyệt đối không lấy ảnh lung tung, bạn chỉ cần copy Prompt chuẩn bên dưới để vẽ Ảnh/Video trên Kling AI hoặc ChatGPT Pro):\n\n`;
+
+    const body = targetList
+      .map((sc) => {
+        if (sc.klingStandardPrompt) return sc.klingStandardPrompt;
+        const pack = buildStandardKlingDrawPrompt({
+          order: sc.order,
+          totalScenes: scenes.length,
+          characterName: scriptCharacterHint || chatGptCharacter || sc.title,
+          title: sc.title,
+          narrationText: sc.narrationText,
+          rawImagePrompt: sc.imagePrompt || sc.visualPrompt,
+          rawVideoPrompt: sc.videoMotionPrompt,
+          sceneType: sc.sceneType,
+          ratio: aspectRatio,
+        });
+        return pack.combinedBlock;
+      })
+      .join('\n\n==================================================\n\n');
+
+    copyToClipboard(header + body, 'copy-missing-kling');
+  };
 
   const [isBatchGeneratingImages, setIsBatchGeneratingImages] = useState<boolean>(false);
   const [batchImageProgress, setBatchImageProgress] = useState<string>('');
 
   const handleBatchGenerateAllImages = async () => {
     if (isBatchGeneratingImages) return;
-    const targetScenes = scenes.filter((s) => s.sceneType === 'image' || s.sceneType === 'video');
+    // Prefer drawing only scenes that are missing real photos first, or all visual scenes if all already have photos
+    const targetScenes =
+      missingRealPhotoScenes.length > 0 ? missingRealPhotoScenes : visualScenesList;
     if (targetScenes.length === 0) return;
 
     setIsBatchGeneratingImages(true);
     try {
       for (let i = 0; i < targetScenes.length; i++) {
         const sc = targetScenes[i];
-        setBatchImageProgress(`Đang tự vẽ ảnh ${i + 1}/${targetScenes.length}...`);
+        setBatchImageProgress(
+          `Đang tự vẽ ảnh Cảnh #${String(sc.order).padStart(2, '0')} (${i + 1}/${targetScenes.length})...`
+        );
         await onGenerateImageViaProxyForScene(sc);
       }
     } finally {
@@ -331,20 +408,39 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-b border-slate-800 bg-[#111827]">
           <div>
             <h2 className="text-base font-bold text-slate-100">
-              Trạm Kết Nối API Trung Gian (TrollLLM.xyz / YesScale / OpenRouter) & Bảng Phân Cảnh
+              Trạm Prompt Chuẩn Kling AI (Sắp Xếp Mượt Mà Theo Thứ Tự #01 → #{String(scenes.length).padStart(2, '0')})
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Chỉ cần làm <strong>{videoScenesCount} đoạn Video ngắn trên Grok</strong> +{' '}
-              <strong>{imageScenesCount} Ảnh tĩnh</strong> · Còn lại{' '}
-              {quoteScenesCount + 1} cảnh Chữ Đen & Logo App tự dựng 100%!
+              Đã lọc chuẩn <strong>{verifiedRealPhotoScenes.length} cảnh có Ảnh Thật</strong> (không lấy ảnh lung tung) ·{' '}
+              <strong className="text-amber-300">
+                {missingRealPhotoScenes.length} cảnh chưa có ảnh thật đã tạo sẵn Prompt Chuẩn Kling AI
+              </strong>{' '}
+              để bạn vẽ theo đúng thứ tự!
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={copyMissingRealPhotoKlingPrompts}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow transition-colors whitespace-nowrap shrink-0"
+            >
+              {copiedKey === 'copy-missing-kling' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-slate-950" />
+                  Đã Copy Prompt Kling ({missingRealPhotoScenes.length || visualScenesList.length} Cảnh) Theo Thứ Tự!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy Prompt Chuẩn Kling AI Cho {missingRealPhotoScenes.length > 0 ? `${missingRealPhotoScenes.length} Cảnh Chưa Có Ảnh Thật` : 'Tất Cả Cảnh'}
+                </>
+              )}
+            </button>
+
+            <button
               onClick={handleBatchGenerateAllImages}
               disabled={isBatchGeneratingImages || Boolean(generatingImageSceneId)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 text-emerald-300 border border-emerald-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               {isBatchGeneratingImages ? (
                 <>
@@ -354,7 +450,9 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  Tự Vẽ Hết Ảnh AI Ngay Trong App (1 Click)
+                  {missingRealPhotoScenes.length > 0
+                    ? `Tự Vẽ Luôn ${missingRealPhotoScenes.length} Cảnh Thiếu Ảnh (1 Click)`
+                    : 'Tự Vẽ Lại Hết Ảnh AI (1 Click)'}
                 </>
               )}
             </button>
@@ -366,29 +464,12 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               {copiedKey === 'copy-grok-only' ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  Đã Copy {videoScenesCount} Prompt Grok!
+                  Đã Copy {videoScenesCount} Prompt Kling AI!
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5" />
-                  Gom Riêng {videoScenesCount} Prompt Cho Grok Video
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={copyOnlyChatGptImagePrompts}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
-            >
-              {copiedKey === 'copy-chatgpt-images' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  Đã Copy Lệnh Vẽ Ảnh Hàng Loạt!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  Copy Lệnh Đem Sang Web ChatGPT Pro Vẽ
+                  Gom Riêng {videoScenesCount} Prompt Cho Kling AI Video
                 </>
               )}
             </button>
@@ -426,7 +507,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               }`}
             >
               <Film className="w-3.5 h-3.5" />
-              2. Bảng Phân Cảnh & Prompt Grok / Ảnh ({scenes.length} cảnh)
+              2. Bảng Phân Cảnh & Prompt Kling AI / Ảnh ({scenes.length} cảnh)
             </button>
 
             <button
@@ -472,7 +553,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow transition-colors whitespace-nowrap shrink-0"
             >
               <FolderUp className="w-4 h-4" />
-              Thả Tất Cả Video Grok & Ảnh Vào 1 Lần (Tự Khớp Cảnh!)
+              Thả Tất Cả Video Kling AI & Ảnh Vào 1 Lần (Tự Khớp Cảnh!)
             </button>
           </div>
         </div>
@@ -683,77 +764,186 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
         {/* Tab 2: Scene-by-Scene Production Sheet */}
         {activeTab === 'checklist' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-                  Chế Độ Full Khung Hình Chuẩn {ratioSpec.labelVi}:
-                </p>
-                <p className="text-xs text-slate-300">
-                  Mọi cảnh <strong>CẦN VIDEO</strong> và <strong>CẦN ẢNH</strong> dưới đây đều kèm sẵn{' '}
-                  <strong>Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}px)</strong> +{' '}
-                  <strong>Prompt Full Khung ({ratioSpec.arTag})</strong>. Khi làm Video trên <strong>Grok</strong>, bạn chỉ cần bấm{' '}
-                  <strong className="text-sky-300">"Tải Ảnh Gốc Full Khung Đưa Qua Grok"</strong> +{' '}
-                  <strong className="text-sky-300">"Copy Prompt Grok Full Khung"</strong> là Video Grok tạo ra sẽ khớp khít 100% khung hình!
-                </p>
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                    Chế Độ Lọc Ảnh Thật Nghiêm Ngặt & Prompt Chuẩn Kling AI Theo Thứ Tự Mượt Mà (#01 → #{String(scenes.length).padStart(2, '0')}):
+                  </p>
+                  <p className="text-xs text-slate-300">
+                    Đoạn nào tìm được <strong>Ảnh Thật chuẩn đúng tên nhân vật</strong> sẽ gắn nhãn xanh <strong className="text-emerald-300">📸 Ảnh Thật Chuẩn</strong>. Đoạn nào trên mạng không có ảnh thật, App <strong>tuyệt đối không lấy ảnh lung tung</strong> mà tạo sẵn <strong className="text-amber-300">🎨 Prompt Chuẩn Kling AI</strong> theo đúng thứ tự thời gian để bạn copy vẽ!
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={copyMissingRealPhotoKlingPrompts}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow transition-colors whitespace-nowrap shrink-0"
+                  >
+                    {copiedKey === 'copy-missing-kling' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-slate-950" />
+                        Đã Copy Tất Cả Prompt Kling Cảnh Thiếu Ảnh!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        Copy Tất Cả Prompt Kling Của Cảnh Chưa Có Ảnh Thật ({missingRealPhotoScenes.length || visualScenesList.length} Cảnh)
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => copyToClipboard(KLING_NEGATIVE_PROMPT, 'global-kling-neg')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  >
+                    {copiedKey === 'global-kling-neg' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        Đã Copy Negative Prompt Kling!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-sky-400" />
+                        Copy Negative Prompt Kling
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => {
-                  scenes.forEach((sc) => {
-                    if (sc.sceneType === 'video' || sc.sceneType === 'image') {
-                      onUpdateScene(sc.id, { frameStyle: 'full-bleed' });
-                    }
-                  });
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                Đặt Tất Cả Cảnh Tràn Full Khung 100%
-              </button>
+
+              {/* Filter Bar: All Scenes vs Missing Real Photo Scenes vs Verified Real Photo Scenes */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSceneFilter('all')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                      sceneFilter === 'all'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400'
+                        : 'bg-[#0B0F17] text-slate-300 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    Tất cả theo thứ tự mượt mà ({scenes.length} cảnh)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSceneFilter('missing-photo')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                      sceneFilter === 'missing-photo'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400'
+                        : 'bg-amber-950/40 text-amber-300 border-amber-500/40 hover:bg-amber-900/50'
+                    }`}
+                  >
+                    🎨 Chỉ hiện đoạn CHƯA CÓ ẢNH THẬT cần vẽ Kling AI ({missingRealPhotoScenes.length} đoạn)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSceneFilter('has-photo')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                      sceneFilter === 'has-photo'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                        : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50'
+                    }`}
+                  >
+                    📸 Đoạn ĐÃ CÓ ẢNH THẬT chuẩn ({verifiedRealPhotoScenes.length} đoạn)
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    scenes.forEach((sc) => {
+                      if (sc.sceneType === 'video' || sc.sceneType === 'image') {
+                        onUpdateScene(sc.id, { frameStyle: 'full-bleed' });
+                      }
+                    });
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  Đặt Tất Cả Cảnh Tràn Full Khung 100%
+                </button>
+              </div>
             </div>
 
             {scenes.map((scene, idx) => {
+              const isVisualScene = scene.sceneType === 'video' || scene.sceneType === 'image';
+              const isMissingRealPhoto = isVisualScene && scene.hasRealPhoto === false;
+
+              if (sceneFilter === 'missing-photo' && !isMissingRealPhoto) return null;
+              if (sceneFilter === 'has-photo' && (!isVisualScene || isMissingRealPhoto)) {
+                return null;
+              }
+
               const assignedVaultItem = vaultItems.find((v) => v.id === scene.mediaId);
               const previewUrl = assignedVaultItem?.url || scene.mediaUrl;
               const previewKind = assignedVaultItem?.type || scene.mediaKind;
-              const isVisualScene = scene.sceneType === 'video' || scene.sceneType === 'image';
               const googleImgSearchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(
                 scene.archivalKeywords || `${scene.title} vintage photo`
               )}`;
 
-              const fullFrameImgPrompt = buildFullFrameImagePrompt(
-                scene.imagePrompt || scene.visualPrompt,
-                aspectRatio
-              );
-              const fullFrameVidPrompt = buildFullFrameVideoPrompt(
-                scene.videoMotionPrompt,
-                scene.imagePrompt || scene.visualPrompt,
-                aspectRatio
-              );
+              const stageInfo = getChronologicalStageInfo(idx + 1, scenes.length);
+              const klingStandardPack = isVisualScene
+                ? buildStandardKlingDrawPrompt({
+                    order: idx + 1,
+                    totalScenes: scenes.length,
+                    characterName: scriptCharacterHint || chatGptCharacter || scene.title,
+                    title: scene.title,
+                    narrationText: scene.narrationText,
+                    rawImagePrompt: scene.imagePrompt || scene.visualPrompt,
+                    rawVideoPrompt: scene.videoMotionPrompt,
+                    sceneType: scene.sceneType,
+                    ratio: aspectRatio,
+                  })
+                : null;
+
+              const fullFrameImgPrompt = klingStandardPack
+                ? klingStandardPack.klingImagePrompt
+                : buildFullFrameImagePrompt(
+                    scene.imagePrompt || scene.visualPrompt,
+                    aspectRatio
+                  );
+              const fullFrameVidPrompt = klingStandardPack
+                ? klingStandardPack.klingVideoPrompt
+                : buildFullFrameVideoPrompt(
+                    scene.videoMotionPrompt,
+                    scene.imagePrompt || scene.visualPrompt,
+                    aspectRatio,
+                    scene.narrationText
+                  );
 
               return (
                 <div
                   key={scene.id}
-                  className="rounded-xl border border-slate-800 bg-[#111827]/90 p-4 space-y-3"
+                  className={`rounded-xl border p-4 space-y-3 ${
+                    isMissingRealPhoto
+                      ? 'border-amber-500/50 bg-[#131926]'
+                      : 'border-slate-800 bg-[#111827]/90'
+                  }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-mono-tabular font-bold text-amber-400">
-                        CẢNH #{String(idx + 1).padStart(2, '0')} ({scene.durationSec}s)
+                        CẢNH #{String(idx + 1).padStart(2, '0')}/{String(scenes.length).padStart(2, '0')} ({scene.durationSec}s)
                       </span>
+                      {scene.sceneType !== 'outro' && (
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-semibold text-slate-300 border border-slate-700">
+                          {stageInfo.stageVi}
+                        </span>
+                      )}
                       <span aria-hidden="true" className="text-slate-600">
                         ·
                       </span>
                       {scene.sceneType === 'video' && (
                         <span className="text-xs font-bold text-sky-400 flex items-center gap-1">
                           <Film className="w-3.5 h-3.5" />
-                          CẦN VIDEO GROK — Đã Có Sẵn Ảnh Gốc & Prompt Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                          ĐOẠN VIDEO KLING AI ({ratioSpec.ratio})
                         </span>
                       )}
                       {scene.sceneType === 'image' && (
                         <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
                           <ImageIcon className="w-3.5 h-3.5" />
-                          CẦN ẢNH TĨNH — Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                          ĐOẠN ẢNH TĨNH ({ratioSpec.ratio})
                         </span>
                       )}
                       {scene.sceneType === 'quote' && (
@@ -765,13 +955,48 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                       {scene.sceneType === 'outro' && (
                         <span className="text-xs font-bold text-amber-400 flex items-center gap-1">
                           <Award className="w-3.5 h-3.5" />
-                          LOGO KẾT TỰ ĐỘNG (App tự dựng 100%)
+                          LOGO KẾT CỐ ĐỊNH: LIFE LEGENDS — HM
                         </span>
+                      )}
+
+                      {isVisualScene && (
+                        isMissingRealPhoto ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50">
+                            🎨 Chưa có ảnh thật — Dùng Prompt Chuẩn Kling AI bên dưới để vẽ
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            📸 Đã có Ảnh Thật chuẩn: {scene.realPhotoTitle || assignedVaultItem?.name || 'Đã xác thực'}
+                          </span>
+                        )
                       )}
                     </div>
 
                     {isVisualScene && (
                       <div className="flex flex-wrap items-center gap-2">
+                        {klingStandardPack && (
+                          <button
+                            onClick={() =>
+                              copyToClipboard(
+                                scene.klingStandardPrompt || klingStandardPack.combinedBlock,
+                                `kling-pack-${scene.id}`
+                              )
+                            }
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                          >
+                            {copiedKey === `kling-pack-${scene.id}` ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                Đã Copy Prompt Kling Cảnh #{String(idx + 1).padStart(2, '0')}!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                Copy Trọn Bộ Prompt Kling Cảnh #{String(idx + 1).padStart(2, '0')}
+                              </>
+                            )}
+                          </button>
+                        )}
                         {/* 1-Click Generate Full-Frame Image via AI */}
                         <button
                           onClick={() => onGenerateImageViaProxyForScene(scene)}
@@ -791,7 +1016,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                           )}
                         </button>
 
-                        {/* 1-Click Download Full-Frame Reference Image for Grok Video */}
+                        {/* 1-Click Download Full-Frame Reference Image for Kling AI Video */}
                         {previewUrl && (
                           <button
                             onClick={() =>
@@ -808,7 +1033,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                             ) : (
                               <>
                                 <Download className="w-3 h-3" />
-                                Tải Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}) Đưa Qua Grok
+                                Tải Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}) Đưa Qua Kling AI
                               </>
                             )}
                           </button>
@@ -845,7 +1070,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                           {assignedVaultItem && assignedVaultItem.sourceTag === 'uploaded'
                             ? `Đã gắn: ${assignedVaultItem.name.slice(0, 14)}`
                             : scene.sceneType === 'video'
-                            ? 'Bỏ Video Grok Vào Cảnh Này'
+                            ? 'Bỏ Video Kling Vào Cảnh Này'
                             : 'Bỏ Ảnh Vào Cảnh Này'}
                         </button>
                       </div>
@@ -893,7 +1118,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                             className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded-md transition-colors"
                           >
                             <Download className="w-3 h-3 shrink-0" />
-                            Tải Ảnh {ratioSpec.ratio} Cho Grok
+                            Tải Ảnh {ratioSpec.ratio} Cho Kling AI
                           </button>
                         )}
                       </div>
@@ -952,30 +1177,79 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                             </p>
                           </div>
 
-                          <div className="p-3 rounded-lg bg-[#090D14] border border-sky-500/30 space-y-1.5">
+                          <div className="p-3 rounded-lg bg-[#090D14] border border-sky-500/30 space-y-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold text-sky-400">
-                                2. Prompt Tạo Video GROK Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                                2. Kịch Bản Video KLING AI 3 Nhịp (Chuẩn Người Nổi Tiếng - {ratioSpec.ratio})
                               </span>
-                              <button
-                                onClick={() =>
-                                  copyToClipboard(fullFrameVidPrompt, `vid-${scene.id}`)
-                                }
-                                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors shrink-0"
-                              >
-                                {copiedKey === `vid-${scene.id}` ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                    Đã Copy Full Khung
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3" />
-                                    Copy Prompt Grok {ratioSpec.ratio}
-                                  </>
-                                )}
-                              </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() =>
+                                    copyToClipboard(fullFrameVidPrompt, `vid-${scene.id}`)
+                                  }
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 rounded transition-colors"
+                                >
+                                  {copiedKey === `vid-${scene.id}` ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      Đã Copy Prompt Kling
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      Copy Prompt Kling {ratioSpec.ratio}
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    copyToClipboard(KLING_NEGATIVE_PROMPT, `neg-${scene.id}`)
+                                  }
+                                  title="Copy Negative Prompt cho Kling AI"
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors"
+                                >
+                                  {copiedKey === `neg-${scene.id}` ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      Đã Copy Negative
+                                    </>
+                                  ) : (
+                                    <span>+Negative</span>
+                                  )}
+                                </button>
+                              </div>
                             </div>
+
+                            <div className="flex flex-wrap items-center gap-1">
+                              {(
+                                [
+                                  { id: 'narrative-hook', label: '🎬 Kling Tự sự & Nhép môi' },
+                                  { id: 'cinematic-action', label: '🐎 Kling Hành động & Bối cảnh' },
+                                  { id: 'emotional-closeup', label: '🌅 Kling Nội tâm & Cận cảnh' },
+                                ] as { id: VideoScriptStyle; label: string }[]
+                              ).map((preset) => (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateScene(scene.id, {
+                                      videoMotionPrompt: generateScriptedVideoMotionPrompt({
+                                        title: scene.title,
+                                        narrationText: scene.narrationText,
+                                        imagePrompt: scene.imagePrompt,
+                                        visualPrompt: scene.visualPrompt,
+                                        style: preset.id,
+                                        ratio: aspectRatio,
+                                      }),
+                                    })
+                                  }
+                                  className="px-2 py-0.5 text-[10px] font-medium bg-slate-800/90 hover:bg-sky-500/25 text-sky-200 border border-slate-700 hover:border-sky-500/40 rounded transition-colors"
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+
                             <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
                               {fullFrameVidPrompt}
                             </p>
@@ -990,11 +1264,11 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
           </div>
         )}
 
-        {/* Tab 3: ChatGPT Pro + Grok Master Bridge */}
+        {/* Tab 3: ChatGPT Pro + Kling AI Master Bridge */}
         {activeTab === 'chatgpt-bridge' && (
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-4xl mx-auto space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     Tên Nhân Vật hoặc Câu Chuyện muốn làm:
@@ -1006,6 +1280,25 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                     placeholder="VD: Clint Eastwood, John Wayne, Lý Tiểu Long, Michael Landon..."
                     className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Dạng số phân cảnh:
+                  </label>
+                  <select
+                    value={chatGptSceneCount}
+                    onChange={(e) => setChatGptSceneCount(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#111827] border border-slate-700 rounded-lg text-amber-300"
+                  >
+                    <option value={6}>6 cảnh (~45s)</option>
+                    <option value={8}>8 cảnh (~65s)</option>
+                    <option value={10}>10 cảnh (~85s)</option>
+                    <option value={12}>12 cảnh (~100s)</option>
+                    <option value={14}>14 cảnh (~120s)</option>
+                    <option value={16}>16 cảnh (~140s)</option>
+                    <option value={18}>18 cảnh (~160s)</option>
+                    <option value={20}>20 cảnh (~180s)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
@@ -1025,7 +1318,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-amber-400">
-                    Siêu Lệnh (Mega-Prompt) Tối Ưu Cho ChatGPT Pro & Grok:
+                    Siêu Lệnh (Mega-Prompt {chatGptSceneCount} Cảnh) Tối Ưu Cho ChatGPT Pro & Kling AI:
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -1048,6 +1341,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                     <button
                       onClick={() => {
                         setScriptCharacterHint(chatGptCharacter);
+                        setPasteSceneCount(chatGptSceneCount);
                         setActiveTab('paste-script');
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-lg transition-colors"
@@ -1069,7 +1363,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
         {activeTab === 'paste-script' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             <div className="max-w-4xl mx-auto space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     Tên Nhân Vật Chính (Để App tự động tìm ảnh thật trên mạng điền vào các cảnh):
@@ -1081,6 +1375,26 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                     placeholder="VD: Clint Eastwood, Yul Brynner, John Wayne..."
                     className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Dạng số phân cảnh:
+                  </label>
+                  <select
+                    value={pasteSceneCount}
+                    onChange={(e) => setPasteSceneCount(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#111827] border border-slate-700 rounded-lg text-amber-300"
+                  >
+                    <option value={0}>Tự động theo kịch bản</option>
+                    <option value={6}>6 cảnh (~45s)</option>
+                    <option value={8}>8 cảnh (~65s)</option>
+                    <option value={10}>10 cảnh (~85s)</option>
+                    <option value={12}>12 cảnh (~100s)</option>
+                    <option value={14}>14 cảnh (~120s)</option>
+                    <option value={16}>16 cảnh (~140s)</option>
+                    <option value={18}>18 cảnh (~160s)</option>
+                    <option value={20}>20 cảnh (~180s)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
@@ -1108,7 +1422,13 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
               <div className="flex flex-wrap items-center justify-end gap-3">
                 <button
                   onClick={async () => {
-                    await onParseRawScript(rawScriptInput, scriptLang, false, scriptCharacterHint);
+                    await onParseRawScript(
+                      rawScriptInput,
+                      scriptLang,
+                      false,
+                      scriptCharacterHint,
+                      pasteSceneCount
+                    );
                     setActiveTab('checklist');
                   }}
                   disabled={isParsingScript || isRunningAutoPilot || !rawScriptInput.trim()}
@@ -1122,14 +1442,20 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                   ) : (
                     <>
                       <Wand2 className="w-4 h-4 text-amber-400" />
-                      Chỉ Chia Đoạn & Xuất Prompt Grok / Ảnh
+                      Chỉ Chia Đoạn ({pasteSceneCount > 0 ? `${pasteSceneCount} Cảnh` : 'Tự Động'}) & Xuất Prompt Kling AI / Ảnh
                     </>
                   )}
                 </button>
 
                 <button
                   onClick={async () => {
-                    await onParseRawScript(rawScriptInput, scriptLang, true, scriptCharacterHint);
+                    await onParseRawScript(
+                      rawScriptInput,
+                      scriptLang,
+                      true,
+                      scriptCharacterHint,
+                      pasteSceneCount
+                    );
                     onClose();
                   }}
                   disabled={isParsingScript || isRunningAutoPilot || !rawScriptInput.trim()}
@@ -1143,7 +1469,7 @@ QUY TẮC TỐI ƯU HÓA & FULL KHUNG HÌNH (${ratioSpec.ratio} - ${ratioSpec.wi
                   ) : (
                     <>
                       <Zap className="w-4 h-4 fill-current" />
-                      Dựng Tự Động A → Z Từ Kịch Bản Này (Tìm Ảnh + Giọng Đọc + Ghép Phim)
+                      Dựng Tự Động A → Z ({pasteSceneCount > 0 ? `${pasteSceneCount} Cảnh` : 'Tự Động'} + Ảnh + Giọng + Ghép)
                     </>
                   )}
                 </button>
