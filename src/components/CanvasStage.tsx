@@ -602,9 +602,24 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         : scene.narrationText;
 
     const words = text.split(/\s+/).filter(Boolean);
+
+    // Sync word-by-word reveal directly to actual voiceover audio playback when available
+    let effectiveProgress = progress / 0.88;
+    const voiceAud = voiceAudioEl.current;
+    if (
+      voiceAud &&
+      lastSyncedSceneIdRef.current.startsWith(`${scene.id}::`) &&
+      Number.isFinite(voiceAud.duration) &&
+      voiceAud.duration > 0.4 &&
+      voiceAud.currentTime > 0.02
+    ) {
+      effectiveProgress = voiceAud.currentTime / Math.max(0.4, voiceAud.duration * 0.92);
+    }
+
+    const clampedReadProgress = Math.min(1, Math.max(0, effectiveProgress));
     const visibleWordCount = Math.max(
       1,
-      Math.min(words.length, Math.ceil((progress / 0.88) * words.length))
+      Math.min(words.length, Math.ceil(clampedReadProgress * words.length))
     );
 
     ctx.font = `italic 700 ${Math.round(canvasW * 0.039)}px "Plus Jakarta Sans", Georgia, serif`;
@@ -629,6 +644,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     const lineHeight = Math.round(canvasW * 0.056);
     const totalBlockHeight = lines.length * lineHeight;
     const startY = (canvasH - totalBlockHeight) / 2 + lineHeight / 2;
+    const highlightYellow = settings.activeWordColor || '#FACC15';
 
     lines.forEach((lineWords, lineIdx) => {
       const lineStr = lineWords.map((w) => w.word).join(' ');
@@ -639,14 +655,24 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       lineWords.forEach((wObj) => {
         const isRevealed = wObj.globalIdx < visibleWordCount;
         const isCurrent = wObj.globalIdx === visibleWordCount - 1;
-        ctx.fillStyle = !isRevealed
-          ? 'rgba(255,255,255,0.16)'
-          : isCurrent
-          ? '#FFFFFF'
-          : 'rgba(248,250,252,0.94)';
+
+        ctx.save();
+        if (!isRevealed) {
+          ctx.fillStyle = 'rgba(255,255,255,0.20)';
+        } else if (isCurrent) {
+          ctx.fillStyle = '#FDE047';
+          ctx.shadowColor = 'rgba(250, 204, 21, 0.55)';
+          ctx.shadowBlur = 12;
+        } else {
+          ctx.fillStyle = highlightYellow;
+          ctx.shadowColor = 'rgba(250, 204, 21, 0.22)';
+          ctx.shadowBlur = 4;
+        }
 
         ctx.textAlign = 'left';
         ctx.fillText(wObj.word, cursorX, y);
+        ctx.restore();
+
         cursorX += ctx.measureText(wObj.word + ' ').width;
       });
     });
@@ -963,36 +989,6 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     ctx.restore();
   };
 
-  const drawAudioEqualizerBadge = (
-    ctx: CanvasRenderingContext2D,
-    timeSec: number,
-    playing: boolean
-  ) => {
-    if (!settings.showWaveformBadge) return;
-
-    ctx.save();
-    const barCount = 13;
-    const barW = 2.5;
-    const gap = 2;
-    const totalW = barCount * (barW + gap);
-    const startX = canvasW - totalW - Math.round(canvasW * 0.045);
-    const baseY = canvasH - Math.round(canvasH * 0.035);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillRect(startX - 2, baseY, totalW + 4, 1.5);
-
-    for (let i = 0; i < barCount; i++) {
-      const wave = playing
-        ? Math.abs(Math.sin(timeSec * 8.5 + i * 0.9) * Math.cos(timeSec * 4.2 - i * 0.5))
-        : 0.2;
-      const peakProfile = i === 3 || i === 9 ? 1.35 : i % 2 === 0 ? 0.85 : 0.55;
-      const barH = Math.max(3, Math.round(wave * 18 * peakProfile));
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillRect(startX + i * (barW + gap), baseY - barH, barW, barH);
-    }
-    ctx.restore();
-  };
-
   // Unified 60fps Master Clock & Smooth Dual-Layer Transition Render Loop (1:1 Real Wall-Clock Locked)
   useEffect(() => {
     let animFrameId: number;
@@ -1096,10 +1092,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                   sceneDurationSec * 0.45
                 )
               : 0;
-            const continuousActiveProgress = Math.min(
-              1,
-              Math.max(0, (localTimeSec + prevOverlapDur) / (sceneDurationSec + prevOverlapDur))
-            );
+            const continuousActiveProgress =
+              scene.sceneType === 'quote'
+                ? progress
+                : Math.min(
+                    1,
+                    Math.max(0, (localTimeSec + prevOverlapDur) / (sceneDurationSec + prevOverlapDur))
+                  );
 
             const isTransitioning =
               Boolean(nextScene) &&
@@ -1112,10 +1111,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
               // Incoming scene starts its continuous Ken Burns progress at 0 and reaches effectiveTransDur / (nextDur + effectiveTransDur) right at the scene boundary
               const nextDur = Math.max(1, nextScene.durationSec || 5);
-              const nextContinuousProgress = Math.min(
-                1,
-                (rawT * effectiveTransDur) / (nextDur + effectiveTransDur)
-              );
+              const nextContinuousProgress =
+                nextScene.sceneType === 'quote'
+                  ? 0
+                  : Math.min(
+                      1,
+                      (rawT * effectiveTransDur) / (nextDur + effectiveTransDur)
+                    );
 
               const involvesQuoteOrOutro =
                 scene.sceneType === 'quote' ||
@@ -1274,7 +1276,6 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             }
 
             drawKaraokeSubtitles(ctx, scene, progress, localTimeSec, timeRemainingSec);
-            drawAudioEqualizerBadge(ctx, activeTimeSec, isPlaying);
           }
         }
       }
