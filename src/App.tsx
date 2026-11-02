@@ -1188,19 +1188,23 @@ export default function App() {
             voiceName,
             engineForScene
           );
+          const existingIntDur = Math.max(5, Math.round(sc.durationSec || 5));
+          const neededIntDur = Math.max(5, Math.ceil(durationSec + 0.15));
           updated[i] = {
             ...sc,
             voiceoverUrl: masteredAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(5, Math.ceil(durationSec + 0.25)),
+            durationSec: Math.max(existingIntDur, neededIntDur),
           };
         } catch {
           const dur = await getMediaDuration(rawAudioUrl, 'audio');
+          const existingIntDur = Math.max(5, Math.round(sc.durationSec || 5));
+          const neededIntDur = Math.max(5, Math.ceil(dur + 0.15));
           updated[i] = {
             ...sc,
             voiceoverUrl: rawAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(5, Math.ceil(dur + 0.25)),
+            durationSec: Math.max(existingIntDur, neededIntDur),
           };
         }
         setScenes([...updated]);

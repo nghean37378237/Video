@@ -66,6 +66,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   // High-precision 60fps playhead ref to prevent React re-render jitter during transitions
   const playheadRef = useRef<number>(currentTimeSec);
   const lastUiSyncRef = useRef<number>(0);
+  const lastInternalTimeUpdateRef = useRef<number>(currentTimeSec);
+  const playAnchorWallTimeRef = useRef<number | null>(null);
+  const playAnchorMediaTimeRef = useRef<number>(0);
+  const exportStartWallTimeRef = useRef<number | null>(null);
+  const exportTargetDurationRef = useRef<number>(0);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -74,14 +79,29 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
-  const totalDurationSec = scenes.reduce((acc, s) => acc + (s.durationSec || 5), 0);
+  const totalDurationSec = scenes.reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
 
-  // Keep playheadRef synced when user scrubs slider or jumps scenes externally
+  // Keep playheadRef synced ONLY when paused or when user explicitly scrubs slider / jumps scenes externally
   useEffect(() => {
-    if (!isPlaying || Math.abs(playheadRef.current - currentTimeSec) > 0.25) {
+    if (isExporting) return;
+    const isExternalSeek = Math.abs(currentTimeSec - lastInternalTimeUpdateRef.current) > 0.05;
+    if (!isPlaying || isExternalSeek) {
       playheadRef.current = currentTimeSec;
+      lastInternalTimeUpdateRef.current = currentTimeSec;
+      playAnchorMediaTimeRef.current = currentTimeSec;
+      playAnchorWallTimeRef.current = isPlaying ? performance.now() : null;
     }
-  }, [currentTimeSec, isPlaying]);
+  }, [currentTimeSec, isPlaying, isExporting]);
+
+  // Anchor wall-clock timer whenever play state toggles
+  useEffect(() => {
+    if (isPlaying) {
+      playAnchorMediaTimeRef.current = playheadRef.current;
+      playAnchorWallTimeRef.current = performance.now();
+    } else {
+      playAnchorWallTimeRef.current = null;
+    }
+  }, [isPlaying]);
 
   const getCanvasDimensions = () => {
     if (settings.aspectRatio === '9:16') return { width: 720, height: 1280 };
@@ -950,19 +970,39 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     ctx.restore();
   };
 
-  // Unified 60fps Master Clock & Smooth Dual-Layer Transition Render Loop
+  // Unified 60fps Master Clock & Smooth Dual-Layer Transition Render Loop (1:1 Real Wall-Clock Locked)
   useEffect(() => {
     let animFrameId: number;
+    let exportBackupTimer: ReturnType<typeof setInterval> | null = null;
     lastTickRef.current = performance.now();
 
-    const loop = (now: number) => {
-      if (isPlaying) {
-        const dt = Math.min(0.08, Math.max(0, (now - lastTickRef.current) / 1000));
-        lastTickRef.current = now;
-        playheadRef.current += dt;
+    const stepAndRender = (now: number) => {
+      const targetTotalDuration =
+        isExporting && exportTargetDurationRef.current > 0
+          ? exportTargetDurationRef.current
+          : totalDurationSec;
 
-        if (playheadRef.current >= totalDurationSec) {
+      if (isPlaying) {
+        if (isExporting && exportStartWallTimeRef.current !== null) {
+          // Strict 1:1 wall-clock lock during export so exported video duration === totalDurationSec down to the millisecond
+          playheadRef.current = Math.max(0, (now - exportStartWallTimeRef.current) / 1000);
+        } else {
+          if (playAnchorWallTimeRef.current === null) {
+            playAnchorWallTimeRef.current = now;
+            playAnchorMediaTimeRef.current = playheadRef.current;
+          }
+          playheadRef.current =
+            playAnchorMediaTimeRef.current +
+            Math.max(0, (now - playAnchorWallTimeRef.current) / 1000);
+        }
+        lastTickRef.current = now;
+
+        if (playheadRef.current >= targetTotalDuration) {
           playheadRef.current = 0;
+          lastInternalTimeUpdateRef.current = 0;
+          playAnchorMediaTimeRef.current = 0;
+          playAnchorWallTimeRef.current = null;
+          exportStartWallTimeRef.current = null;
           onTimeUpdate(0);
           onTogglePlay(false);
           if (isExporting && mediaRecorderRef.current?.state === 'recording') {
@@ -975,13 +1015,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         if (now - lastUiSyncRef.current > 48) {
           lastUiSyncRef.current = now;
           const t = playheadRef.current;
+          lastInternalTimeUpdateRef.current = t;
           onTimeUpdate(t);
           const currentInfo = getSceneAtTime(t);
           if (currentInfo.scene && currentInfo.scene.id !== activeSceneId) {
             onSelectScene(currentInfo.scene.id);
           }
           if (isExporting) {
-            setExportProgress(Math.min(99, Math.round((t / totalDurationSec) * 100)));
+            setExportProgress(Math.min(99, Math.round((t / targetTotalDuration) * 100)));
           }
         }
       } else {
@@ -1215,11 +1256,28 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
       }
 
+    };
+
+    const loop = (now: number) => {
+      stepAndRender(now);
       animFrameId = requestAnimationFrame(loop);
     };
 
     animFrameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animFrameId);
+
+    // Backup 30fps wall-clock ticker during video export so backgrounding the browser tab never stretches export duration
+    if (isExporting && isPlaying) {
+      exportBackupTimer = setInterval(() => {
+        stepAndRender(performance.now());
+      }, 33);
+    }
+
+    return () => {
+      cancelAnimationFrame(animFrameId);
+      if (exportBackupTimer) {
+        clearInterval(exportBackupTimer);
+      }
+    };
   }, [
     isPlaying,
     totalDurationSec,
@@ -1235,7 +1293,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     onTogglePlay,
   ]);
 
-  // Handle Full Video Export via MediaRecorder (with full Voiceover + Background Music mixed in)
+  // Handle Full Video Export via MediaRecorder (with full Voiceover + Background Music mixed in & 1:1 Exact Duration Lock)
   const startVideoExport = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas || isExporting) return;
@@ -1246,6 +1304,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     setIsExporting(true);
     setExportProgress(1);
     recordedChunksRef.current = [];
+
+    // Lock the exact timeline duration from current scenes
+    const lockedDurationSec = scenes.reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
+    exportTargetDurationRef.current = lockedDurationSec;
 
     // If any narrative scene is missing TTS voiceover, auto-generate voiceovers first so exported video ALWAYS has full speech!
     const missingVoiceover = scenes.some(
@@ -1272,6 +1334,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
     lastSyncedSceneIdRef.current = '';
     playheadRef.current = 0;
+    lastInternalTimeUpdateRef.current = 0;
+    playAnchorMediaTimeRef.current = 0;
     onTimeUpdate(0);
     if (scenes[0]) {
       onSelectScene(scenes[0].id);
@@ -1312,6 +1376,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       };
 
       recorder.onstop = () => {
+        exportStartWallTimeRef.current = null;
         const blob = new Blob(recordedChunksRef.current, {
           type: selectedMime || 'video/webm',
         });
@@ -1322,10 +1387,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       };
 
       mediaRecorderRef.current = recorder;
+      const startNow = performance.now();
+      exportStartWallTimeRef.current = startNow;
+      playAnchorWallTimeRef.current = startNow;
       recorder.start(250);
       onTogglePlay(true);
     } catch (err) {
       console.error('MediaRecorder error:', err);
+      exportStartWallTimeRef.current = null;
       setIsExporting(false);
     }
   }, [
@@ -1338,6 +1407,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   ]);
 
   const stopExportEarly = () => {
+    exportStartWallTimeRef.current = null;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       onTogglePlay(false);
