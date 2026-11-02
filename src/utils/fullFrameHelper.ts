@@ -474,3 +474,141 @@ export function buildStandardKlingDrawPrompt(options: {
   };
 }
 
+export interface RealFootageSceneGuide {
+  filmTitleVi: string;
+  clipInstructionVi: string;
+  searchQueryEn: string;
+  youtubeSearchUrl: string;
+  youtubeMovieClipsUrl: string;
+  internetArchiveUrl: string;
+  wikimediaVideoUrl: string;
+  pexelsBrollUrl: string;
+}
+
+/**
+ * Suggests the exact movie, TV episode, interview, or archival documentary source
+ * where the user can find and clip REAL footage of the character for a given scene.
+ */
+export function getRealFootageGuideForScene(options: {
+  sceneId?: string;
+  order: number;
+  title: string;
+  narrationText: string;
+  archivalKeywords?: string;
+  durationSec: number;
+  characterName?: string;
+}): RealFootageSceneGuide {
+  const {
+    sceneId = '',
+    order,
+    title = '',
+    narrationText = '',
+    archivalKeywords = '',
+    durationSec = 8,
+    characterName = '',
+  } = options;
+
+  const durInt = Math.max(5, Math.round(durationSec || 8));
+  const combinedText = `${title} ${narrationText} ${archivalKeywords}`.toLowerCase();
+  const cleanChar =
+    (characterName || '')
+      .replace(/[—–-].*$/, '')
+      .replace(/\(.*?\)/g, '')
+      .trim() || 'Will Sampson';
+
+  let filmTitleVi = '';
+  let clipInstructionVi = '';
+  let searchQueryEn = '';
+  let brollQueryEn = '1970s western landscape sunset';
+
+  // 1. Exact scene-by-scene real movie guide for Will Sampson preset & scenes
+  if (sceneId.startsWith('ws-') || /will sampson|bromden|ten bears|cuckoo/i.test(combinedText)) {
+    if (sceneId === 'ws-1' || order === 1) {
+      filmTitleVi = 'Phim "One Flew Over the Cuckoo’s Nest" (Bay Trên Tổ Chim Cúc Cu - 1975)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh cận mặt Chief Bromden (Will Sampson) đứng trầm tĩnh, ánh mắt sâu thẳm quan sát trong phòng bệnh viện (đầu phim hoặc cảnh họp nhóm).`;
+      searchQueryEn = 'Will Sampson Chief Bromden One Flew Over the Cuckoos Nest 1975 closeup scene HD';
+    } else if (sceneId === 'ws-2' || /heritage|gentle giant|cowboy hat/i.test(combinedText)) {
+      filmTitleVi = 'Phim "Fish Hawk" (1979) hoặc Phỏng vấn hậu trường Will Sampson (1976–1980)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh Will Sampson ngoài đời đội mũ cao bồi mỉm cười hiền hậu hoặc cảnh mở đầu ấm áp trong phim "Fish Hawk" (1979).`;
+      searchQueryEn = 'Will Sampson Fish Hawk 1979 interview Native American actor';
+    } else if (sceneId === 'ws-4' || /grew up tall|six and a half feet|oklahoma/i.test(combinedText)) {
+      filmTitleVi = 'Tư liệu "1950s Oklahoma Ranch & Muscogee Creek Archival" / Phim "Fish Hawk" (1979)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh toàn thân (low-angle) tôn chiều cao 1m98 của Will Sampson đứng bên hàng rào gỗ trang trại.`;
+      searchQueryEn = 'Will Sampson tall cowboy ranch scene Fish Hawk 1979';
+    } else if (sceneId === 'ws-5' || /rodeo|bucking bronco/i.test(combinedText)) {
+      filmTitleVi = 'Tư liệu thật "1960s-1970s American West Rodeo Bronc Riding Archival Footage"';
+      clipInstructionVi = `Cắt ${durInt}s cảnh đấu trường Rodeo miền Tây nước Mỹ thập niên 1960–1970: cao bồi cưỡi ngựa bất kham (bucking bronco) tung bụi mù mịt.`;
+      searchQueryEn = '1960s 1970s vintage rodeo saddle bronc riding archival footage';
+      brollQueryEn = 'rodeo cowboy horse dust arena';
+    } else if (sceneId === 'ws-6' || /paintbrush|painted|artist/i.test(combinedText)) {
+      filmTitleVi = 'Tư liệu "Will Sampson Muscogee Creek Painter / Gilcrease Museum Documentary"';
+      clipInstructionVi = `Cắt ${durInt}s cảnh nghệ sĩ bản địa cầm cọ vẽ tranh sơn dầu hoặc cận cảnh các bức tranh lịch sử bộ tộc Creek của Will Sampson.`;
+      searchQueryEn = 'Will Sampson Native American artist paintings documentary';
+      brollQueryEn = 'artist painting canvas brush vintage';
+    } else if (sceneId === 'ws-7' || /search for a very special|says nothing/i.test(combinedText)) {
+      filmTitleVi = 'Phim "One Flew Over the Cuckoo’s Nest" (1975) — Cảnh Chief Bromden cầm chổi quét hành lang';
+      clipInstructionVi = `Cắt ${durInt}s cảnh Chief Bromden (Will Sampson) cao lớn lặng lẽ cầm chổi quét sàn bệnh viện, giả câm điếc nhưng lặng lẽ lắng nghe mọi chuyện.`;
+      searchQueryEn = 'One Flew Over the Cuckoos Nest Chief Bromden sweeping broom scene';
+    } else if (sceneId === 'ws-9' || /jack nicholson|1975/i.test(combinedText)) {
+      filmTitleVi = 'Phim "One Flew Over the Cuckoo’s Nest" (1975) — Cảnh কẹo cao su Juicy Fruit cùng Jack Nicholson';
+      clipInstructionVi = `Cắt ${durInt}s cảnh kinh điển McMurphy (Jack Nicholson) mời Chief Bromden (Will Sampson) thanh kẹo cao su Juicy Fruit và Bromden lần đầu cất tiếng nói: "Thank you" (hoặc cảnh hai người đánh bóng rổ).`;
+      searchQueryEn = 'One Flew Over the Cuckoos Nest Juicy Fruit scene Jack Nicholson Will Sampson';
+    } else if (sceneId === 'ws-10' || /academy awards|five oscars/i.test(combinedText)) {
+      filmTitleVi = 'Lễ trao giải "48th Academy Awards (Oscars 1976)" — One Flew Over the Cuckoo’s Nest thắng 5 giải';
+      clipInstructionVi = `Cắt ${durInt}s cảnh đoàn làm phim "One Flew Over the Cuckoo’s Nest" bước lên sân khấu nhận tượng vàng Oscar năm 1976.`;
+      searchQueryEn = 'One Flew Over the Cuckoos Nest Oscars 1976 Best Picture Academy Awards';
+    } else if (sceneId === 'ws-11' || /final scene|escape|cheering/i.test(combinedText)) {
+      filmTitleVi = 'Phim "One Flew Over the Cuckoo’s Nest" (1975) — Cảnh Kết Huyền Thoại (Chief Bromden Escape Ending)';
+      clipInstructionVi = `Cắt ${durInt}s phân cảnh cuối phim: Chief Bromden dùng sức mạnh phi thường nhấc bổng bệ đá cẩm thạch, đập vỡ chấn sắt cửa sổ và chạy băng ra cánh đồng sương sớm tự do.`;
+      searchQueryEn = 'One Flew Over the Cuckoos Nest ending scene Chief Bromden escape HD';
+    } else if (sceneId === 'ws-12' || /ten bears|josey wales|clint eastwood/i.test(combinedText)) {
+      filmTitleVi = 'Phim Viễn Tây "The Outlaw Josey Wales" (1976) — Cảnh Tù trưởng Ten Bears & Clint Eastwood';
+      clipInstructionVi = `Cắt ${durInt}s cảnh kinh điển Tù trưởng Comanche Ten Bears (Will Sampson) đối diện Josey Wales (Clint Eastwood) dưới nắng sa mạc và nói lời hòa bình ("It shall be life...").`;
+      searchQueryEn = 'The Outlaw Josey Wales 1976 Chief Ten Bears Clint Eastwood Will Sampson scene';
+    } else if (sceneId === 'ws-13' || /1983|registry|performing arts|poltergeist/i.test(combinedText)) {
+      filmTitleVi = 'Phim "Poltergeist II: The Other Side" (1986 - vai Taylor) hoặc "Vegas" (1978–1981)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh Will Sampson thập niên 1980 (vai pháp sư bản địa Taylor đầy uy nghi trong "Poltergeist II" 1986 hoặc phỏng vấn năm 1983).`;
+      searchQueryEn = 'Will Sampson Poltergeist II 1986 Taylor scene HD';
+    } else {
+      filmTitleVi = 'Tổng hợp Tribute "One Flew Over the Cuckoo’s Nest" (1975) & "The Outlaw Josey Wales" (1976)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh cận mặt Will Sampson mỉm cười ấm áp và gật đầu chào tạm biệt (cuối cảnh Juicy Fruit hoặc cuối cảnh Ten Bears).`;
+      searchQueryEn = 'Will Sampson tribute Chief Bromden Ten Bears scene';
+    }
+  } else if (sceneId.startsWith('lg-') || /lorne greene|bonanza|buck/i.test(combinedText)) {
+    if (order === 1) {
+      filmTitleVi = 'Phim truyền hình "Bonanza" (NBC, 1959–1973) — Cảnh Ben Cartwright cưỡi ngựa Buck';
+      clipInstructionVi = `Cắt ${durInt}s cảnh Lorne Greene (vai Ben Cartwright) cưỡi chú ngựa lông vàng Buck bên hồ Tahoe trong phần mở đầu Bonanza.`;
+      searchQueryEn = 'Lorne Greene Ben Cartwright riding Buck horse Bonanza scene';
+    } else {
+      filmTitleVi = 'Phần Mở Đầu Kinh Điển "Bonanza Opening Credits" (1959)';
+      clipInstructionVi = `Cắt ${durInt}s cảnh tấm bản đồ Ponderosa bốc cháy và 4 cha con nhà Cartwright (Lorne Greene, Pernell Roberts, Dan Blocker, Michael Landon) phi ngựa tới trước hiên nhà.`;
+      searchQueryEn = 'Bonanza 1959 opening intro theme Cartwright family riding';
+    }
+  } else {
+    // Generic smart detector for any historical actor/character (e.g. Clint Eastwood, Yul Brynner, Clayton Moore, John Wayne)
+    const quotedFilmMatch = narrationText.match(
+      /\b(One Flew Over the Cuckoo's Nest|The Outlaw Josey Wales|Bonanza|The Magnificent Seven|The King and I|Westworld|The Lone Ranger|The Good, the Bad and the Ugly|Unforgiven|Rawhide)\b/i
+    );
+    const detectedFilm = quotedFilmMatch ? quotedFilmMatch[1] : '';
+    filmTitleVi = detectedFilm
+      ? `Phim "${detectedFilm}" — Trích đoạn thật của ${cleanChar}`
+      : `Trích đoạn phim kinh điển / Phỏng vấn tư liệu của ${cleanChar} (${title})`;
+    clipInstructionVi = `Tìm trên YouTube hoặc Internet Archive theo từ khóa bên dưới, tải và cắt lấy ${durInt}s đoạn nhân vật ${cleanChar} xuất hiện rõ mặt nhất (không dính chữ phụ đề). Bạn có thể thả cả video dài vào cảnh này rồi chỉnh ô "Cắt từ giây" bên dưới!`;
+    searchQueryEn = detectedFilm
+      ? `${cleanChar} ${detectedFilm} movie scene HD`
+      : `${archivalKeywords || `${cleanChar} classic movie scene interview`} footage`;
+  }
+
+  return {
+    filmTitleVi,
+    clipInstructionVi,
+    searchQueryEn,
+    youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQueryEn)}`,
+    youtubeMovieClipsUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${cleanChar} movieclips scene HD`)}`,
+    internetArchiveUrl: `https://archive.org/search?query=${encodeURIComponent(cleanChar)}&and[]=mediatype%3A%22movies%22`,
+    wikimediaVideoUrl: `https://commons.wikimedia.org/w/index.php?search=${encodeURIComponent(`filetype:video ${cleanChar}`)}`,
+    pexelsBrollUrl: `https://www.pexels.com/search/videos/${encodeURIComponent(brollQueryEn)}/`,
+  };
+}
+
+

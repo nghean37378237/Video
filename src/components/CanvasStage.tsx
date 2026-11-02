@@ -289,9 +289,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
       if (activeVidEl) {
         activeVidEl.muted = true;
-        const trimStart = scene.videoTrimStartSec || 0;
         const vidDur = Math.max(1, activeVidEl.duration || 10);
-        const targetTime = (trimStart + localTimeSec) % vidDur;
+        const trimStart = Math.min(Math.max(0, scene.videoTrimStartSec || 0), Math.max(0, vidDur - 0.5));
+        const trimEnd =
+          scene.videoTrimEndSec && scene.videoTrimEndSec > trimStart + 0.5
+            ? Math.min(vidDur, scene.videoTrimEndSec)
+            : vidDur;
+        const clipWindowDur = Math.max(0.5, trimEnd - trimStart);
+        const targetTime = trimStart + (localTimeSec % clipWindowDur);
         if (Math.abs(activeVidEl.currentTime - targetTime) > 0.35) {
           try {
             activeVidEl.currentTime = targetTime;
@@ -307,15 +312,20 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       // Pre-warm incoming scene's video so during cross-dissolve both videos play simultaneously at 60fps
       if (nextVidEl && nextScene) {
         nextVidEl.muted = true;
-        const nextTrimStart = nextScene.videoTrimStartSec || 0;
+        const vidDur = Math.max(1, nextVidEl.duration || 10);
+        const nextTrimStart = Math.min(Math.max(0, nextScene.videoTrimStartSec || 0), Math.max(0, vidDur - 0.5));
+        const nextTrimEnd =
+          nextScene.videoTrimEndSec && nextScene.videoTrimEndSec > nextTrimStart + 0.5
+            ? Math.min(vidDur, nextScene.videoTrimEndSec)
+            : vidDur;
+        const nextClipWindowDur = Math.max(0.5, nextTrimEnd - nextTrimStart);
         const transDur = Math.min(
           settings.transitionDurationSec ?? 0.75,
           info.sceneDurationSec * 0.45,
           (nextScene.durationSec || 5) * 0.45
         );
         const overlapElapsed = Math.max(0, transDur - timeRemainingSec);
-        const vidDur = Math.max(1, nextVidEl.duration || 10);
-        const targetNextTime = (nextTrimStart + overlapElapsed) % vidDur;
+        const targetNextTime = nextTrimStart + (overlapElapsed % nextClipWindowDur);
 
         if (nextVidEl !== activeVidEl && Math.abs(nextVidEl.currentTime - targetNextTime) > 0.35) {
           try {

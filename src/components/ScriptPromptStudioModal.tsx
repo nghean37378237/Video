@@ -32,6 +32,7 @@ import {
   generateScriptedVideoMotionPrompt,
   getAspectRatioSpec,
   getChronologicalStageInfo,
+  getRealFootageGuideForScene,
   KLING_NEGATIVE_PROMPT,
   VideoScriptStyle,
 } from '../utils/fullFrameHelper';
@@ -956,6 +957,17 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                     aspectRatio,
                     scene.narrationText
                   );
+              const realFootageGuide = isVisualScene
+                ? getRealFootageGuideForScene({
+                    sceneId: scene.id,
+                    order: idx + 1,
+                    title: scene.title,
+                    narrationText: scene.narrationText,
+                    archivalKeywords: scene.archivalKeywords,
+                    durationSec: scene.durationSec,
+                    characterName: scriptCharacterHint || chatGptCharacter || scene.title,
+                  })
+                : null;
 
               return (
                 <div
@@ -1353,6 +1365,153 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                             <p className="text-xs text-slate-300 font-mono leading-relaxed select-all">
                               {fullFrameVidPrompt}
                             </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section 3: Real Movie / Archival Footage Source Suggestion & In-App Video Clipper */}
+                      {isVisualScene && realFootageGuide && (
+                        <div className="p-3 rounded-lg bg-[#090D14] border border-amber-500/40 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                              <Film className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              3. Gợi Ý Lấy &amp; Cắt Video Thật Của Nhân Vật (Phim Gốc / Tư Liệu Thực Tế — Thay Cho Video AI)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                copyToClipboard(
+                                  realFootageGuide.searchQueryEn,
+                                  `real-q-${scene.id}`
+                                )
+                              }
+                              className="flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded transition-colors"
+                            >
+                              {copiedKey === `real-q-${scene.id}` ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  Đã Copy Từ Khóa Tìm Phim!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  Copy Từ Khóa Tìm Cảnh Phim: &ldquo;{realFootageGuide.searchQueryEn.slice(0, 36)}...&rdquo;
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+                            <div className="p-2 rounded bg-[#0B0F17] border border-slate-800">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-0.5">
+                                🎬 Phim / Tư liệu thật nên lấy:
+                              </span>
+                              <p className="text-slate-100 font-semibold leading-snug">
+                                {realFootageGuide.filmTitleVi}
+                              </p>
+                            </div>
+                            <div className="p-2 rounded bg-[#0B0F17] border border-slate-800">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-0.5">
+                                ✂️ Phân đoạn gợi ý cắt ({Math.round(scene.durationSec)}s):
+                              </span>
+                              <p className="text-slate-300 leading-snug">
+                                {realFootageGuide.clipInstructionVi}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* 1-Click Direct Video Source Links + In-App Video Trimmer */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-slate-400 mr-1">
+                                Nguồn lấy &amp; cắt:
+                              </span>
+                              <a
+                                href={realFootageGuide.youtubeSearchUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/40 rounded transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                YouTube (Đúng Cảnh Phim)
+                              </a>
+                              <a
+                                href={realFootageGuide.youtubeMovieClipsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/40 rounded transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                MovieClips HD
+                              </a>
+                              <a
+                                href={realFootageGuide.internetArchiveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 border border-emerald-500/40 rounded transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Internet Archive (Tải MP4 Gốc)
+                              </a>
+                              <a
+                                href={realFootageGuide.wikimediaVideoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 border border-sky-500/40 rounded transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Wikimedia Video
+                              </a>
+                              <a
+                                href={realFootageGuide.pexelsBrollUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Pexels B-Roll
+                              </a>
+                              <a
+                                href="https://cobalt.tools/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Dán link YouTube vào Cobalt.tools để tải nhanh file MP4 rồi thả thẳng vào cảnh này!"
+                                className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/40 rounded transition-colors"
+                              >
+                                <Download className="w-3 h-3" />
+                                Tải MP4 Từ Link (Cobalt)
+                              </a>
+                            </div>
+
+                            {/* Direct In-App Video Trimmer when user drops a longer video clip */}
+                            <div className="flex items-center gap-1.5 bg-[#0B0F17] px-2.5 py-1 rounded border border-slate-800">
+                              <span className="text-[11px] font-semibold text-amber-300">
+                                ✂️ Cắt trực tiếp trong App:
+                              </span>
+                              <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                                Từ giây
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={Math.round(scene.videoTrimStartSec || 0)}
+                                  onChange={(e) => {
+                                    const startVal = Math.max(0, Number(e.target.value) || 0);
+                                    onUpdateScene(scene.id, {
+                                      videoTrimStartSec: startVal,
+                                      videoTrimEndSec: startVal + Math.round(scene.durationSec || 8),
+                                    });
+                                  }}
+                                  className="w-14 px-1.5 py-0.5 text-xs font-mono bg-slate-900 border border-slate-700 rounded text-amber-300 text-center"
+                                />
+                              </label>
+                              <span className="text-[11px] text-slate-400">
+                                → đến giây{' '}
+                                <strong className="text-emerald-300 font-mono">
+                                  {Math.round((scene.videoTrimStartSec || 0) + (scene.durationSec || 8))}s
+                                </strong>
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
