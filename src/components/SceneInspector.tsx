@@ -43,6 +43,7 @@ import {
   resolveConsistentSceneText,
   VOICE_PERSONA_PROFILES,
 } from '../utils/voiceConsistencyEngine';
+import { soundEngine } from '../utils/audioSynth';
 
 interface SceneInspectorProps {
   activeScene: StoryScene | undefined;
@@ -790,12 +791,12 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             </div>
           )}
 
-          {/* AI Documentary Voiceover Generator & Custom Audio Upload */}
+          {/* AI Documentary Voiceover & Background Music Selector */}
           <div className="p-3 rounded-lg bg-[#0B0F17] border border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-amber-400" />
-                Voice Đồng Nhất Từ Đầu Đến Cuối
+                Chọn Giọng Đọc &amp; Nhạc Nền Phù Hợp
               </span>
               {activeScene.voiceoverUrl && (
                 <span className="text-[11px] text-emerald-400 flex items-center gap-1 whitespace-nowrap">
@@ -805,41 +806,228 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               )}
             </div>
 
-            <div className="px-2.5 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-300 leading-relaxed">
-              🔒 Khóa đồng nhất 100%: Toàn bộ các cảnh dùng chung 1 giọng, 1 ngôn ngữ, cùng tốc độ và chuẩn hóa âm lượng phòng thu (-16 LUFS) xuyên suốt.
+            {/* 1-Click Recommended Voice + Music Combos by Documentary Genre */}
+            <div className="space-y-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                ✨ Gợi ý tổ hợp Giọng Đọc + Nhạc Nền phù hợp nhất (1-Click):
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  {
+                    id: 'life-legends',
+                    label: '🤠 Chuẩn Gốc Life Legends',
+                    desc: 'Nam Trầm Charon + Guitar Mẫu Will Sampson',
+                    voice: 'Charon' as const,
+                    music: 'western-acoustic' as const,
+                    vol: 0.25,
+                  },
+                  {
+                    id: 'epic-history',
+                    label: '🎬 Sử Thi & Huyền Thoại',
+                    desc: 'Nam Trầm Hùng Fenrir + Dàn Dây Điện Ảnh',
+                    voice: 'Fenrir' as const,
+                    music: 'cinematic-strings' as const,
+                    vol: 0.22,
+                  },
+                  {
+                    id: 'nostalgic-story',
+                    label: '🎹 Hồi Ức Lắng Đọng',
+                    desc: 'Nam Truyền Cảm Puck + Piano & Cello Ấm',
+                    voice: 'Puck' as const,
+                    music: 'emotional-piano' as const,
+                    vol: 0.24,
+                  },
+                  {
+                    id: 'gentle-female',
+                    label: '🌸 Nữ Tự Sự Sâu Lắng',
+                    desc: 'Nữ Dịu Dàng Kore + Piano & Cello Tự Sự',
+                    voice: 'Kore' as const,
+                    music: 'emotional-piano' as const,
+                    vol: 0.2,
+                  },
+                ].map((combo) => {
+                  const isSelected =
+                    settings.ttsVoice === combo.voice && settings.bgMusicStyle === combo.music;
+                  return (
+                    <button
+                      key={combo.id}
+                      type="button"
+                      onClick={() => {
+                        onUpdateSettings({
+                          ttsVoice: combo.voice,
+                          bgMusicStyle: combo.music,
+                          bgMusicVolume: combo.vol,
+                        });
+                        soundEngine.previewBackgroundMusic(
+                          combo.music,
+                          combo.vol,
+                          settings.customBgMusicUrl,
+                          5000
+                        );
+                      }}
+                      className={`p-2 rounded-md border text-left transition-colors ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 text-slate-300'
+                      }`}
+                    >
+                      <div className="text-[11px] font-bold leading-tight">{combo.label}</div>
+                      <div className="text-[9px] text-slate-400 mt-0.5 leading-tight">
+                        {combo.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Locked Voice Language + Voice Persona Selector */}
-            <div className="grid grid-cols-5 gap-1.5">
-              <select
-                value={activeVoiceLang}
-                onChange={(e) =>
-                  onUpdateSettings({
-                    voiceLanguage: e.target.value as 'vi' | 'en',
-                  })
-                }
-                title="Khóa ngôn ngữ giọng đọc xuyên suốt từ đầu đến cuối"
-                className="col-span-2 px-2 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-700 rounded text-amber-300"
-              >
-                <option value="vi">🇻🇳 Đọc Tiếng Việt</option>
-                <option value="en">🇺🇸 Đọc Tiếng Anh</option>
-              </select>
+            <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+              <label className="block text-[10px] font-semibold text-slate-300">
+                1. Giọng đọc thuyết minh (Khóa đồng nhất 100% toàn video):
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                <select
+                  value={activeVoiceLang}
+                  onChange={(e) =>
+                    onUpdateSettings({
+                      voiceLanguage: e.target.value as 'vi' | 'en',
+                    })
+                  }
+                  title="Khóa ngôn ngữ giọng đọc xuyên suốt từ đầu đến cuối"
+                  className="col-span-2 px-2 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-700 rounded text-amber-300"
+                >
+                  <option value="vi">🇻🇳 Đọc Tiếng Việt</option>
+                  <option value="en">🇺🇸 Đọc Tiếng Anh</option>
+                </select>
+
+                <select
+                  value={settings.ttsVoice}
+                  onChange={(e) =>
+                    onUpdateSettings({
+                      ttsVoice: e.target.value as ProjectSettings['ttsVoice'],
+                    })
+                  }
+                  className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
+                >
+                  <option value="Charon">
+                    Charon — Nam Trầm Ấm (Chuẩn Mẫu Will Sampson / Viễn Tây)
+                  </option>
+                  <option value="Fenrir">
+                    Fenrir — Nam Trầm Sâu Uy Nghiêm (Phim Tài Liệu Lịch Sử)
+                  </option>
+                  <option value="Puck">
+                    Puck — Nam Truyền Cảm Tự Nhiên (Kể Chuyện Đời Thường)
+                  </option>
+                  <option value="Kore">
+                    Kore — Nữ Trầm Dịu Sâu Lắng (Hồi Ức &amp; Tâm Sự)
+                  </option>
+                  <option value="Zephyr">
+                    Zephyr — Nữ Trong Trẻo Truyền Cảm (Tiểu Sử Nghệ Thuật)
+                  </option>
+                </select>
+              </div>
+              <p className="text-[10px] text-emerald-300/90 leading-snug">
+                🎙️ {VOICE_PERSONA_PROFILES[settings.ttsVoice]?.label}
+              </p>
+            </div>
+
+            {/* Background Music Selector right inside Tab 1 for fast pairing */}
+            <div className="space-y-1.5 pt-1.5 border-t border-slate-800/80">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold text-slate-300">
+                  2. Nhạc nền phim tài liệu ({Math.round(settings.bgMusicVolume * 100)}%):
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      soundEngine.previewBackgroundMusic(
+                        settings.bgMusicStyle,
+                        settings.bgMusicVolume,
+                        settings.customBgMusicUrl,
+                        7000
+                      )
+                    }
+                    className="px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded transition-colors"
+                  >
+                    🔊 Nghe Thử Nhạc Nền
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => soundEngine.stopBackgroundMusic()}
+                    className="px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-200 bg-slate-800 rounded"
+                  >
+                    Dừng
+                  </button>
+                </div>
+              </div>
 
               <select
-                value={settings.ttsVoice}
-                onChange={(e) =>
-                  onUpdateSettings({
-                    ttsVoice: e.target.value as ProjectSettings['ttsVoice'],
-                  })
-                }
-                className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
+                value={settings.bgMusicStyle}
+                onChange={(e) => {
+                  const newStyle = e.target.value as ProjectSettings['bgMusicStyle'];
+                  onUpdateSettings({ bgMusicStyle: newStyle });
+                  soundEngine.previewBackgroundMusic(
+                    newStyle,
+                    settings.bgMusicVolume,
+                    settings.customBgMusicUrl,
+                    6000
+                  );
+                }}
+                className="w-full px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-100"
               >
-                <option value="Charon">Charon (Nam trầm ấm chuẩn mẫu Will Sampson)</option>
-                <option value="Fenrir">Fenrir (Nam trầm sâu uy nghiêm)</option>
-                <option value="Puck">Puck (Truyền cảm tự nhiên)</option>
-                <option value="Kore">Kore (Nữ dịu dàng sâu lắng)</option>
-                <option value="Zephyr">Zephyr (Nữ trong trẻo kể chuyện)</option>
+                <option value="western-acoustic">
+                  🎸 Guitar Acoustic &amp; Piano Ấm (Chuẩn Mẫu Will Sampson - Khuyên dùng)
+                </option>
+                <option value="emotional-piano">
+                  🎹 Piano &amp; Cello Hoài Niệm Sâu Lắng (Tiểu Sử Cảm Xúc)
+                </option>
+                <option value="cinematic-strings">
+                  🎻 Dàn Dây Cello &amp; Violin Trầm Hùng (Huyền Thoại Lịch Sử)
+                </option>
+                <option value="vintage-americana">
+                  🤠 Guitar Miền Viễn Tây Cổ Điển (Cao Bồi &amp; Thập Niên 60-70)
+                </option>
+                <option value="custom">
+                  📁 Nhạc Nền MP3 Do Bạn Tải Lên ({settings.customBgMusicUrl ? 'Đã nạp' : 'Chưa chọn'})
+                </option>
+                <option value="none">🔇 Tắt nhạc nền</option>
               </select>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={0.8}
+                  step={0.02}
+                  value={settings.bgMusicVolume}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    onUpdateSettings({ bgMusicVolume: v });
+                    soundEngine.setBgVolume(v);
+                  }}
+                  className="flex-1 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <label className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded cursor-pointer shrink-0">
+                  +Tải MP3 Nhạc Nền
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const url = URL.createObjectURL(file);
+                      onUpdateSettings({
+                        bgMusicStyle: 'custom',
+                        customBgMusicUrl: url,
+                      });
+                      soundEngine.previewBackgroundMusic('custom', settings.bgMusicVolume, url, 7000);
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* 1-Click Generate & Lock Uniform AI Voiceover for ALL scenes */}
@@ -1106,24 +1294,54 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 />
               </div>
 
-              <div className="pt-1 border-t border-slate-800/80">
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Nhạc dạo nền (Đã nạp chuẩn nhạc Guitar mẫu Will Sampson)
-                </label>
+              <div className="pt-1 border-t border-slate-800/80 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-slate-300">
+                    Nhạc dạo nền phim tài liệu
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      soundEngine.previewBackgroundMusic(
+                        settings.bgMusicStyle,
+                        settings.bgMusicVolume,
+                        settings.customBgMusicUrl,
+                        7000
+                      )
+                    }
+                    className="px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded transition-colors"
+                  >
+                    🔊 Nghe Thử Nhạc Nền
+                  </button>
+                </div>
                 <select
                   value={settings.bgMusicStyle}
-                  onChange={(e) =>
-                    onUpdateSettings({
-                      bgMusicStyle: e.target.value as ProjectSettings['bgMusicStyle'],
-                    })
-                  }
+                  onChange={(e) => {
+                    const newStyle = e.target.value as ProjectSettings['bgMusicStyle'];
+                    onUpdateSettings({ bgMusicStyle: newStyle });
+                    soundEngine.previewBackgroundMusic(
+                      newStyle,
+                      settings.bgMusicVolume,
+                      settings.customBgMusicUrl,
+                      6000
+                    );
+                  }}
                   className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-100"
                 >
                   <option value="western-acoustic">
-                    🎸 Guitar Acoustic Chuẩn Mẫu Will Sampson (Life Legends)
+                    🎸 Guitar Acoustic &amp; Piano Ấm (Chuẩn Mẫu Will Sampson - Khuyên dùng)
                   </option>
                   <option value="emotional-piano">
-                    🎹 Piano & Cello Trầm Lắng Tự Sự (Emotional Story)
+                    🎹 Piano &amp; Cello Hoài Niệm Sâu Lắng (Emotional Story)
+                  </option>
+                  <option value="cinematic-strings">
+                    🎻 Dàn Dây Cello &amp; Violin Trầm Hùng (Epic Biography)
+                  </option>
+                  <option value="vintage-americana">
+                    🤠 Guitar Miền Viễn Tây Cổ Điển (Americana 1960s)
+                  </option>
+                  <option value="custom">
+                    📁 Nhạc Nền MP3 Tải Lên Riêng ({settings.customBgMusicUrl ? 'Đã nạp' : 'Chưa chọn'})
                   </option>
                   <option value="none">🔇 Tắt nhạc nền</option>
                 </select>

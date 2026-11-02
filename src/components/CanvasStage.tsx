@@ -238,12 +238,19 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     if (settings.audioMode === 'stitched-scenes') {
       soundEngine.startBackgroundMusic(
         settings.bgMusicStyle,
-        settings.bgMusicVolume
+        settings.bgMusicVolume,
+        settings.customBgMusicUrl
       );
     } else {
       soundEngine.stopBackgroundMusic();
     }
-  }, [isPlaying, settings.audioMode, settings.bgMusicStyle, settings.bgMusicVolume]);
+  }, [
+    isPlaying,
+    settings.audioMode,
+    settings.bgMusicStyle,
+    settings.bgMusicVolume,
+    settings.customBgMusicUrl,
+  ]);
 
   // Helper to resolve a scene's media URL & kind
   const resolveSceneMedia = useCallback(

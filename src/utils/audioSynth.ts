@@ -8,6 +8,14 @@
 
 export const DEFAULT_LIFE_LEGENDS_BG_MUSIC_URL = '/assets/aistudio/life_legends_bg_music.mp3';
 
+export type BgMusicStyleOption =
+  | 'western-acoustic'
+  | 'emotional-piano'
+  | 'cinematic-strings'
+  | 'vintage-americana'
+  | 'custom'
+  | 'none';
+
 export class DocumentaryAudioEngine {
   private ctx: AudioContext | null = null;
   private destNode: MediaStreamAudioDestinationNode | null = null;
@@ -17,10 +25,11 @@ export class DocumentaryAudioEngine {
   private bgAudioEl: HTMLAudioElement | null = null;
   private connectedElements = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
   private isPlayingBg = false;
-  private currentStyle: 'western-acoustic' | 'emotional-piano' | 'custom' | 'none' = 'western-acoustic';
+  private currentStyle: BgMusicStyleOption = 'western-acoustic';
   private targetBgVolume = 0.25;
   private isPreMixedVoiceActive = false;
   private loopTimer: number | null = null;
+  private previewStopTimer: number | null = null;
   private stepIndex = 0;
 
   public init(): {
@@ -130,7 +139,7 @@ export class DocumentaryAudioEngine {
   }
 
   public startBackgroundMusic(
-    style: 'western-acoustic' | 'emotional-piano' | 'custom' | 'none',
+    style: BgMusicStyleOption,
     volume = 0.25,
     customUrl?: string
   ) {
@@ -158,12 +167,33 @@ export class DocumentaryAudioEngine {
       return;
     }
 
-    // For 'emotional-piano', run the warm studio felt piano + cello pad synthesizer
+    // For 'emotional-piano', 'cinematic-strings', or 'vintage-americana', run the dedicated studio synthesizer
     this.startProceduralLoop(style, ctx);
   }
 
+  /**
+   * Plays an 8-second audition preview of the selected background music style even when the timeline is paused.
+   */
+  public previewBackgroundMusic(
+    style: BgMusicStyleOption,
+    volume = 0.35,
+    customUrl?: string,
+    durationMs = 8000
+  ) {
+    if (this.previewStopTimer !== null) {
+      clearTimeout(this.previewStopTimer);
+      this.previewStopTimer = null;
+    }
+    this.isPreMixedVoiceActive = false;
+    this.startBackgroundMusic(style, Math.max(0.25, volume), customUrl);
+    this.previewStopTimer = window.setTimeout(() => {
+      this.stopBackgroundMusic();
+      this.previewStopTimer = null;
+    }, durationMs);
+  }
+
   private startProceduralLoop(
-    style: 'western-acoustic' | 'emotional-piano',
+    style: 'western-acoustic' | 'emotional-piano' | 'cinematic-strings' | 'vintage-americana',
     ctx: AudioContext
   ) {
     this.stepIndex = 0;
@@ -182,40 +212,77 @@ export class DocumentaryAudioEngine {
       [196.0, 246.94, 293.66, 392.0], // G
     ];
 
+    const stringsChords = [
+      [146.83, 220.0, 293.66, 349.23], // Dm
+      [116.54, 174.61, 233.08, 293.66], // Bbmaj7
+      [130.81, 196.0, 261.63, 329.63], // C
+      [110.0, 164.81, 220.0, 277.18], // A7/Dm
+    ];
+
+    const americanaChords = [
+      [164.81, 246.94, 329.63, 392.0], // Em
+      [196.0, 293.66, 392.0, 493.88], // G
+      [146.83, 220.0, 293.66, 369.99], // D
+      [130.81, 196.0, 246.94, 329.63], // Cmaj7
+    ];
+
     const pattern = [0, 1, 2, 3, 2, 1, 3, 2];
-    const stepMs = style === 'western-acoustic' ? 460 : 520;
+    const stepMs =
+      style === 'cinematic-strings'
+        ? 600
+        : style === 'emotional-piano'
+        ? 520
+        : style === 'vintage-americana'
+        ? 420
+        : 460;
 
     const playNote = () => {
       if (!this.isPlayingBg || !this.ctx || !this.bgGain) return;
       const now = ctx.currentTime;
-      const chords = style === 'western-acoustic' ? westernChords : pianoChords;
+      const chords =
+        style === 'cinematic-strings'
+          ? stringsChords
+          : style === 'emotional-piano'
+          ? pianoChords
+          : style === 'vintage-americana'
+          ? americanaChords
+          : westernChords;
       const chordIdx = Math.floor(this.stepIndex / 8) % chords.length;
       const noteIdx = pattern[this.stepIndex % pattern.length];
       const freq = chords[chordIdx][noteIdx];
 
-      // Multi-harmonic warm plucked string / felt piano
+      // Multi-harmonic warm plucked string / felt piano / bowed strings
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const noteGain = ctx.createGain();
       const filter = ctx.createBiquadFilter();
 
-      osc1.type = style === 'western-acoustic' ? 'triangle' : 'sine';
+      osc1.type =
+        style === 'western-acoustic' || style === 'vintage-americana'
+          ? 'triangle'
+          : 'sine';
       osc1.frequency.setValueAtTime(freq, now);
 
-      osc2.type = 'sine';
+      osc2.type = style === 'cinematic-strings' ? 'triangle' : 'sine';
       osc2.frequency.setValueAtTime(freq * 2, now);
 
       const osc2Gain = ctx.createGain();
-      osc2Gain.gain.setValueAtTime(0.06, now);
-      osc2Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc2Gain.gain.setValueAtTime(style === 'cinematic-strings' ? 0.08 : 0.06, now);
+      osc2Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
 
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(style === 'western-acoustic' ? 1600 : 1000, now);
+      filter.frequency.setValueAtTime(
+        style === 'western-acoustic' || style === 'vintage-americana' ? 1600 : 1000,
+        now
+      );
       filter.frequency.exponentialRampToValueAtTime(320, now + 1.8);
 
       noteGain.gain.setValueAtTime(0.001, now);
-      noteGain.gain.linearRampToValueAtTime(0.2, now + 0.025);
-      noteGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.1);
+      noteGain.gain.linearRampToValueAtTime(
+        style === 'cinematic-strings' ? 0.14 : 0.2,
+        now + (style === 'cinematic-strings' ? 0.18 : 0.025)
+      );
+      noteGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.3);
 
       osc1.connect(filter);
       osc2.connect(osc2Gain);
@@ -225,30 +292,33 @@ export class DocumentaryAudioEngine {
 
       osc1.start(now);
       osc2.start(now);
-      osc1.stop(now + 2.15);
-      osc2.stop(now + 2.15);
+      osc1.stop(now + 2.35);
+      osc2.stop(now + 2.35);
 
       // Warm sustained cello/string pad on beat 0 of each bar
       if (this.stepIndex % 8 === 0) {
         const padOsc = ctx.createOscillator();
         const padFifth = ctx.createOscillator();
         const padGain = ctx.createGain();
-        padOsc.type = 'sine';
+        padOsc.type = style === 'cinematic-strings' ? 'triangle' : 'sine';
         padFifth.type = 'sine';
         padOsc.frequency.setValueAtTime(chords[chordIdx][0] * 0.5, now);
         padFifth.frequency.setValueAtTime(chords[chordIdx][0] * 0.75, now);
 
         padGain.gain.setValueAtTime(0.001, now);
-        padGain.gain.linearRampToValueAtTime(0.09, now + 0.8);
-        padGain.gain.exponentialRampToValueAtTime(0.001, now + 3.6);
+        padGain.gain.linearRampToValueAtTime(
+          style === 'cinematic-strings' ? 0.16 : 0.09,
+          now + 0.8
+        );
+        padGain.gain.exponentialRampToValueAtTime(0.001, now + 3.8);
 
         padOsc.connect(padGain);
         padFifth.connect(padGain);
         padGain.connect(this.bgGain);
         padOsc.start(now);
         padFifth.start(now);
-        padOsc.stop(now + 3.7);
-        padFifth.stop(now + 3.7);
+        padOsc.stop(now + 3.9);
+        padFifth.stop(now + 3.9);
       }
 
       this.stepIndex++;
@@ -260,6 +330,10 @@ export class DocumentaryAudioEngine {
 
   public stopBackgroundMusic() {
     this.isPlayingBg = false;
+    if (this.previewStopTimer !== null) {
+      clearTimeout(this.previewStopTimer);
+      this.previewStopTimer = null;
+    }
     if (this.bgAudioEl) {
       this.bgAudioEl.pause();
     }

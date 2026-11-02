@@ -109,7 +109,13 @@ export interface ProjectSettings {
   /** Show bottom-right mini audio waveform equalizer */
   showWaveformBadge: boolean;
   /** Background music style */
-  bgMusicStyle: 'western-acoustic' | 'emotional-piano' | 'custom' | 'none';
+  bgMusicStyle:
+    | 'western-acoustic'
+    | 'emotional-piano'
+    | 'cinematic-strings'
+    | 'vintage-americana'
+    | 'custom'
+    | 'none';
   customBgMusicUrl?: string;
   bgMusicVolume: number;
   voiceoverVolume: number;
