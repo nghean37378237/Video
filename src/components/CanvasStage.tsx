@@ -331,6 +331,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
 
         if (scene.voiceoverUrl) {
+          const isPreMixedRefClip = scene.voiceoverUrl.includes('/ws_scene_');
+          soundEngine.setPreMixedVoiceActive(isPreMixedRefClip);
           // Keep HTMLAudioElement unmuted so MediaElementAudioSourceNode always feeds full voiceover audio into the recording stream; speaker mute is controlled via soundEngine.setSpeakerMuted(isMuted)
           voiceAud.muted = false;
           voiceAud.playbackRate = 1.0;
@@ -363,8 +365,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           if (!isPlaying && !voiceAud.paused) {
             voiceAud.pause();
           }
-        } else if (!voiceAud.paused) {
-          voiceAud.pause();
+        } else {
+          soundEngine.setPreMixedVoiceActive(false);
+          if (!voiceAud.paused) {
+            voiceAud.pause();
+          }
         }
       }
 

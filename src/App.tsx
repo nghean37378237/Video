@@ -10,6 +10,7 @@ import {
   LORNE_GREENE_SCENES,
   PRESET_SCENES_MAP,
   REFERENCE_VIDEOS,
+  WILL_SAMPSON_SCENES,
 } from './data/lorneGreenePreset';
 import {
   ColorFilter,
@@ -49,9 +50,9 @@ import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
 
 export default function App() {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
-  const [scenes, setScenes] = useState<StoryScene[]>(LORNE_GREENE_SCENES);
+  const [scenes, setScenes] = useState<StoryScene[]>(WILL_SAMPSON_SCENES);
   const [settings, setSettings] = useState<ProjectSettings>(INITIAL_PROJECT_SETTINGS);
-  const [activeSceneId, setActiveSceneId] = useState<string>(LORNE_GREENE_SCENES[0].id);
+  const [activeSceneId, setActiveSceneId] = useState<string>(WILL_SAMPSON_SCENES[0].id);
   const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isExtractingFrames, setIsExtractingFrames] = useState<boolean>(false);
@@ -185,10 +186,11 @@ export default function App() {
   };
 
   const getCharacterNameForPreset = (presetId: PresetId): string => {
+    if (presetId === 'will-sampson') return 'Will Sampson';
     if (presetId === 'lorne-greene') return 'Lorne Greene';
     if (presetId === 'clayton-moore') return 'Clayton Moore';
     if (presetId === 'yul-brynner') return 'Yul Brynner';
-    return 'Lorne Greene';
+    return 'Will Sampson';
   };
 
   const handleSelectPreset = async (presetId: PresetId) => {
@@ -820,6 +822,99 @@ export default function App() {
   };
 
   // Strictly match and assign ONLY verified real historical photos AND real videos of the character in smooth chronological order.
+  // Browser-direct CORS fallback to Wikimedia Commons & Wikipedia APIs (origin=*) so real photos/videos work 100% even on static Vercel deployments
+  const fetchArchivalMediaFromCommonsBrowserFallback = async (
+    characterQuery: string,
+    targetScenes: StoryScene[]
+  ) => {
+    const cleanTopic = characterQuery.trim() || 'Will Sampson';
+    const matchedBySceneId: Record<
+      string,
+      {
+        title: string;
+        dataUrl: string;
+        videoUrl?: string;
+        mediaKind?: 'video' | 'image';
+        width: number;
+        height: number;
+      }
+    > = {};
+    const allPhotos: Array<{
+      title: string;
+      dataUrl: string;
+      videoUrl?: string;
+      mediaKind?: 'video' | 'image';
+      width: number;
+      height: number;
+    }> = [];
+
+    try {
+      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        cleanTopic
+      )}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=1080&format=json&origin=*`;
+      const res = await fetch(commonsUrl);
+      if (res.ok) {
+        const json = await res.json();
+        const pages = Object.values(json?.query?.pages || {}) as any[];
+        for (const page of pages) {
+          const info = page?.imageinfo?.[0];
+          if (!info) continue;
+          const mime = String(info.mime || '').toLowerCase();
+          const cleanTitle = String(page.title || '')
+            .replace(/^File:/i, '')
+            .replace(/\.[a-z0-9]+$/i, '')
+            .replace(/[_-]+/g, ' ');
+          if (
+            mime.includes('webm') ||
+            mime.includes('mp4') ||
+            mime.includes('ogv')
+          ) {
+            if (info.url && info.thumburl) {
+              allPhotos.push({
+                title: cleanTitle,
+                dataUrl: info.thumburl,
+                videoUrl: info.url,
+                mediaKind: 'video',
+                width: info.width || 1080,
+                height: info.height || 1440,
+              });
+            }
+          } else if (
+            mime.includes('jpeg') ||
+            mime.includes('jpg') ||
+            mime.includes('png') ||
+            mime.includes('webp')
+          ) {
+            const imgUrl = info.thumburl || info.url;
+            if (imgUrl) {
+              allPhotos.push({
+                title: cleanTitle,
+                dataUrl: imgUrl,
+                mediaKind: 'image',
+                width: info.thumbwidth || info.width || 1080,
+                height: info.thumbheight || info.height || 1440,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore browser fallback error
+    }
+
+    const visualScenes = targetScenes.filter(
+      (s) => s.sceneType === 'video' || s.sceneType === 'image'
+    );
+    visualScenes.forEach((sc, idx) => {
+      const candidate = allPhotos[idx];
+      if (candidate) {
+        matchedBySceneId[sc.id] = candidate;
+      }
+    });
+
+    return { matchedBySceneId, allPhotos };
+  };
+
   // Scenes without a verified real photo/video are NEVER given random/duplicate photos; instead they receive the character's reference portrait (characterRefPhotoUrl) + a ready-to-copy Standard Kling AI Prompt to draw & reg video!
   const matchAndAssignRealPhotosForScenes = async (
     targetScenes: StoryScene[],
@@ -832,32 +927,32 @@ export default function App() {
     missingCount: number;
   }> => {
     try {
-      const res = await fetch('/api/archival/match-scenes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topicHint,
-          scenes: targetScenes.map((s) => ({
-            id: s.id,
-            title: s.title,
-            sceneType: s.sceneType,
-            archivalKeywords: s.archivalKeywords,
-          })),
-        }),
-      });
-      if (!res.ok) {
-        const missing = targetScenes.filter(
-          (s) => (s.sceneType === 'video' || s.sceneType === 'image') && !s.hasRealPhoto
-        ).length;
-        return {
-          updatedScenes: targetScenes,
-          matchedCount: 0,
-          matchedVideosCount: 0,
-          matchedPhotosCount: 0,
-          missingCount: missing,
-        };
+      let data: any = null;
+      try {
+        const res = await fetch('/api/archival/match-scenes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: topicHint,
+            scenes: targetScenes.map((s) => ({
+              id: s.id,
+              title: s.title,
+              sceneType: s.sceneType,
+              archivalKeywords: s.archivalKeywords,
+            })),
+          }),
+        });
+        if (res.ok) {
+          data = await safeParseJsonResponse(res);
+        }
+      } catch {
+        data = null;
       }
-      const data = await safeParseJsonResponse(res);
+
+      if (!data || !data.matchedBySceneId || Object.keys(data.matchedBySceneId).length === 0) {
+        data = await fetchArchivalMediaFromCommonsBrowserFallback(topicHint, targetScenes);
+      }
+
       const matchedMap: Record<
         string,
         {

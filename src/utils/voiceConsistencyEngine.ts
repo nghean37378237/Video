@@ -18,25 +18,25 @@ export interface VoicePersonaProfile {
 export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePersonaProfile> = {
   Charon: {
     id: 'Charon',
-    label: 'Charon — Nam Trầm Ấm Documentary (Chuẩn Life Legends)',
-    badge: 'Nam Trầm Ấm',
+    label: 'Charon — Nam Trầm Ấm Chuẩn Mẫu Will Sampson (Life Legends)',
+    badge: 'Nam Trầm Ấm (Chuẩn Mẫu)',
     geminiAnchorPrompt:
-      'STRICT VOICE LOCK: Speak with a consistent, deep, warm, calm baritone documentary narrator voice. Maintain the exact same vocal pitch, measured cadence (145 words per minute), close studio microphone proximity, and steady emotional gravitas from the first word to the last word.',
-    standardRateFactor: 0.93,
-    lowShelfGainDb: 4.5,
-    midPresenceGainDb: 2.0,
-    highShelfGainDb: -2.0,
+      'Warm, deep, resonant American documentary baritone narrator like Life Legends. Speak at a calm, unhurried, reflective storytelling pace (135 words per minute) with rich chest resonance, intimate close-mic studio warmth, gentle emotional gravitas, and natural dramatic pauses between phrases.',
+    standardRateFactor: 0.92,
+    lowShelfGainDb: 5.2,
+    midPresenceGainDb: 2.4,
+    highShelfGainDb: -2.4,
   },
   Fenrir: {
     id: 'Fenrir',
-    label: 'Fenrir — Nam Trầm Uy Nghiêm & Điện Ảnh',
+    label: 'Fenrir — Nam Trầm Sâu Uy Nghiêm & Điện Ảnh',
     badge: 'Nam Uy Nghiêm',
     geminiAnchorPrompt:
-      'STRICT VOICE LOCK: Speak with a consistent, authoritative, resonant deep bass-baritone historical documentary voice. Keep identical pitch, slow deliberate pacing, and unchanging studio acoustic warmth throughout.',
+      'Deep, authoritative, resonant bass-baritone historical documentary narrator. Maintain a calm, deliberate storytelling cadence with warm studio chest resonance and natural dramatic pauses.',
     standardRateFactor: 0.89,
-    lowShelfGainDb: 5.5,
-    midPresenceGainDb: 1.8,
-    highShelfGainDb: -2.5,
+    lowShelfGainDb: 6.0,
+    midPresenceGainDb: 2.0,
+    highShelfGainDb: -2.8,
   },
   Puck: {
     id: 'Puck',

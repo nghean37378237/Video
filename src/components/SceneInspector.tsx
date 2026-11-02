@@ -720,8 +720,8 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 }
                 className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
               >
-                <option value="Charon">Charon (Nam trầm ấm Documentary)</option>
-                <option value="Fenrir">Fenrir (Nam trầm uy nghiêm)</option>
+                <option value="Charon">Charon (Nam trầm ấm chuẩn mẫu Will Sampson)</option>
+                <option value="Fenrir">Fenrir (Nam trầm sâu uy nghiêm)</option>
                 <option value="Puck">Puck (Truyền cảm tự nhiên)</option>
                 <option value="Kore">Kore (Nữ dịu dàng sâu lắng)</option>
                 <option value="Zephyr">Zephyr (Nữ trong trẻo kể chuyện)</option>
@@ -994,7 +994,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
               <div className="pt-1 border-t border-slate-800/80">
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Giai điệu nhạc nền (Khi ghép video mới)
+                  Nhạc dạo nền (Đã nạp chuẩn nhạc Guitar mẫu Will Sampson)
                 </label>
                 <select
                   value={settings.bgMusicStyle}
@@ -1006,12 +1006,12 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-100"
                 >
                   <option value="western-acoustic">
-                    Guitar Acoustic Thảo Nguyên (Phong cách Western)
+                    🎸 Guitar Acoustic Chuẩn Mẫu Will Sampson (Life Legends)
                   </option>
                   <option value="emotional-piano">
-                    Piano Trầm Lắng Tự Sự (Emotional Story)
+                    🎹 Piano & Cello Trầm Lắng Tự Sự (Emotional Story)
                   </option>
-                  <option value="none">Tắt nhạc nền</option>
+                  <option value="none">🔇 Tắt nhạc nền</option>
                 </select>
               </div>
 
