@@ -2190,6 +2190,7 @@ export default function App() {
         {/* Right Column: Scene Inspector, Prompts, Karaoke Subtitle Style & AI Voiceover */}
         <div className="col-span-4 lg:col-span-3 h-full min-h-0 overflow-hidden">
           <SceneInspector
+            scenes={scenes}
             activeScene={activeScene}
             onUpdateScene={handleUpdateScene}
             onAddScene={handleAddScene}
@@ -2203,6 +2204,7 @@ export default function App() {
             onGenerateImageViaProxyForScene={handleGenerateImageViaProxyForScene}
             generatingImageSceneId={generatingImageSceneId}
             onUploadFileForScene={handleUploadFileForScene}
+            onTriggerExport={() => setTriggerExportCounter((c) => c + 1)}
           />
         </div>
       </div>
