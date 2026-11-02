@@ -279,36 +279,36 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
 
     const vidCount =
       chatGptSceneCount >= 20
-        ? '6'
+        ? '12'
         : chatGptSceneCount >= 18
-        ? '5-6'
+        ? '11'
         : chatGptSceneCount >= 16
-        ? '5'
+        ? '10'
         : chatGptSceneCount >= 14
-        ? '4-5'
-        : '3-4';
-    const quoteCount = chatGptSceneCount >= 18 ? '3-4' : chatGptSceneCount >= 14 ? '3' : '2';
+        ? '8-9'
+        : '6-7';
+    const quoteCount = chatGptSceneCount >= 18 ? '3' : chatGptSceneCount >= 14 ? '2-3' : '2';
     const imgCount =
       chatGptSceneCount >= 20
-        ? '9-10'
+        ? '4'
         : chatGptSceneCount >= 18
-        ? '8-9'
+        ? '3'
         : chatGptSceneCount >= 16
-        ? '7-8'
+        ? '2-3'
         : chatGptSceneCount >= 14
-        ? '6-7'
+        ? '2-3'
         : chatGptSceneCount >= 12
-        ? '5-6'
-        : '4-5';
+        ? '2'
+        : '2';
 
     return `Tôi đang sản xuất video kể chuyện (${ratioSpec.labelVi}, dạng ${chatGptSceneCount} phân cảnh) chuẩn kênh "Life Legends" bằng bộ 3 công cụ: ChatGPT Pro (viết kịch bản & vẽ ảnh), Kling AI (tạo video chuyển động Image-to-Video không chặn người nổi tiếng), và LegendCut Studio (tự động ghép phim, đọc thuyết minh đồng nhất & làm phụ đề vàng + khóa cố định Logo kết LIFE LEGENDS - HM).
 
-Hãy viết kịch bản tối ưu hóa công sức nhất (${chatGptSceneCount} phân cảnh) về nhân vật: "${chatGptCharacter}".
+Hãy viết kịch bản (${chatGptSceneCount} phân cảnh) về nhân vật: "${chatGptCharacter}", trong đó PHẦN CẢNH VIDEO CHIẾM TRÊN 1/2 (>60%) ĐỘ DÀI TOÀN BỘ VIDEO.
 ${langNote}
 
-QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL KHUNG (${ratioSpec.ratio} - ${ratioSpec.width}x${ratioSpec.height}px):
+QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL KHUNG (${ratioSpec.ratio} - ${ratioSpec.width}x${ratioSpec.height}px):
 1. Trong ${chatGptSceneCount} phân cảnh:
-   - Chỉ dùng ĐÚNG ${vidCount} cảnh là [CẦN VIDEO - Tạo bằng Kling AI Image-to-Video]: Cảnh #01 (Mở đầu gây ấn tượng), các cảnh cao trào giữa video, và Cảnh áp chót (Kết thúc cảm xúc). Mỗi cảnh Video phải có:
+   - Dùng ${vidCount} cảnh là [CẦN VIDEO - Tạo bằng Kling AI Image-to-Video] (chiếm trên 1/2 tổng thời lượng toàn bộ video): Cảnh #01 (Mở đầu gây ấn tượng), các cảnh hành động/diễn xuất xuyên suốt mạch truyện, và Cảnh áp chót (Kết thúc cảm xúc). Mỗi cảnh Video phải có:
      + Prompt Ảnh Gốc Full Khung (${ratioSpec.ratio}, ${ratioSpec.width}x${ratioSpec.height}px, tràn viền 100%, không viền đen).
      + Prompt Chuyển Động Kling AI (Image-to-Video) viết theo KỊCH BẢN DIỄN XUẤT 3 NHỊP THỜI GIAN và KHÔNG nhắc tên người nổi tiếng trong câu lệnh video để tránh bộ lọc (chỉ gọi là "the subject in the reference frame" + mô tả ngoại hình/trang phục): "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: tư thế mở đầu từ ảnh gốc & bối cảnh -> [2-4s Story Action & Speech]: giữ nguyên 100% khuôn mặt từ ảnh gốc, hành động tương tác cụ thể, biểu cảm & cử động môi khớp lời thoại -> [4-6s Camera Control & Climax]: chuyển động máy quay Kling dolly push-in & ánh sáng cảm xúc".
    - ${imgCount} cảnh là [CẦN ẢNH TĨNH - Full Khung ${ratioSpec.ratio}]: Ảnh chân dung cổ điển tràn viền ${ratioSpec.width}x${ratioSpec.height}px.
@@ -368,6 +368,14 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
   const videoScenesCount = scenes.filter((s) => s.sceneType === 'video').length;
   const imageScenesCount = scenes.filter((s) => s.sceneType === 'image').length;
   const quoteScenesCount = scenes.filter((s) => s.sceneType === 'quote').length;
+  const totalTimelineDurationSec = scenes.reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
+  const videoScenesDurationSec = scenes
+    .filter((s) => s.sceneType === 'video')
+    .reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
+  const videoDurationSharePercent =
+    totalTimelineDurationSec > 0
+      ? Math.round((videoScenesDurationSec / totalTimelineDurationSec) * 100)
+      : 0;
   const visualScenesList = scenes.filter(
     (s) => s.sceneType === 'video' || s.sceneType === 'image'
   );
@@ -441,15 +449,18 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
               Trạm Ảnh/Video Thật & Prompt Vẽ + Reg Video Kling AI (#01 → #{String(scenes.length).padStart(2, '0')})
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Tìm được{' '}
+              Thời lượng Cảnh Video:{' '}
+              <strong className="text-sky-300">
+                {videoScenesDurationSec}s / {totalTimelineDurationSec}s ({videoDurationSharePercent}% &gt; 1/2 toàn bộ video — {videoScenesCount} cảnh Video)
+              </strong>{' '}
+              · Tìm được{' '}
               <strong className="text-emerald-300">
                 {verifiedRealVideoCount} Video Thật & {verifiedRealImageCount} Ảnh Thật
               </strong>{' '}
-              chuẩn nhân vật ·{' '}
+              ·{' '}
               <strong className="text-amber-300">
-                {missingRealPhotoScenes.length} cảnh chưa có trên mạng đã cấp sẵn Ảnh Mẫu + Prompt để bạn Vẽ & Reg Video Kling AI
+                {missingRealPhotoScenes.length} cảnh cấp sẵn Prompt Kling AI
               </strong>
-              !
             </p>
           </div>
 

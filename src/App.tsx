@@ -818,6 +818,48 @@ export default function App() {
       showBottomSubtitles: false,
     });
 
+    // Strictly guarantee that 'video' scenes account for > 1/2 (target >= 60%) of total video duration
+    const totalDurationSec = mapped.reduce((sum, s) => sum + Math.round(s.durationSec || 5), 0);
+    const minRequiredVideoDurationSec = Math.floor(totalDurationSec * 0.58) + 1;
+    let currentVideoDurationSec = mapped
+      .filter((s) => s.sceneType === 'video')
+      .reduce((sum, s) => sum + Math.round(s.durationSec || 5), 0);
+
+    if (currentVideoDurationSec < minRequiredVideoDurationSec) {
+      // Promote 'image' scenes (prioritizing longest scenes & key narrative beats) to 'video' until video duration > 58% of total video length
+      const imageSceneIndices = mapped
+        .map((s, idx) => ({ idx, dur: Math.round(s.durationSec || 5), type: s.sceneType }))
+        .filter((item) => item.type === 'image')
+        .sort((a, b) => b.dur - a.dur || a.idx - b.idx);
+
+      for (const candidate of imageSceneIndices) {
+        if (currentVideoDurationSec >= minRequiredVideoDurationSec) break;
+        const sc = mapped[candidate.idx];
+        const upgradedPack = buildStandardKlingDrawPrompt({
+          order: sc.order,
+          totalScenes: mapped.length,
+          characterName: characterTitle,
+          title: sc.title,
+          narrationText: sc.narrationText,
+          rawImagePrompt: sc.imagePrompt || sc.visualPrompt,
+          rawVideoPrompt: sc.videoMotionPrompt,
+          sceneType: 'video',
+          ratio: settings.aspectRatio,
+        });
+        mapped[candidate.idx] = {
+          ...sc,
+          sceneType: 'video',
+          visualPrompt: sc.visualPrompt
+            ? sc.visualPrompt.replace(/^CẦN ẢNH TĨNH:/i, 'CẦN VIDEO:')
+            : `CẦN VIDEO: ${sc.title}`,
+          imagePrompt: upgradedPack.klingImagePrompt,
+          videoMotionPrompt: upgradedPack.klingVideoPrompt,
+          klingStandardPrompt: upgradedPack.combinedBlock,
+        };
+        currentVideoDurationSec += candidate.dur;
+      }
+    }
+
     return mapped;
   };
 

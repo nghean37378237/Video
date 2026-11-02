@@ -653,7 +653,7 @@ function registerRoutes() {
       {
         title: "Chinh phục màn ảnh rộng",
         era: "1965 movie scene",
-        sceneType: "image",
+        sceneType: "video",
         en: `From dusty frontier towns to grand theater screens, every performance carried a raw, unforgettable authenticity.`,
         vi: `Từ những vùng đất miền Viễn Tây đầy gió bụi đến màn ảnh rộng, mỗi vai diễn đều mang chất chân thực khó quên.`,
       },
@@ -667,7 +667,7 @@ function registerRoutes() {
       {
         title: "Bản lĩnh sau ống kính",
         era: "1970s behind the scenes",
-        sceneType: "image",
+        sceneType: "video",
         en: `Behind the camera, discipline and quiet conviction guided every choice, refusing to follow easy trends.`,
         vi: `Phía sau ống kính, sự kỷ luật và niềm tin sắt đá đã dẫn lối cho mọi quyết định, không bao giờ chạy theo lối mòn.`,
       },
@@ -681,7 +681,7 @@ function registerRoutes() {
       {
         title: "Vượt qua sóng gió",
         era: "1975 dramatic portrait",
-        sceneType: "image",
+        sceneType: "video",
         en: `Through changing eras and personal trials, ${cleanName} reinvented the journey without ever losing that signature soul.`,
         vi: `Đi qua bao biến thiên thời cuộc và thử thách riêng, ${cleanName} tự làm mới mình mà không đánh mất bản sắc.`,
       },
@@ -709,14 +709,14 @@ function registerRoutes() {
       {
         title: "Truyền lửa cho thế hệ sau",
         era: "1990s mentor portrait",
-        sceneType: "image",
+        sceneType: "video",
         en: `To young artists and lifelong fans alike, ${cleanName} remained a guiding light of integrity and timeless grace.`,
         vi: `Với các nghệ sĩ trẻ và khán giả trung thành, ${cleanName} luôn là ngọn hải đăng của sự chính trực và phong thái lịch lãm.`,
       },
       {
         title: "Năm tháng hoàng kim",
         era: "later years portrait",
-        sceneType: "image",
+        sceneType: "video",
         en: `Even in the quieter chapters of life, every wrinkle and silver hair told the story of a life fully lived.`,
         vi: `Ngay cả trong những chương trầm lắng hơn của cuộc đời, từng dấu ấn thời gian đều kể về một hành trình sống trọn vẹn.`,
       },
@@ -730,7 +730,7 @@ function registerRoutes() {
       {
         title: "Huyền thoại trong lòng khán giả",
         era: "tribute portrait",
-        sceneType: "image",
+        sceneType: "video",
         en: `Long after the credits roll, the voice, the silhouette, and the spirit of ${cleanName} continue to inspire millions.`,
         vi: `Rất lâu sau khi dòng chữ kết phim khép lại, giọng nói, bóng dáng và tinh thần của ${cleanName} vẫn truyền cảm hứng cho hàng triệu người.`,
       },
@@ -836,8 +836,8 @@ function registerRoutes() {
 
     const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
     const scenes: any[] = segments.slice(0, targetNarrative).map((seg, idx) => {
-      const isQuote = idx > 1 && idx < targetNarrative - 1 && idx % 5 === 3;
-      const isVideo = !isQuote && (idx === 0 || idx === targetNarrative - 1 || idx % 3 === 0);
+      const isQuote = idx > 1 && idx < targetNarrative - 1 && idx % 6 === 3;
+      const isVideo = !isQuote && (idx === 0 || idx === targetNarrative - 1 || idx % 3 !== 2);
       const sType = isQuote ? "quote" : isVideo ? "video" : "image";
       return {
         title: `Phân cảnh #${String(idx + 1).padStart(2, "0")}`,
@@ -915,44 +915,44 @@ function registerRoutes() {
 
       const videoSceneQuota =
         targetSceneCount >= 20
-          ? "6"
+          ? "12 or 13"
           : targetSceneCount >= 18
-          ? "5 or 6"
+          ? "11 or 12"
           : targetSceneCount >= 16
-          ? "5"
+          ? "10"
           : targetSceneCount >= 14
-          ? "4 or 5"
+          ? "8 or 9"
           : targetSceneCount >= 10
-          ? "3 or 4"
-          : "2 or 3";
+          ? "6 or 7"
+          : "4 or 5";
       const quoteSceneQuota = includeQuotes
         ? targetSceneCount >= 18
-          ? "3 or 4 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
+          ? "2 or 3 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
           : targetSceneCount >= 14
           ? "2 or 3 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
-          : "2 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
+          : "1 or 2 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
         : "visual scenes";
       const imageSceneQuota =
         targetSceneCount >= 20
-          ? "9 or 10"
-          : targetSceneCount >= 18
-          ? "8 or 9"
-          : targetSceneCount >= 16
-          ? "7 or 8"
-          : targetSceneCount >= 14
-          ? "6 or 7"
-          : targetSceneCount >= 10
           ? "4 or 5"
-          : "3 or 4";
+          : targetSceneCount >= 18
+          ? "3 or 4"
+          : targetSceneCount >= 16
+          ? "3"
+          : targetSceneCount >= 14
+          ? "2 or 3"
+          : targetSceneCount >= 10
+          ? "2"
+          : "1 or 2";
 
       const prompt = `Create an EXACTLY ${targetSceneCount}-scene documentary story video script & production prompt sheet about: "${topic}" (return a JSON array with exactly ${targetSceneCount} scene objects).
 ${langInstruction}
 
 Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scenes with SMOOTH CHRONOLOGICAL & EMOTIONAL ORDERING:
-1. Smooth Story Arc (#01 -> #${targetSceneCount}):
-   - Scene #1 MUST be 'video' (a captivating hook where the character speaks/moves or performs a signature action, 5-9 seconds).
+1. Smooth Story Arc (#01 -> #${targetSceneCount}) — IMPORTANT: 'video' scenes MUST account for MORE THAN 1/2 (>60%) of the entire video duration:
+   - Scene #1 MUST be 'video' (a captivating hook where the character speaks/moves or performs a signature action, 7-9 seconds).
    - Scenes #2 to #${targetSceneCount - 1} MUST flow in a seamless chronological progression: Early Youth & Humble Beginnings -> Career Breakthrough -> Peak Iconic Roles -> Personal Struggles / Hidden Truths -> Enduring Legacy & Life Philosophy. Each scene's narration must bridge naturally into the next scene.
-   - Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes (for Kling AI Image-to-Video generation), ${imageSceneQuota} 'image' scenes (vintage still photo with slow Ken Burns zoom), and ${quoteSceneQuota}.
+   - Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes (for Kling AI Image-to-Video generation, accounting for >60% of the total video duration), ${imageSceneQuota} 'image' scenes (vintage still photo with slow Ken Burns zoom), and ${quoteSceneQuota}.
    - Final scene (#${targetSceneCount}) MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
 2. CRITICAL FOR FULL-FRAME KLING AI VIDEO & IMAGE PROMPTS: Every 'video' and 'image' scene MUST have:
    - 'frameStyle': "full-bleed" (filling 100% of the frame edge-to-edge).
@@ -1059,8 +1059,8 @@ ${rawScript}
 """
 
 ${countDirective} and decide for EACH segment whether the user should provide:
-- 'video' (CẦN VIDEO KLING AI: use for 3-5 key scenes like the opening hook, mid-story action, and closing shot; set frameStyle to 'full-bleed')
-- 'image' (CẦN ẢNH TĨNH: archival portrait with Ken Burns zoom; set frameStyle to 'full-bleed')
+- 'video' (CẦN VIDEO KLING AI: MUST account for MORE THAN 1/2 (>60%) of the total video duration and scene count, covering the opening hook, key story beats, action scenes, and closing tribute; set frameStyle to 'full-bleed')
+- 'image' (CẦN ẢNH TĨNH: archival portrait with Ken Burns zoom for 2-4 supporting scenes; set frameStyle to 'full-bleed')
 - 'quote' (THẺ CHỮ ĐEN: 2-3 dramatic turning-point sentences rendered as white italic text on a pitch-black screen — no image/video needed)
 - 'outro' (Final scene: "${channelTitle} - ${channelSubtitle}" brand crest)
 

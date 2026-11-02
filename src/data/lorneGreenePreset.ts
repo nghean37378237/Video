@@ -81,14 +81,14 @@ export const WILL_SAMPSON_SCENES: StoryScene[] = [
     id: 'ws-2',
     order: 2,
     title: 'Tháng Di Sản Bản Địa & Người Khổng Lồ Dịu Dàng',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 7,
     voiceoverUrl: '/assets/aistudio/ws_scene_02.mp3',
     narrationText:
       "This November is Native American Heritage Month. And there's no better way to begin it than with the story of this gentle giant.",
     translationText:
       'Tháng Mười Một là Tháng Di sản Người Mỹ Bản địa. Và không có cách nào tuyệt vời hơn để bắt đầu ngoài câu chuyện về người khổng lồ dịu dàng này.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Ảnh chân dung đời thường ấm áp của Will Sampson đội mũ cao bồi',
+    visualPrompt: 'CẦN VIDEO: Cảnh đời thường ấm áp của Will Sampson đội mũ cao bồi mỉm cười hiền hậu',
     imagePrompt:
       'Vintage 1970s documentary photograph of Will Sampson wearing a western cowboy hat and denim jacket, warm gentle smile, American Southwest backdrop, 3:4 portrait aspect ratio.',
     videoMotionPrompt:
@@ -166,14 +166,14 @@ export const WILL_SAMPSON_SCENES: StoryScene[] = [
     id: 'ws-6',
     order: 6,
     title: 'Người nghệ sĩ cầm cọ vẽ giữa những mùa Rodeo',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 15,
     voiceoverUrl: '/assets/aistudio/ws_scene_06.mp3',
     narrationText:
       'In between the rodeos, he picked up a paintbrush and did something nobody expected. He painted. Beautiful pictures of Native life, history, and pride. The rough rodeo cowboy was also a gifted artist.',
     translationText:
       'Giữa những mùa giải Rodeo, ông cầm lấy cọ vẽ và làm điều không ai ngờ tới. Ông vẽ những bức tranh tuyệt đẹp về đời sống, lịch sử và niềm tự hào bản địa. Chàng cao bồi gai góc ấy lại là một họa sĩ tài hoa.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Will Sampson bên giá vẽ những bức tranh lịch sử người bản địa',
+    visualPrompt: 'CẦN VIDEO: Cảnh Will Sampson cầm cọ vẽ những bức tranh lịch sử người bản địa bên giá vẽ',
     imagePrompt:
       '1970s warm archival photograph of Native American artist and actor Will Sampson holding a paintbrush beside a canvas painting of traditional Muscogee Creek life, natural window light, 3:4 aspect ratio.',
     videoMotionPrompt:
@@ -188,14 +188,14 @@ export const WILL_SAMPSON_SCENES: StoryScene[] = [
     id: 'ws-7',
     order: 7,
     title: 'Cuộc tìm kiếm vai Chief Bromden (Bay Trên Tổ Chim Cúc Cu)',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 16,
     voiceoverUrl: '/assets/aistudio/ws_scene_07.mp3',
     narrationText:
       "Then, in the 1970s, the filmmakers behind One Flew Over the Cuckoo's Nest started a search for a very special man. They needed someone to play Chief Bromden, a towering, silent patient who seems to see everything and says nothing.",
     translationText:
       'Rồi vào thập niên 1970, đoàn làm phim Bay Trên Tổ Chim Cúc Cu bắt đầu tìm kiếm một người thật đặc biệt. Họ cần người hóa thân thành Tù trưởng Bromden — bệnh nhân khổng lồ, lặng thinh nhưng thấu suốt mọi điều.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Hình ảnh nhân vật Chief Bromden cao lớn trầm mặc trong One Flew Over the Cuckoo’s Nest',
+    visualPrompt: 'CẦN VIDEO: Cảnh nhân vật Chief Bromden cao lớn trầm mặc quan sát trong One Flew Over the Cuckoo’s Nest',
     imagePrompt:
       '1975 film still portrait of Will Sampson as Chief Bromden in One Flew Over the Cuckoos Nest, wearing hospital work clothes, towering silently with deep expressive eyes, 3:4 vertical aspect ratio.',
     videoMotionPrompt:
@@ -295,14 +295,14 @@ export const WILL_SAMPSON_SCENES: StoryScene[] = [
     id: 'ws-12',
     order: 12,
     title: 'Tù trưởng Ten Bears đối diện Clint Eastwood (1976)',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 16,
     voiceoverUrl: '/assets/aistudio/ws_scene_12.mp3',
     narrationText:
       "A year later, Western fans met him again, as the proud Comanche Chief Ten Bears in The Outlaw Josey Wales. Face to face with Clint Eastwood, two warriors chose peace over bloodshed. It's still one of the most moving moments in any Western.",
     translationText:
       'Một năm sau, khán giả dòng phim Viễn Tây gặp lại ông trong vai Tù trưởng Comanche Ten Bears đầy kiêu hãnh trong The Outlaw Josey Wales. Đối mặt với Clint Eastwood, hai chiến binh đã chọn hòa bình thay vì đổ máu.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Will Sampson vai Tù trưởng Ten Bears đối diện Clint Eastwood trong The Outlaw Josey Wales',
+    visualPrompt: 'CẦN VIDEO: Cảnh Will Sampson vai Tù trưởng Ten Bears đối diện Clint Eastwood trong The Outlaw Josey Wales',
     imagePrompt:
       '1976 Western film photograph of Will Sampson as Comanche Chief Ten Bears in traditional regalia standing face to face with Clint Eastwood in The Outlaw Josey Wales, warm desert sunlight, 3:4 aspect ratio.',
     videoMotionPrompt:
@@ -317,14 +317,14 @@ export const WILL_SAMPSON_SCENES: StoryScene[] = [
     id: 'ws-13',
     order: 13,
     title: 'Mở cánh cửa cho thế hệ diễn viên Bản địa (1983)',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 17,
     voiceoverUrl: '/assets/aistudio/ws_scene_13.mp3',
     narrationText:
       'But off screen, Will was fighting a different battle. Native actors were rarely given Native roles, and he wanted that to change. So in 1983, he helped found the American Indian Registry for the Performing Arts. A door held open for the next generation.',
     translationText:
       'Nhưng ngoài đời thực, Will theo đuổi một cuộc chiến khác. Diễn viên bản địa hiếm khi được giao vai bản địa, và ông muốn thay đổi điều đó. Năm 1983, ông đồng sáng lập Hiệp hội Nghệ thuật Biểu diễn Người Mỹ Bản địa, mở rộng cánh cửa cho thế hệ mai sau.',
-    visualPrompt: 'CẦN ẢNH TĨNH: Chân dung Will Sampson thập niên 1980 đầy tâm huyết vì cộng đồng bản địa',
+    visualPrompt: 'CẦN VIDEO: Cảnh Will Sampson thập niên 1980 phát biểu đầy tâm huyết vì cộng đồng nghệ sĩ bản địa',
     imagePrompt:
       '1983 archival portrait of Native American actor and activist Will Sampson speaking at a cultural arts gathering in Los Angeles, wearing a turquoise bolo tie and western blazer, warm lighting, 3:4 aspect ratio.',
     videoMotionPrompt:
@@ -421,13 +421,13 @@ export const LORNE_GREENE_SCENES: StoryScene[] = [
     id: 'lg-2',
     order: 2,
     title: 'Đêm Chủ Nhật năm 1959',
-    sceneType: 'image',
+    sceneType: 'video',
     durationSec: 8,
     narrationText:
       'Sunday nights, 1959. That galloping theme song filled living rooms all across America, and a whole country met the Cartwright family.',
     translationText:
       'Những đêm Chủ Nhật năm 1959. Bản nhạc phim rộn ràng vang khắp các phòng khách nước Mỹ, đưa cả đất nước gặp gỡ gia đình Cartwright.',
-    visualPrompt: 'CẦN ẢNH TĨNH: 4 cha con nhà Cartwright trước hiên nhà gỗ',
+    visualPrompt: 'CẦN VIDEO: Cảnh 4 cha con nhà Cartwright trước hiên nhà gỗ trong Bonanza (1959)',
     imagePrompt:
       '1959 black and white archival promotional portrait of the four Bonanza actors (Lorne Greene, Pernell Roberts, Dan Blocker, Michael Landon) in western attire on a wooden ranch porch, crisp vintage film grain, 3:4 aspect ratio.',
     videoMotionPrompt:

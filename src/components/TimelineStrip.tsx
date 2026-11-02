@@ -71,23 +71,29 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
     )
     .filter(Boolean) as string[];
 
+  const totalSec = scenes.reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
+  const videoSec = scenes
+    .filter((s) => s.sceneType === 'video')
+    .reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
+  const videoSharePercent = totalSec > 0 ? Math.round((videoSec / totalSec) * 100) : 0;
+
   return (
     <div className="h-48 bg-[#0B0F17] border-t border-slate-800/90 flex flex-col select-none">
       {/* Timeline Header Bar */}
       <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800/80 bg-[#111827]/70 gap-2">
         <div className="flex items-center gap-2 text-xs text-slate-400 min-w-0 overflow-hidden">
           <span className="font-semibold text-slate-200 shrink-0">
-            Dòng Thời Gian Phân Cảnh ({scenes.length} đoạn)
+            Dòng Thời Gian Phân Cảnh ({scenes.length} đoạn · {totalSec}s)
           </span>
 
           {/* Clear Summary of which segments are VIDEO vs IMAGE */}
           <span
-            title={`Các đoạn cần làm Video chuyển động (Kling AI): ${videoSceneNumbers.join(', ') || 'Không có'}`}
+            title={`Các đoạn cần làm Video chuyển động (Kling AI): ${videoSceneNumbers.join(', ') || 'Không có'} — Chiếm ${videoSec}s / ${totalSec}s (${videoSharePercent}% > 1/2 độ dài toàn bộ video)`}
             className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center gap-1 shrink-0"
           >
             <Film className="w-3 h-3 shrink-0" />
             <span>
-              Đoạn VIDEO ({videoSceneNumbers.length}):{' '}
+              Đoạn VIDEO ({videoSceneNumbers.length} cảnh · {videoSec}s/{totalSec}s = {videoSharePercent}%):{' '}
               {videoSceneNumbers.length > 0 ? videoSceneNumbers.join(', ') : '0'}
             </span>
           </span>
