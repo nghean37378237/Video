@@ -1135,10 +1135,11 @@ export default function App() {
   const generateVoiceoversForScenesList = async (
     targetScenes: StoryScene[],
     lang: 'en' | 'vi',
-    onStepProgress?: (msg: string) => void
+    onStepProgress?: (msg: string) => void,
+    overrideVoice?: ProjectSettings['ttsVoice']
   ): Promise<StoryScene[]> => {
     const updated = [...targetScenes];
-    const voiceName = settings.ttsVoice || 'Charon';
+    const voiceName = overrideVoice || settings.ttsVoice || 'Charon';
     const persona = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
 
     const batchItems = updated
@@ -1255,6 +1256,7 @@ export default function App() {
 
     setSettings((prev) => ({
       ...prev,
+      ttsVoice: voiceName,
       audioMode: 'stitched-scenes',
       voiceLanguage: lang,
       lockedTtsEngine: lockedEngine,
@@ -1838,24 +1840,34 @@ export default function App() {
   };
 
   // Batch generate 100% consistent AI TTS voiceover for all current scenes
-  const handleGenerateAllVoiceovers = async () => {
+  const handleGenerateAllVoiceovers = async (
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideLang?: 'vi' | 'en'
+  ) => {
     if (isGeneratingAllTTS) return;
     setIsGeneratingAllTTS(true);
 
+    const chosenVoice = overrideVoice || settings.ttsVoice || 'Charon';
+    const targetVoiceLang =
+      overrideLang === 'vi' || overrideLang === 'en'
+        ? overrideLang
+        : detectProjectVoiceLanguage(scenes, settings);
+
     try {
-      const targetVoiceLang = detectProjectVoiceLanguage(scenes, settings);
       await generateVoiceoversForScenesList(
         scenes,
         targetVoiceLang,
-        (msg) => setTtsProgressText(msg)
+        (msg) => setTtsProgressText(msg),
+        chosenVoice
       );
       setSettings((prev) => ({
         ...prev,
+        ttsVoice: chosenVoice,
         audioMode: 'stitched-scenes',
         voiceLanguage: targetVoiceLang,
       }));
       setStatusBanner(
-        `🎙️ Đã đồng bộ Giọng Đọc ${settings.ttsVoice} (${
+        `🎙️ Đã đổi sang Giọng Đọc ${chosenVoice} (${
           targetVoiceLang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'
         }) ĐỒNG NHẤT 100% từ đầu đến cuối video (chuẩn hóa âm lượng & chất giọng xuyên suốt)!`
       );

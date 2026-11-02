@@ -1326,11 +1326,16 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     const lockedDurationSec = scenes.reduce((acc, s) => acc + Math.round(s.durationSec || 5), 0);
     exportTargetDurationRef.current = lockedDurationSec;
 
-    // If any narrative scene is missing TTS voiceover, auto-generate voiceovers first so exported video ALWAYS has full speech!
-    const missingVoiceover = scenes.some(
-      (s) => s.sceneType !== 'outro' && s.narrationText?.trim() && !s.voiceoverUrl
-    );
-    if (missingVoiceover && onEnsureVoiceoversBeforeExport) {
+    // If any narrative scene is missing TTS voiceover OR has a different voice persona than the currently selected settings.ttsVoice, auto-sync before export!
+    const currentVoice = settings.ttsVoice || 'Charon';
+    const needsVoiceSync = scenes.some((s) => {
+      if (s.sceneType === 'outro' || !s.narrationText?.trim()) return false;
+      if (!s.voiceoverUrl) return true;
+      if (s.voiceEngineUsed && !s.voiceEngineUsed.startsWith(`${currentVoice}:`)) return true;
+      if (s.voiceoverUrl.includes('/ws_scene_') && currentVoice !== 'Charon') return true;
+      return false;
+    });
+    if (needsVoiceSync && onEnsureVoiceoversBeforeExport) {
       try {
         await onEnsureVoiceoversBeforeExport();
       } catch {

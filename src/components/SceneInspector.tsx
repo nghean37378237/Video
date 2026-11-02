@@ -40,6 +40,7 @@ import {
 } from '../utils/fullFrameHelper';
 import {
   masterAudioToConsistentStudioWav,
+  playInstantVoicePreview,
   resolveConsistentSceneText,
   VOICE_PERSONA_PROFILES,
 } from '../utils/voiceConsistencyEngine';
@@ -52,7 +53,10 @@ interface SceneInspectorProps {
   onDeleteScene: (sceneId: string) => void;
   settings: ProjectSettings;
   onUpdateSettings: (patch: Partial<ProjectSettings>) => void;
-  onGenerateAllVoiceovers: () => Promise<void>;
+  onGenerateAllVoiceovers: (
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideLang?: 'vi' | 'en'
+  ) => Promise<void>;
   isGeneratingAllTTS: boolean;
   ttsProgressText: string;
   onOpenPromptStudio: () => void;
@@ -146,14 +150,19 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
     settings.voiceLanguage ||
     (settings.subtitleLanguage === 'en' ? 'en' : 'vi');
 
-  const handleGenerateSceneTTS = async () => {
+  const handleGenerateSceneTTS = async (
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideLang?: 'vi' | 'en',
+    autoPlay = true
+  ) => {
     if (!activeScene) return;
     setIsGeneratingSceneTTS(true);
     setTtsError(null);
 
-    const voiceName = settings.ttsVoice || 'Charon';
+    const voiceName = overrideVoice || settings.ttsVoice || 'Charon';
+    const targetLang = overrideLang || activeVoiceLang;
     const persona = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
-    const textToSpeak = resolveConsistentSceneText(activeScene, activeVoiceLang);
+    const textToSpeak = resolveConsistentSceneText(activeScene, targetLang);
 
     try {
       const response = await fetch('/api/tts/generate', {
@@ -162,8 +171,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         body: JSON.stringify({
           text: textToSpeak,
           voiceName,
-          language: activeVoiceLang,
-          preferredEngine: settings.lockedTtsEngine,
+          language: targetLang,
           style: persona.geminiAnchorPrompt,
         }),
       });
@@ -173,7 +181,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         throw new Error(data.error || 'Không thể tạo giọng đọc AI.');
       }
 
-      const engineUsed = data.engine || settings.lockedTtsEngine || 'standard-locked';
+      const engineUsed = data.engine || 'standard-locked';
       try {
         const { masteredAudioUrl, durationSec } = await masterAudioToConsistentStudioWav(
           data.audioDataUrl,
@@ -182,21 +190,29 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         );
         onUpdateScene(activeScene.id, {
           voiceoverUrl: masteredAudioUrl,
-          voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
+          voiceEngineUsed: `${voiceName}:${targetLang}:${engineUsed}`,
           durationSec: Math.max(5, Math.ceil(durationSec + 0.25)),
         });
+        if (autoPlay) {
+          playInstantVoicePreview(masteredAudioUrl, settings.voiceoverVolume);
+        }
       } catch {
         const exactDur = await getMediaDuration(data.audioDataUrl, 'audio');
         onUpdateScene(activeScene.id, {
           voiceoverUrl: data.audioDataUrl,
-          voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
+          voiceEngineUsed: `${voiceName}:${targetLang}:${engineUsed}`,
           durationSec: Math.max(5, Math.ceil(exactDur + 0.25)),
         });
+        if (autoPlay) {
+          playInstantVoicePreview(data.audioDataUrl, settings.voiceoverVolume);
+        }
       }
 
       onUpdateSettings({
+        ttsVoice: voiceName,
         audioMode: 'stitched-scenes',
-        voiceLanguage: activeVoiceLang,
+        voiceLanguage: targetLang,
+        lockedTtsEngine: undefined,
       });
     } catch (err: any) {
       setTtsError(err?.message || 'Lỗi khi tạo giọng đọc.');
@@ -857,13 +873,15 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                           ttsVoice: combo.voice,
                           bgMusicStyle: combo.music,
                           bgMusicVolume: combo.vol,
+                          lockedTtsEngine: undefined,
                         });
                         soundEngine.previewBackgroundMusic(
                           combo.music,
                           combo.vol,
                           settings.customBgMusicUrl,
-                          5000
+                          6000
                         );
+                        handleGenerateSceneTTS(combo.voice, activeVoiceLang, true);
                       }}
                       className={`p-2 rounded-md border text-left transition-colors ${
                         isSelected
@@ -883,17 +901,30 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
             {/* Locked Voice Language + Voice Persona Selector */}
             <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
-              <label className="block text-[10px] font-semibold text-slate-300">
-                1. Giọng đọc thuyết minh (Khóa đồng nhất 100% toàn video):
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="block text-[10px] font-semibold text-slate-300">
+                  1. Giọng đọc thuyết minh (Chọn để đổi &amp; nghe thử ngay):
+                </label>
+                <button
+                  type="button"
+                  disabled={isGeneratingSceneTTS}
+                  onClick={() => handleGenerateSceneTTS(settings.ttsVoice, activeVoiceLang, true)}
+                  className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 text-emerald-300 border border-emerald-500/40 rounded transition-colors"
+                >
+                  {isGeneratingSceneTTS ? '⏳ Đang tạo giọng...' : '🔊 Nghe Thử Giọng Này'}
+                </button>
+              </div>
               <div className="grid grid-cols-5 gap-1.5">
                 <select
                   value={activeVoiceLang}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newLang = e.target.value as 'vi' | 'en';
                     onUpdateSettings({
-                      voiceLanguage: e.target.value as 'vi' | 'en',
-                    })
-                  }
+                      voiceLanguage: newLang,
+                      lockedTtsEngine: undefined,
+                    });
+                    handleGenerateSceneTTS(settings.ttsVoice, newLang, true);
+                  }}
                   title="Khóa ngôn ngữ giọng đọc xuyên suốt từ đầu đến cuối"
                   className="col-span-2 px-2 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-700 rounded text-amber-300"
                 >
@@ -903,11 +934,14 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
                 <select
                   value={settings.ttsVoice}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newVoice = e.target.value as ProjectSettings['ttsVoice'];
                     onUpdateSettings({
-                      ttsVoice: e.target.value as ProjectSettings['ttsVoice'],
-                    })
-                  }
+                      ttsVoice: newVoice,
+                      lockedTtsEngine: undefined,
+                    });
+                    handleGenerateSceneTTS(newVoice, activeVoiceLang, true);
+                  }}
                   className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
                 >
                   <option value="Charon">
@@ -1032,38 +1066,38 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
 
             {/* 1-Click Generate & Lock Uniform AI Voiceover for ALL scenes */}
             <button
-              onClick={onGenerateAllVoiceovers}
+              onClick={() => onGenerateAllVoiceovers(settings.ttsVoice, activeVoiceLang)}
               disabled={isGeneratingAllTTS}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
             >
               {isGeneratingAllTTS ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
-                  {ttsProgressText || 'Đang đồng bộ giọng đọc xuyên suốt...'}
+                  {ttsProgressText || 'Đang đổi giọng đồng bộ toàn video...'}
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  Đồng Bộ Voice Đồng Nhất Từ Đầu Đến Cuối (1 Click)
+                  Đổi Sang Giọng {settings.ttsVoice} ({activeVoiceLang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}) Cho Toàn Video
                 </>
               )}
             </button>
 
             <div className="flex items-center justify-between gap-2">
               <button
-                onClick={handleGenerateSceneTTS}
+                onClick={() => handleGenerateSceneTTS(settings.ttsVoice, activeVoiceLang, true)}
                 disabled={isGeneratingSceneTTS}
                 className="flex-1 px-2.5 py-1.5 text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-amber-300 border border-amber-500/40 rounded transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
               >
                 {isGeneratingSceneTTS ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Đang thu âm cảnh #{activeScene.order}...
+                    Đang đổi giọng cảnh #{activeScene.order}...
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-3.5 h-3.5" />
-                    Thu Lại Riêng Cảnh #{activeScene.order} (Giữ Đồng Nhất)
+                    Thu &amp; Nghe Ngay Giọng {settings.ttsVoice} Cho Cảnh #{activeScene.order}
                   </>
                 )}
               </button>

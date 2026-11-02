@@ -2238,9 +2238,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   const ttsAudioCache = new Map<string, { audioDataUrl: string; engine: string }>();
   const ttsModelCooldownUntil: Record<string, number> = {};
   const GEMINI_TTS_MODELS = [
-    "gemini-3.8-flash-lite-tts",
-    "gemini-3.8-flash-tts",
     "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
   ] as const;
 
   const DEFAULT_LIFE_LEGENDS_VOICE_STYLE =
@@ -2252,6 +2251,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     style: string,
     startModelOffset = 0
   ): Promise<string | null> {
+    const apiKey = findGeminiApiKeyFromEnv();
+    if (!apiKey) return null;
+
     const now = Date.now();
     const availableModels = GEMINI_TTS_MODELS.filter(
       (m) => !ttsModelCooldownUntil[m] || ttsModelCooldownUntil[m] <= now
@@ -2262,7 +2264,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     for (let i = 0; i < availableModels.length; i++) {
       const ttsModel = availableModels[(startModelOffset + i) % availableModels.length];
       try {
-        // Only gemini-3.8-* models support speechMetadata; gemini-2.5-flash-preview-tts rejects speechMetadata with HTTP 400
         const partPayload = ttsModel.startsWith("gemini-3.8")
           ? ({
               text: cleanText,
@@ -2299,12 +2300,18 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         }
       } catch (geminiErr: any) {
         const errMsg = String(geminiErr?.message || geminiErr || "");
+        const isNotFound =
+          errMsg.includes("404") ||
+          errMsg.includes("NOT_FOUND") ||
+          errMsg.includes("not found");
         const isQuotaOrRateLimit =
           errMsg.includes("429") ||
           errMsg.includes("RESOURCE_EXHAUSTED") ||
           errMsg.includes("quota");
 
-        if (isQuotaOrRateLimit) {
+        if (isNotFound) {
+          ttsModelCooldownUntil[ttsModel] = Date.now() + 60 * 60 * 1000;
+        } else if (isQuotaOrRateLimit) {
           const isDailyQuota =
             errMsg.includes("PerDay") || errMsg.includes("per day");
           ttsModelCooldownUntil[ttsModel] =
