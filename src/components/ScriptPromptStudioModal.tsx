@@ -126,6 +126,8 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
     ok: boolean;
     message: string;
   } | null>(null);
+  const [isBatchGeneratingImages, setIsBatchGeneratingImages] = useState<boolean>(false);
+  const [batchImageProgress, setBatchImageProgress] = useState<string>('');
 
   const sceneFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const batchFileInputRef = useRef<Record<string, HTMLInputElement | null> | any>(null);
@@ -133,8 +135,9 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/proxy/status')
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
+        if (!data) return;
         setProxyKeyConfigured(Boolean(data.configured));
         if (data.baseUrl && !proxyBaseUrl) onChangeProxyBaseUrl(data.baseUrl);
         if (data.model && !proxyModel) onChangeProxyModel(data.model);
@@ -393,9 +396,6 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
 
     copyToClipboard(header + body, 'copy-missing-kling');
   };
-
-  const [isBatchGeneratingImages, setIsBatchGeneratingImages] = useState<boolean>(false);
-  const [batchImageProgress, setBatchImageProgress] = useState<string>('');
 
   const handleBatchGenerateAllImages = async () => {
     if (isBatchGeneratingImages) return;
