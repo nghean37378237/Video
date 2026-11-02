@@ -154,7 +154,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
           <span aria-hidden="true">·</span>
           <span>
             Tổng:{' '}
-            {formatSecLabel(scenes.reduce((acc, s) => acc + (s.durationSec || 5), 0))}
+            {formatSecLabel(scenes.reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0))}
           </span>
         </div>
       </div>
@@ -162,8 +162,9 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
       {/* Horizontal Scrollable Storyboard Track */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 py-2 flex items-stretch gap-2.5">
         {scenes.map((scene, idx) => {
+          const cleanDurationSec = Math.ceil(scene.durationSec || 5);
           const startSec = runningSec;
-          const endSec = startSec + (scene.durationSec || 5);
+          const endSec = startSec + cleanDurationSec;
           runningSec = endSec;
 
           const isSelected = scene.id === activeSceneId;
@@ -206,8 +207,6 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               ? `Video cảnh #${idx + 1}`
               : `Ảnh thật cảnh #${idx + 1}`
             : null;
-
-          const cleanDurationSec = Number((scene.durationSec || 5).toFixed(1));
 
           const handleToggleSceneType = (e: React.MouseEvent) => {
             e.stopPropagation();
@@ -322,28 +321,28 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       e.stopPropagation();
                       onOpenPromptStudio();
                     }}
-                    title={`Đoạn #${idx + 1} chưa có ảnh thật chuẩn nhân vật (App tuyệt đối không lấy ảnh lung tung). Bấm để copy Prompt Chuẩn Kling AI vẽ cảnh này!`}
+                    title={`Đoạn #${idx + 1} chưa có ảnh/video thật riêng trên mạng. Bấm để lấy Ảnh Mẫu Nhân Vật & Prompt Chuẩn Kling AI để vẽ và reg video!`}
                     className="w-full px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 truncate bg-amber-950/80 hover:bg-amber-900/80 text-amber-200 border border-amber-400/60 transition-colors"
                   >
                     <AlertCircle className="w-3 h-3 shrink-0 text-amber-400" />
                     <span className="truncate">
-                      🎨 Chưa có ảnh thật — Lấy Prompt Kling AI vẽ
+                      🎨 Lấy Ảnh Mẫu + Prompt Vẽ & Reg Video
                     </span>
                   </button>
                 ) : isVideoSceneHoldingTempImage ? (
                   <div
-                    title={`Đoạn #${idx + 1} là ĐOẠN VIDEO. Đã có Ảnh thật chuẩn (${attachedFileName}) làm ảnh gốc Start Frame cho Kling AI.`}
+                    title={`Đoạn #${idx + 1} là ĐOẠN VIDEO. Đã có Ảnh thật chuẩn (${attachedFileName}) làm ảnh gốc Start Frame để reg video Kling AI.`}
                     className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate bg-sky-950/80 text-sky-200 border border-sky-400/50"
                   >
                     <Film className="w-3 h-3 shrink-0 text-sky-400" />
                     <span className="font-bold text-amber-300 shrink-0">
-                      Đã có Ảnh thật làm gốc Kling:
+                      📸 Ảnh thật làm gốc Reg Video:
                     </span>
                     <span className="truncate">{attachedFileName}</span>
                   </div>
                 ) : hasMedia ? (
                   <div
-                    title={`Đã gắn ${actualMediaKind === 'video' ? 'Video' : 'Ảnh thật chuẩn'}: ${attachedFileName}`}
+                    title={`Đã gắn ${actualMediaKind === 'video' ? 'Video thật' : 'Ảnh thật chuẩn'}: ${attachedFileName}`}
                     className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate border ${
                       actualMediaKind === 'video'
                         ? 'bg-sky-950/70 text-sky-200 border-sky-500/40'
@@ -352,7 +351,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                   >
                     <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-400" />
                     <span className="font-bold shrink-0">
-                      {actualMediaKind === 'video' ? 'Đã gắn Video:' : '📸 Ảnh thật chuẩn:'}
+                      {actualMediaKind === 'video' ? '🎬 Video thật:' : '📸 Ảnh thật chuẩn:'}
                     </span>
                     <span className="truncate">{attachedFileName}</span>
                   </div>

@@ -9,34 +9,77 @@ export class DocumentaryAudioEngine {
   private ctx: AudioContext | null = null;
   private destNode: MediaStreamAudioDestinationNode | null = null;
   private masterGain: GainNode | null = null;
+  private speakerGain: GainNode | null = null;
   private bgGain: GainNode | null = null;
+  private connectedElements = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
   private isPlayingBg = false;
   private loopTimer: number | null = null;
   private stepIndex = 0;
 
-  public init(): { ctx: AudioContext; destNode: MediaStreamAudioDestinationNode; masterGain: GainNode } {
+  public init(): {
+    ctx: AudioContext;
+    destNode: MediaStreamAudioDestinationNode;
+    masterGain: GainNode;
+  } {
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.destNode = this.ctx.createMediaStreamDestination();
       this.masterGain = this.ctx.createGain();
+      this.speakerGain = this.ctx.createGain();
       this.bgGain = this.ctx.createGain();
 
       this.bgGain.gain.value = 0.22;
       this.masterGain.gain.value = 1.0;
+      this.speakerGain.gain.value = 1.0;
 
+      // bgGain -> masterGain
       this.bgGain.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+      // masterGain -> destNode (recording stream ALWAYS receives full unmuted audio!)
       this.masterGain.connect(this.destNode);
+      // masterGain -> speakerGain -> ctx.destination (live speakers)
+      this.masterGain.connect(this.speakerGain);
+      this.speakerGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
     return {
       ctx: this.ctx,
       destNode: this.destNode!,
       masterGain: this.masterGain!,
     };
+  }
+
+  public setSpeakerMuted(muted: boolean) {
+    const { ctx } = this.init();
+    if (this.speakerGain) {
+      this.speakerGain.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
+    }
+  }
+
+  /**
+   * Routes any HTMLAudioElement / HTMLVideoElement (such as the scene voiceover player)
+   * through the Web Audio masterGain so it plays to both the speakers AND the exported video stream.
+   */
+  public connectMediaElement(el: HTMLMediaElement | null | undefined) {
+    if (!el) return;
+    const { ctx, masterGain } = this.init();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if (this.connectedElements.has(el)) {
+      return;
+    }
+    try {
+      const sourceNode = ctx.createMediaElementSource(el);
+      sourceNode.connect(masterGain);
+      this.connectedElements.set(el, sourceNode);
+    } catch (err) {
+      console.warn('Could not connect media element to AudioContext:', err);
+    }
   }
 
   public setBgVolume(volume: number) {

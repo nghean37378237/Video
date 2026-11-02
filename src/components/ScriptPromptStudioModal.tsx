@@ -169,6 +169,17 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
     }
   };
 
+  const safeParseJson = async (res: Response): Promise<any> => {
+    const raw = await res.text();
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('<')) return null;
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  };
+
   const handleFetchProxyModels = async () => {
     setIsFetchingModels(true);
     setProxyTestResult(null);
@@ -178,8 +189,8 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customBaseUrl: proxyBaseUrl }),
       });
-      const data = await res.json();
-      if (res.ok && data.ok && Array.isArray(data.models)) {
+      const data = await safeParseJson(res);
+      if (res.ok && data?.ok && Array.isArray(data.models)) {
         setProxyKeyConfigured(true);
         setAvailableModels(data.models);
         if (data.models.length > 0 && !data.models.includes(proxyModel)) {
@@ -197,7 +208,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
       } else {
         setProxyTestResult({
           ok: false,
-          message: data.error || 'Không thể lấy danh sách model.',
+          message: data?.error || 'Không thể lấy danh sách model.',
         });
       }
     } catch (err: any) {
@@ -222,8 +233,8 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
           customModel: proxyModel,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) {
+      const data = await safeParseJson(res);
+      if (res.ok && data?.ok) {
         setProxyKeyConfigured(true);
         if (data.switchedModel && data.switchedModel !== proxyModel) {
           onChangeProxyModel(data.switchedModel);
@@ -232,7 +243,7 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
       } else {
         setProxyTestResult({
           ok: false,
-          message: data.error || 'Không thể kết nối API trung gian.',
+          message: data?.error || 'Không thể kết nối API trung gian.',
         });
       }
     } catch (err: any) {
@@ -311,7 +322,7 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
           `• 1. Prompt Tạo Ảnh Gốc Full Khung (Dùng làm ảnh đầu vào Start Frame cho Kling AI Image-to-Video):\n${fullImgPrompt}\n\n` +
           `• 2. Prompt Tạo Chuyển Động Kling AI (Chuẩn Người Nổi Tiếng - Giữ 100% Mặt Thật):\n${fullVidPrompt}\n\n` +
           `• 3. Negative Prompt Kling AI (Dán vào ô Negative Prompt):\n${KLING_NEGATIVE_PROMPT}\n\n` +
-          `• Lời thoại trong cảnh (${sc.durationSec}s): "${sc.narrationText}"`
+          `• Lời thoại trong cảnh (${Math.ceil(sc.durationSec)}s): "${sc.narrationText}"`
         );
       })
       .join('\n\n==================================================\n\n');
@@ -347,6 +358,13 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
   );
   const missingRealPhotoScenes = visualScenesList.filter((s) => s.hasRealPhoto === false);
   const verifiedRealPhotoScenes = visualScenesList.filter((s) => s.hasRealPhoto !== false);
+  const verifiedRealVideoCount = verifiedRealPhotoScenes.filter(
+    (s) => s.mediaKind === 'video'
+  ).length;
+  const verifiedRealImageCount = verifiedRealPhotoScenes.length - verifiedRealVideoCount;
+  const fallbackCharacterRefUrl =
+    scenes.find((s) => s.characterRefPhotoUrl)?.characterRefPhotoUrl ||
+    verifiedRealPhotoScenes.find((s) => s.mediaKind !== 'video' && s.mediaUrl)?.mediaUrl;
 
   const copyMissingRealPhotoKlingPrompts = () => {
     const targetList =
@@ -408,14 +426,18 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-b border-slate-800 bg-[#111827]">
           <div>
             <h2 className="text-base font-bold text-slate-100">
-              Trạm Prompt Chuẩn Kling AI (Sắp Xếp Mượt Mà Theo Thứ Tự #01 → #{String(scenes.length).padStart(2, '0')})
+              Trạm Ảnh/Video Thật & Prompt Vẽ + Reg Video Kling AI (#01 → #{String(scenes.length).padStart(2, '0')})
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Đã lọc chuẩn <strong>{verifiedRealPhotoScenes.length} cảnh có Ảnh Thật</strong> (không lấy ảnh lung tung) ·{' '}
-              <strong className="text-amber-300">
-                {missingRealPhotoScenes.length} cảnh chưa có ảnh thật đã tạo sẵn Prompt Chuẩn Kling AI
+              Tìm được{' '}
+              <strong className="text-emerald-300">
+                {verifiedRealVideoCount} Video Thật & {verifiedRealImageCount} Ảnh Thật
               </strong>{' '}
-              để bạn vẽ theo đúng thứ tự!
+              chuẩn nhân vật ·{' '}
+              <strong className="text-amber-300">
+                {missingRealPhotoScenes.length} cảnh chưa có trên mạng đã cấp sẵn Ảnh Mẫu + Prompt để bạn Vẽ & Reg Video Kling AI
+              </strong>
+              !
             </p>
           </div>
 
@@ -835,7 +857,7 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                         : 'bg-amber-950/40 text-amber-300 border-amber-500/40 hover:bg-amber-900/50'
                     }`}
                   >
-                    🎨 Chỉ hiện đoạn CHƯA CÓ ẢNH THẬT cần vẽ Kling AI ({missingRealPhotoScenes.length} đoạn)
+                    🎨 Cảnh Chưa Có Trên Mạng — Lấy Ảnh Mẫu & Prompt Vẽ / Reg Video ({missingRealPhotoScenes.length} đoạn)
                   </button>
                   <button
                     type="button"
@@ -846,7 +868,7 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                         : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50'
                     }`}
                   >
-                    📸 Đoạn ĐÃ CÓ ẢNH THẬT chuẩn ({verifiedRealPhotoScenes.length} đoạn)
+                    🎬 Đã Có Ảnh Thật / Video Thật Chuẩn ({verifiedRealPhotoScenes.length} đoạn)
                   </button>
                 </div>
 
@@ -924,7 +946,7 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-mono-tabular font-bold text-amber-400">
-                        CẢNH #{String(idx + 1).padStart(2, '0')}/{String(scenes.length).padStart(2, '0')} ({scene.durationSec}s)
+                        CẢNH #{String(idx + 1).padStart(2, '0')}/{String(scenes.length).padStart(2, '0')} ({Math.ceil(scene.durationSec)}s)
                       </span>
                       {scene.sceneType !== 'outro' && (
                         <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-semibold text-slate-300 border border-slate-700">
@@ -962,7 +984,11 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                       {isVisualScene && (
                         isMissingRealPhoto ? (
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50">
-                            🎨 Chưa có ảnh thật — Dùng Prompt Chuẩn Kling AI bên dưới để vẽ
+                            🎨 Chưa có ảnh/video thật — Đã cấp sẵn Ảnh Mẫu & Prompt bên dưới để bạn Vẽ và Reg Video
+                          </span>
+                        ) : previewKind === 'video' ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                            🎬 Đã có Video Thật chuẩn: {scene.realPhotoTitle || assignedVaultItem?.name || 'Đã xác thực'}
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
@@ -987,12 +1013,12 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                             {copiedKey === `kling-pack-${scene.id}` ? (
                               <>
                                 <Check className="w-3 h-3 text-emerald-400" />
-                                Đã Copy Prompt Kling Cảnh #{String(idx + 1).padStart(2, '0')}!
+                                Đã Copy Prompt Vẽ & Reg Video #{String(idx + 1).padStart(2, '0')}!
                               </>
                             ) : (
                               <>
                                 <Copy className="w-3 h-3" />
-                                Copy Trọn Bộ Prompt Kling Cảnh #{String(idx + 1).padStart(2, '0')}
+                                Copy Trọn Bộ Prompt Vẽ & Reg Video #{String(idx + 1).padStart(2, '0')}
                               </>
                             )}
                           </button>
@@ -1016,6 +1042,25 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                           )}
                         </button>
 
+                        {/* 1-Click Download Reference Face Portrait for Kling AI when scene is missing its own real photo */}
+                        {isMissingRealPhoto &&
+                          (scene.characterRefPhotoUrl || fallbackCharacterRefUrl) && (
+                            <button
+                              onClick={() =>
+                                handleDownloadFullFrameForGrok(
+                                  scene,
+                                  (scene.characterRefPhotoUrl || fallbackCharacterRefUrl)!,
+                                  'image'
+                                )
+                              }
+                              disabled={downloadingSceneId === scene.id}
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                            >
+                              <Download className="w-3 h-3 text-amber-300" />
+                              Tải Ảnh Mẫu Mặt Nhân Vật ({ratioSpec.width}×{ratioSpec.height}) Để Vẽ / Reg Video
+                            </button>
+                          )}
+
                         {/* 1-Click Download Full-Frame Reference Image for Kling AI Video */}
                         {previewUrl && (
                           <button
@@ -1033,7 +1078,7 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                             ) : (
                               <>
                                 <Download className="w-3 h-3" />
-                                Tải Ảnh Gốc Full Khung ({ratioSpec.width}×{ratioSpec.height}) Đưa Qua Kling AI
+                                Tải Ảnh Cảnh Này ({ratioSpec.width}×{ratioSpec.height}) Đưa Qua Kling AI
                               </>
                             )}
                           </button>
@@ -1090,6 +1135,8 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                               <video
                                 src={previewUrl}
                                 muted
+                                loop
+                                autoPlay
                                 playsInline
                                 className="w-full h-full object-cover"
                               />
@@ -1109,6 +1156,36 @@ QUY TẮC TỐI ƯU HÓA & KỊCH BẢN CHUYỂN ĐỘNG KLING AI 3 NHỊP FULL 
                             Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height})
                           </div>
                         </div>
+
+                        {/* When missing a unique photo, also show the verified character portrait thumbnail so user can download it for Face Reference / Kling I2V */}
+                        {isMissingRealPhoto &&
+                          (scene.characterRefPhotoUrl || fallbackCharacterRefUrl) && (
+                            <div className="p-2 rounded-lg bg-amber-950/30 border border-amber-500/40 flex flex-col gap-1.5">
+                              <div className="flex items-center gap-2">
+                                <img
+                                  src={scene.characterRefPhotoUrl || fallbackCharacterRefUrl}
+                                  alt="Ảnh mẫu nhân vật"
+                                  className="w-9 h-11 rounded object-cover border border-amber-400/60 shrink-0"
+                                />
+                                <span className="text-[10px] font-semibold text-amber-200 leading-tight">
+                                  Ảnh mẫu mặt thật nhân vật (dùng để Vẽ / Reg Video Kling AI)
+                                </span>
+                              </div>
+                              <button
+                                onClick={() =>
+                                  handleDownloadFullFrameForGrok(
+                                    scene,
+                                    (scene.characterRefPhotoUrl || fallbackCharacterRefUrl)!,
+                                    'image'
+                                  )
+                                }
+                                className="w-full flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded transition-colors"
+                              >
+                                <Download className="w-3 h-3 shrink-0" />
+                                Tải Ảnh Mẫu ({ratioSpec.ratio})
+                              </button>
+                            </div>
+                          )}
 
                         {previewUrl && (
                           <button

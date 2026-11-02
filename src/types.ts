@@ -68,9 +68,18 @@ export interface StoryScene {
   realPhotoTitle?: string;
   /** Complete ready-to-copy Standard Kling AI Prompt (Text-to-Image + 3-Beat Image-to-Video) in chronological order */
   klingStandardPrompt?: string;
+  /** Primary verified real portrait URL of the character to use as a downloadable face reference when drawing or generating video on Kling AI for scenes that lack their own unique archival photo */
+  characterRefPhotoUrl?: string;
 }
 
-export type TransitionStyle = 'crossfade' | 'dip-to-black' | 'film-glow' | 'cut';
+export type TransitionStyle =
+  | 'cinema-auto'
+  | 'crossfade'
+  | 'film-glow'
+  | 'cinema-zoom'
+  | 'cinema-pan'
+  | 'dip-to-black'
+  | 'cut';
 
 export interface ProjectSettings {
   projectTitle: string;

@@ -244,7 +244,7 @@ export async function getMediaDuration(url: string, kind: 'video' | 'audio'): Pr
     };
 
     const timer = setTimeout(() => {
-      finish(7.5);
+      finish(8);
     }, 2500);
 
     const el = document.createElement(kind);
@@ -254,11 +254,15 @@ export async function getMediaDuration(url: string, kind: 'video' | 'audio'): Pr
       clearTimeout(timer);
       const d = el.duration;
       el.removeAttribute('src');
-      finish(Number.isFinite(d) && d > 0.5 ? Math.round(d * 10) / 10 : 7.5);
+      if (Number.isFinite(d) && d > 0.5) {
+        finish(kind === 'video' ? Math.ceil(d) : d);
+      } else {
+        finish(8);
+      }
     };
     el.onerror = () => {
       clearTimeout(timer);
-      finish(7.5);
+      finish(8);
     };
   });
 }

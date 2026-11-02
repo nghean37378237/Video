@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ProjectSettings, StoryScene, TransitionStyle, VaultItem } from '../types';
-import { REFERENCE_VIDEOS } from '../data/lorneGreenePreset';
+import { FIXED_OUTRO_LOGO_URL, REFERENCE_VIDEOS } from '../data/lorneGreenePreset';
 import { soundEngine } from '../utils/audioSynth';
 import { formatSecLabel } from '../utils/frameExtractor';
 
@@ -41,6 +41,7 @@ interface CanvasStageProps {
   isPlaying: boolean;
   onTogglePlay: (playing: boolean) => void;
   triggerExportCounter: number;
+  onEnsureVoiceoversBeforeExport?: () => Promise<void>;
 }
 
 export const CanvasStage: React.FC<CanvasStageProps> = ({
@@ -54,6 +55,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   isPlaying,
   onTogglePlay,
   triggerExportCounter,
+  onEnsureVoiceoversBeforeExport,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const refVideoEl = useRef<HTMLVideoElement | null>(null);
@@ -130,7 +132,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
   // Preload both Image and Video assets into dedicated offscreen elements so scene transitions never stall or flash black
   useEffect(() => {
-    const imageUrls = new Set<string>();
+    const imageUrls = new Set<string>([FIXED_OUTRO_LOGO_URL]);
     const videoUrls = new Set<string>();
 
     vaultItems.forEach((item) => {
@@ -192,8 +194,16 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const lastTickRef = useRef<number>(performance.now());
 
   useEffect(() => {
+    soundEngine.setSpeakerMuted(isMuted);
+  }, [isMuted]);
+
+  useEffect(() => {
     const refVid = refVideoEl.current;
     const voiceAud = voiceAudioEl.current;
+
+    // Route voiceover and reference video elements into the Web Audio mixer & recording stream
+    if (voiceAud) soundEngine.connectMediaElement(voiceAud);
+    if (refVid) soundEngine.connectMediaElement(refVid);
 
     if (!isPlaying) {
       refVid?.pause();
@@ -208,12 +218,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     if (settings.audioMode === 'stitched-scenes') {
       soundEngine.startBackgroundMusic(
         settings.bgMusicStyle,
-        isMuted ? 0 : settings.bgMusicVolume
+        settings.bgMusicVolume
       );
     } else {
       soundEngine.stopBackgroundMusic();
     }
-  }, [isPlaying, settings.audioMode, settings.bgMusicStyle, settings.bgMusicVolume, isMuted]);
+  }, [isPlaying, settings.audioMode, settings.bgMusicStyle, settings.bgMusicVolume]);
 
   // Helper to resolve a scene's media URL & kind
   const resolveSceneMedia = useCallback(
@@ -321,7 +331,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
 
         if (scene.voiceoverUrl) {
-          voiceAud.muted = isMuted;
+          // Keep HTMLAudioElement unmuted so MediaElementAudioSourceNode always feeds full voiceover audio into the recording stream; speaker mute is controlled via soundEngine.setSpeakerMuted(isMuted)
+          voiceAud.muted = false;
           voiceAud.playbackRate = 1.0;
           const edgeFade =
             timeRemainingSec < 0.14 ? Math.max(0, timeRemainingSec / 0.14) : 1;
@@ -359,7 +370,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
       // 3. Legacy Reference Video fallback if used
       if (refVid && settings.referenceVideoUrl) {
-        refVid.muted = isMuted || settings.audioMode !== 'reference-video';
+        refVid.muted = settings.audioMode !== 'reference-video';
         refVid.volume = settings.voiceoverVolume;
       }
     },
@@ -367,7 +378,6 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       getSceneAtTime,
       resolveSceneMedia,
       isPlaying,
-      isMuted,
       settings.voiceoverVolume,
       settings.audioMode,
       settings.referenceVideoUrl,
@@ -382,7 +392,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     }
   }, [currentTimeSec, isPlaying, syncMediaElementsAtTime]);
 
-  // Draw full-frame image/video with eased Ken Burns motion and smart portrait head-protection
+  // Draw full-frame image/video with continuous Cinema Ken Burns drift, optical transition transforms, and subtle 35mm lens vignette
   const drawMediaWithKenBurns = (
     ctx: CanvasRenderingContext2D,
     source: HTMLVideoElement | HTMLImageElement,
@@ -390,41 +400,53 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     sourceH: number,
     progress: number,
     motion: StoryScene['motionEffect'],
-    filter: StoryScene['colorFilter']
+    filter: StoryScene['colorFilter'],
+    extraScale = 1,
+    extraOffsetX = 0,
+    extraBlurPx = 0
   ) => {
     if (!sourceW || !sourceH) return;
 
     ctx.save();
 
-    let baseFilter = '';
+    const filterParts: string[] = [];
     if (filter === 'bw-vintage') {
-      baseFilter = 'grayscale(100%) contrast(115%) brightness(96%)';
+      filterParts.push('grayscale(100%) contrast(115%) brightness(96%)');
     } else if (filter === 'sepia') {
-      baseFilter = 'sepia(75%) contrast(110%) brightness(95%)';
+      filterParts.push('sepia(75%) contrast(110%) brightness(95%)');
     } else if (filter === 'color-warm') {
-      baseFilter = 'saturate(115%) contrast(106%) sepia(15%)';
+      filterParts.push('saturate(115%) contrast(106%) sepia(15%)');
+    }
+    if (extraBlurPx > 0.15) {
+      filterParts.push(`blur(${extraBlurPx.toFixed(1)}px)`);
     }
 
-    ctx.filter = baseFilter || 'none';
+    ctx.filter = filterParts.length > 0 ? filterParts.join(' ') : 'none';
 
-    // Smooth sinusoidal easing so zoom/pan starts and stops gracefully without robotic jerks
-    const smoothP = easeInOutSine(progress);
+    // Blend linear drift (40%) + sinusoidal ease (60%) so camera motion keeps floating smoothly right through the transition
+    const clampedP = Math.min(1, Math.max(0, progress));
+    const smoothP = clampedP * 0.4 + easeInOutSine(clampedP) * 0.6;
 
     let scale = 1.0;
     let translateX = 0;
-    const translateY = 0;
+    let translateY = 0;
 
     if (motion === 'zoom-in') {
-      scale = 1.0 + smoothP * 0.11;
+      scale = 1.0 + smoothP * 0.125;
+      translateY = -smoothP * canvasH * 0.015;
     } else if (motion === 'zoom-out') {
-      scale = 1.11 - smoothP * 0.11;
+      scale = 1.125 - smoothP * 0.125;
+      translateY = (smoothP - 0.5) * canvasH * 0.015;
     } else if (motion === 'pan-left') {
-      scale = 1.09;
-      translateX = (0.5 - smoothP) * canvasW * 0.065;
+      scale = 1.1;
+      translateX = (0.5 - smoothP) * canvasW * 0.075;
     } else if (motion === 'pan-right') {
-      scale = 1.09;
-      translateX = (smoothP - 0.5) * canvasW * 0.065;
+      scale = 1.1;
+      translateX = (smoothP - 0.5) * canvasW * 0.075;
     }
+
+    scale *= extraScale;
+    translateX += extraOffsetX;
 
     // Fill 100% of the canvas edge-to-edge and protect portrait heads/eyes with 0.14 vertical bias
     const scaleCover = Math.max(canvasW / sourceW, canvasH / sourceH);
@@ -435,6 +457,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     const drawY = (canvasH - drawH) * verticalBias + translateY;
 
     ctx.drawImage(source, drawX, drawY, drawW, drawH);
+
+    // Subtle 35mm cinema lens vignette so all frames feel unified like a theatrical documentary
+    ctx.filter = 'none';
+    const vigGrad = ctx.createRadialGradient(
+      canvasW / 2,
+      canvasH * 0.46,
+      canvasW * 0.34,
+      canvasW / 2,
+      canvasH / 2,
+      canvasH * 0.72
+    );
+    vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    vigGrad.addColorStop(1, 'rgba(3,5,10,0.34)');
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(0, 0, canvasW, canvasH);
 
     ctx.restore();
   };
@@ -571,6 +608,23 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
   const drawOutroCrest = (ctx: CanvasRenderingContext2D, progress: number) => {
     ctx.save();
+    const fixedLogoImg = imageCacheRef.current.get(FIXED_OUTRO_LOGO_URL);
+    if (fixedLogoImg && fixedLogoImg.complete && fixedLogoImg.naturalWidth > 0) {
+      const smoothP = easeInOutSine(progress);
+      const scale = 1.0 + smoothP * 0.06;
+      const scaleCover = Math.max(
+        canvasW / fixedLogoImg.naturalWidth,
+        canvasH / fixedLogoImg.naturalHeight
+      );
+      const drawW = fixedLogoImg.naturalWidth * scaleCover * scale;
+      const drawH = fixedLogoImg.naturalHeight * scaleCover * scale;
+      const drawX = (canvasW - drawW) / 2;
+      const drawY = (canvasH - drawH) / 2;
+      ctx.drawImage(fixedLogoImg, drawX, drawY, drawW, drawH);
+      ctx.restore();
+      return;
+    }
+
     const bgGrad = ctx.createRadialGradient(
       canvasW / 2,
       canvasH / 2,
@@ -636,12 +690,39 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     ctx.restore();
   };
 
-  // Render a single scene's visual layer at a specified opacity for dual-scene cross-dissolves
+  // Sweeping warm 35mm Kodak film light-leak overlay during transitions
+  const drawWarmFilmLightLeak = (ctx: CanvasRenderingContext2D, t: number) => {
+    const intensity = Math.sin(t * Math.PI);
+    if (intensity <= 0.01) return;
+
+    ctx.save();
+    const leakX = canvasW * (0.15 + t * 0.7);
+    const leakY = canvasH * (0.35 + Math.sin(t * Math.PI) * 0.15);
+    const grad = ctx.createRadialGradient(
+      leakX,
+      leakY,
+      canvasW * 0.05,
+      leakX,
+      leakY,
+      canvasW * 0.85
+    );
+    grad.addColorStop(0, `rgba(255, 215, 140, ${(intensity * 0.42).toFixed(3)})`);
+    grad.addColorStop(0.45, `rgba(235, 145, 65, ${(intensity * 0.22).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.restore();
+  };
+
+  // Render a single scene's visual layer with optional optical transition transforms (scale, pan offset, rack-focus blur)
   const renderSingleSceneVisual = (
     ctx: CanvasRenderingContext2D,
     scene: StoryScene,
     progress: number,
-    alpha: number
+    alpha: number,
+    extraScale = 1,
+    extraOffsetX = 0,
+    extraBlurPx = 0
   ) => {
     if (alpha <= 0.005) return;
 
@@ -666,7 +747,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             img.naturalHeight,
             progress,
             scene.motionEffect,
-            scene.colorFilter
+            scene.colorFilter,
+            extraScale,
+            extraOffsetX,
+            extraBlurPx
           );
           drawn = true;
         }
@@ -681,7 +765,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             vidEl.videoHeight || 960,
             progress,
             scene.motionEffect,
-            scene.colorFilter
+            scene.colorFilter,
+            extraScale,
+            extraOffsetX,
+            extraBlurPx
           );
           drawn = true;
         }
@@ -918,11 +1005,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           ctx.fillRect(0, 0, canvasW, canvasH);
 
           if (scene) {
-            const transitionStyle: TransitionStyle = settings.transitionStyle || 'crossfade';
+            const configuredStyle: TransitionStyle = settings.transitionStyle || 'cinema-auto';
             const rawTransDur =
-              transitionStyle === 'cut'
-                ? 0.16
-                : Math.max(0.25, settings.transitionDurationSec ?? 0.75);
+              configuredStyle === 'cut'
+                ? 0.25
+                : Math.max(0.5, settings.transitionDurationSec ?? 1.2);
             const effectiveTransDur = nextScene
               ? Math.min(
                   rawTransDur,
@@ -931,17 +1018,34 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                 )
               : 0;
 
+            // Compute continuous Ken Burns progress for the active scene (accounting for its pre-roll overlap in the previous scene so motion NEVER resets at localTimeSec = 0!)
+            const prevScene = info.index > 0 ? scenes[info.index - 1] : undefined;
+            const prevOverlapDur = prevScene
+              ? Math.min(
+                  rawTransDur,
+                  Math.max(1, prevScene.durationSec || 5) * 0.45,
+                  sceneDurationSec * 0.45
+                )
+              : 0;
+            const continuousActiveProgress = Math.min(
+              1,
+              Math.max(0, (localTimeSec + prevOverlapDur) / (sceneDurationSec + prevOverlapDur))
+            );
+
             const isTransitioning =
               Boolean(nextScene) &&
               effectiveTransDur > 0 &&
               timeRemainingSec <= effectiveTransDur;
 
             if (isTransitioning && nextScene) {
-              const rawT = 1 - timeRemainingSec / effectiveTransDur;
+              const rawT = Math.min(1, Math.max(0, 1 - timeRemainingSec / effectiveTransDur));
               const easedT = easeInOutCubic(rawT);
-              const nextInitialProgress = Math.min(
-                0.15,
-                (rawT * effectiveTransDur) / Math.max(1, nextScene.durationSec || 5)
+
+              // Incoming scene starts its continuous Ken Burns progress at 0 and reaches effectiveTransDur / (nextDur + effectiveTransDur) right at the scene boundary
+              const nextDur = Math.max(1, nextScene.durationSec || 5);
+              const nextContinuousProgress = Math.min(
+                1,
+                (rawT * effectiveTransDur) / (nextDur + effectiveTransDur)
               );
 
               const involvesQuoteOrOutro =
@@ -949,39 +1053,151 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                 nextScene.sceneType === 'quote' ||
                 nextScene.sceneType === 'outro';
 
-              if (transitionStyle === 'dip-to-black' || involvesQuoteOrOutro) {
-                // Smooth cinematic Dip-to-Black so text cards and scene shifts feel like a documentary film
+              // Resolve effective transition mode when 'cinema-auto' is active
+              let activeMode: TransitionStyle = configuredStyle;
+              if (configuredStyle === 'cinema-auto') {
+                if (involvesQuoteOrOutro) {
+                  activeMode = 'dip-to-black';
+                } else {
+                  const autoCycle: TransitionStyle[] = ['crossfade', 'film-glow', 'cinema-zoom'];
+                  activeMode = autoCycle[info.index % autoCycle.length];
+                }
+              } else if (involvesQuoteOrOutro && configuredStyle !== 'cut') {
+                activeMode = 'dip-to-black';
+              }
+
+              // Equal-power crossfade alphas so mid-transition brightness never dips
+              const outAlpha = Math.cos(easedT * Math.PI * 0.5);
+              const inAlpha = Math.sin(easedT * Math.PI * 0.5);
+
+              if (activeMode === 'dip-to-black') {
+                // Velvet Cinema Dip-to-Black with gentle focal softening
                 if (rawT < 0.5) {
                   const subT = easeInOutCubic(rawT * 2);
-                  renderSingleSceneVisual(ctx, scene, progress, 1 - subT);
+                  renderSingleSceneVisual(
+                    ctx,
+                    scene,
+                    continuousActiveProgress,
+                    1 - subT,
+                    1 + subT * 0.025,
+                    0,
+                    subT * 3.5
+                  );
                 } else {
                   const subT = easeInOutCubic((rawT - 0.5) * 2);
-                  renderSingleSceneVisual(ctx, nextScene, nextInitialProgress, subT);
+                  renderSingleSceneVisual(
+                    ctx,
+                    nextScene,
+                    nextContinuousProgress,
+                    subT,
+                    1.025 - subT * 0.025,
+                    0,
+                    (1 - subT) * 3.5
+                  );
                 }
-              } else if (transitionStyle === 'film-glow') {
-                // Cross-dissolve + warm archival golden film flash
-                renderSingleSceneVisual(ctx, scene, progress, 1);
-                renderSingleSceneVisual(ctx, nextScene, nextInitialProgress, easedT);
-
-                const flashIntensity = Math.sin(easedT * Math.PI) * 0.28;
-                if (flashIntensity > 0.01) {
-                  ctx.save();
-                  ctx.fillStyle = `rgba(255, 228, 170, ${flashIntensity.toFixed(3)})`;
-                  ctx.fillRect(0, 0, canvasW, canvasH);
-                  ctx.restore();
-                }
+              } else if (activeMode === 'cinema-zoom') {
+                // Smooth 3D Lens Zoom Transition: Outgoing pushes in with depth blur while incoming emerges into crisp focus
+                renderSingleSceneVisual(
+                  ctx,
+                  scene,
+                  continuousActiveProgress,
+                  outAlpha,
+                  1 + easedT * 0.11,
+                  0,
+                  easedT * 5.5
+                );
+                renderSingleSceneVisual(
+                  ctx,
+                  nextScene,
+                  nextContinuousProgress,
+                  inAlpha,
+                  0.93 + easedT * 0.07,
+                  0,
+                  (1 - easedT) * 5.5
+                );
+              } else if (activeMode === 'cinema-pan') {
+                // Smooth Cinema Whip-Pan Glide with directional motion blur
+                const dir = info.index % 2 === 0 ? -1 : 1;
+                const motionBlur = Math.sin(easedT * Math.PI) * 6;
+                renderSingleSceneVisual(
+                  ctx,
+                  scene,
+                  continuousActiveProgress,
+                  1 - easedT * 0.85,
+                  1.03,
+                  dir * easedT * canvasW * 0.28,
+                  motionBlur
+                );
+                renderSingleSceneVisual(
+                  ctx,
+                  nextScene,
+                  nextContinuousProgress,
+                  easedT,
+                  1.03,
+                  -dir * (1 - easedT) * canvasW * 0.28,
+                  motionBlur
+                );
+              } else if (activeMode === 'film-glow') {
+                // Optical Focus Dissolve + Sweeping 35mm Warm Golden Film Light Leak
+                renderSingleSceneVisual(
+                  ctx,
+                  scene,
+                  continuousActiveProgress,
+                  1,
+                  1 + easedT * 0.04,
+                  0,
+                  easedT * 4
+                );
+                renderSingleSceneVisual(
+                  ctx,
+                  nextScene,
+                  nextContinuousProgress,
+                  easedT,
+                  1.04 - easedT * 0.04,
+                  0,
+                  (1 - easedT) * 4
+                );
+                drawWarmFilmLightLeak(ctx, easedT);
               } else {
-                // Default 'crossfade' (Mượt Đan Xen - Dual-Scene Cross-Dissolve)
-                renderSingleSceneVisual(ctx, scene, progress, 1);
-                renderSingleSceneVisual(ctx, nextScene, nextInitialProgress, easedT);
+                // Default 'crossfade': Optical Focus Pull Dissolve (Outgoing softens & drifts in, incoming pulls into sharp focus)
+                renderSingleSceneVisual(
+                  ctx,
+                  scene,
+                  continuousActiveProgress,
+                  1,
+                  1 + easedT * 0.038,
+                  0,
+                  easedT * 4.2
+                );
+                renderSingleSceneVisual(
+                  ctx,
+                  nextScene,
+                  nextContinuousProgress,
+                  easedT,
+                  1.038 - easedT * 0.038,
+                  0,
+                  (1 - easedT) * 4.2
+                );
               }
             } else {
-              // Standard single scene rendering with gentle fade-in on the very first scene (first 0.35s)
+              // Standard single scene rendering with gentle cinema fade-in on the very first scene (first 0.55s)
               const firstSceneFadeIn =
-                info.index === 0 && localTimeSec < 0.35
-                  ? easeInOutSine(localTimeSec / 0.35)
+                info.index === 0 && localTimeSec < 0.55
+                  ? easeInOutSine(localTimeSec / 0.55)
                   : 1;
-              renderSingleSceneVisual(ctx, scene, progress, firstSceneFadeIn);
+              const firstSceneBlur =
+                info.index === 0 && localTimeSec < 0.55
+                  ? (1 - easeInOutSine(localTimeSec / 0.55)) * 4
+                  : 0;
+              renderSingleSceneVisual(
+                ctx,
+                scene,
+                continuousActiveProgress,
+                firstSceneFadeIn,
+                1,
+                0,
+                firstSceneBlur
+              );
             }
 
             if (settings.enableFilmGrain) {
@@ -1014,20 +1230,46 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     onTogglePlay,
   ]);
 
-  // Handle Full Video Export via MediaRecorder
-  const startVideoExport = useCallback(() => {
+  // Handle Full Video Export via MediaRecorder (with full Voiceover + Background Music mixed in)
+  const startVideoExport = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas || isExporting) return;
 
+    // Pause current playback first so we start cleanly from 0:00
+    onTogglePlay(false);
     setExportedVideoUrl(null);
     setIsExporting(true);
     setExportProgress(1);
     recordedChunksRef.current = [];
 
+    // If any narrative scene is missing TTS voiceover, auto-generate voiceovers first so exported video ALWAYS has full speech!
+    const missingVoiceover = scenes.some(
+      (s) => s.sceneType !== 'outro' && s.narrationText?.trim() && !s.voiceoverUrl
+    );
+    if (missingVoiceover && onEnsureVoiceoversBeforeExport) {
+      try {
+        await onEnsureVoiceoversBeforeExport();
+      } catch {
+        // Continue export even if a scene failed
+      }
+    }
+
+    // Ensure Web Audio mixer is active and both voiceAudioEl and refVideoEl are connected to the recording destination
+    soundEngine.init();
+    if (voiceAudioEl.current) {
+      voiceAudioEl.current.muted = false;
+      soundEngine.connectMediaElement(voiceAudioEl.current);
+    }
+    if (refVideoEl.current) {
+      soundEngine.connectMediaElement(refVideoEl.current);
+      refVideoEl.current.currentTime = 0;
+    }
+
+    lastSyncedSceneIdRef.current = '';
     playheadRef.current = 0;
     onTimeUpdate(0);
-    if (refVideoEl.current) {
-      refVideoEl.current.currentTime = 0;
+    if (scenes[0]) {
+      onSelectScene(scenes[0].id);
     }
 
     const canvasStream = canvas.captureStream(30);
@@ -1049,7 +1291,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     try {
       const recorder = new MediaRecorder(
         canvasStream,
-        selectedMime ? { mimeType: selectedMime, videoBitsPerSecond: 4500000 } : undefined
+        selectedMime
+          ? {
+              mimeType: selectedMime,
+              videoBitsPerSecond: 4500000,
+              audioBitsPerSecond: 192000,
+            }
+          : undefined
       );
 
       recorder.ondataavailable = (e) => {
@@ -1075,7 +1323,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       console.error('MediaRecorder error:', err);
       setIsExporting(false);
     }
-  }, [isExporting, onTimeUpdate, onTogglePlay]);
+  }, [
+    isExporting,
+    scenes,
+    onEnsureVoiceoversBeforeExport,
+    onTimeUpdate,
+    onSelectScene,
+    onTogglePlay,
+  ]);
 
   const stopExportEarly = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -1138,12 +1393,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quick Transition Style Selector right on the Top Stage Bar */}
-          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-900/90 border border-slate-800 text-[11px]">
-            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-            <span className="text-slate-400">Chuyển cảnh:</span>
+          {/* Always-visible Cinema Transition Style Selector on Top Stage Bar */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/95 border border-amber-500/40 text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-slate-300 hidden sm:inline">Chuyển cảnh:</span>
             <select
-              value={settings.transitionStyle || 'crossfade'}
+              value={settings.transitionStyle || 'cinema-auto'}
               onChange={(e) => {
                 const evt = new CustomEvent('legendcut:transition', {
                   detail: e.target.value as TransitionStyle,
@@ -1152,17 +1407,26 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               }}
               className="bg-transparent text-amber-400 font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="crossfade" className="bg-slate-900 text-slate-100">
-                Mượt Đan Xen (Crossfade)
+              <option value="cinema-auto" className="bg-slate-900 text-slate-100">
+                🎬 Điện Ảnh Tự Động (Mượt Như Phim)
               </option>
-              <option value="dip-to-black" className="bg-slate-900 text-slate-100">
-                Mờ Qua Đen (Cinema Fade)
+              <option value="crossfade" className="bg-slate-900 text-slate-100">
+                ✨ Hòa Tan Tiêu Cự (Optical Dissolve)
               </option>
               <option value="film-glow" className="bg-slate-900 text-slate-100">
-                Ánh Phim Cổ Điển (Film Glow)
+                🎞️ Cháy Sáng Phim 35mm (Light Leak)
+              </option>
+              <option value="cinema-zoom" className="bg-slate-900 text-slate-100">
+                🔍 Thu Phóng Tiêu Cự (Lens Zoom)
+              </option>
+              <option value="cinema-pan" className="bg-slate-900 text-slate-100">
+                ↔️ Lướt Máy Quay (Smooth Whip Pan)
+              </option>
+              <option value="dip-to-black" className="bg-slate-900 text-slate-100">
+                🌑 Mờ Sâu Qua Đen (Velvet Fade)
               </option>
               <option value="cut" className="bg-slate-900 text-slate-100">
-                Cắt Nhanh (Quick Cut)
+                ⚡ Cắt Nhanh (Quick Cut)
               </option>
             </select>
           </div>

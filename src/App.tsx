@@ -117,30 +117,35 @@ export default function App() {
     [isExtractingFrames, settings.referenceVideoUrl]
   );
 
-  // Automatically fetch real historical photos of any character from Wikimedia Commons
+  // Automatically fetch real historical photos AND videos of any character from Wikimedia Commons
   const fetchArchivalPhotosInternal = async (characterQuery: string): Promise<VaultItem[]> => {
     try {
       const res = await fetch('/api/archival/fetch-photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: characterQuery, limit: 10 }),
+        body: JSON.stringify({ query: characterQuery, limit: 12 }),
       });
       if (!res.ok) return [];
-      const data = await res.json();
-      if (!Array.isArray(data.photos) || data.photos.length === 0) return [];
+      const data = await safeParseJsonResponse(res);
+      if (!Array.isArray(data?.photos) || data.photos.length === 0) return [];
 
-      const fetchedItems: VaultItem[] = data.photos.map((p: any, idx: number) => ({
-        id: `archival-${Date.now()}-${idx}`,
-        name: p.title || `${characterQuery} #${idx + 1}`,
-        type: 'image',
-        url: p.dataUrl,
-        thumbnailUrl: p.dataUrl,
-        width: p.width,
-        height: p.height,
-        durationSec: 7,
-        sourceTag: 'uploaded',
-        createdAt: 'Ảnh lịch sử tự động',
-      }));
+      const fetchedItems: VaultItem[] = data.photos.map((p: any, idx: number) => {
+        const isVideo = p.mediaKind === 'video' && Boolean(p.videoUrl);
+        return {
+          id: `archival-${Date.now()}-${idx}`,
+          name: isVideo
+            ? `🎬 Video Thật: ${p.title || `${characterQuery} #${idx + 1}`}`
+            : `📸 Ảnh Thật: ${p.title || `${characterQuery} #${idx + 1}`}`,
+          type: isVideo ? 'video' : 'image',
+          url: isVideo ? p.videoUrl : p.dataUrl,
+          thumbnailUrl: p.dataUrl,
+          width: p.width,
+          height: p.height,
+          durationSec: 7,
+          sourceTag: 'uploaded',
+          createdAt: isVideo ? 'Video tư liệu thật' : 'Ảnh lịch sử tự động',
+        };
+      });
 
       setVaultItems((prev) => [...fetchedItems, ...prev]);
       return fetchedItems;
@@ -153,22 +158,25 @@ export default function App() {
     if (!characterQuery.trim() || isFetchingArchival) return;
     setIsFetchingArchival(true);
     try {
-      const { updatedScenes, matchedCount } = await matchAndAssignRealPhotosForScenes(
-        scenes,
-        characterQuery
-      );
-      if (matchedCount > 0) {
+      const {
+        updatedScenes,
+        matchedCount,
+        matchedVideosCount,
+        matchedPhotosCount,
+        missingCount,
+      } = await matchAndAssignRealPhotosForScenes(scenes, characterQuery);
+      if (matchedCount > 0 || missingCount > 0) {
         setScenes(updatedScenes);
       }
       const items = await fetchArchivalPhotosInternal(characterQuery);
       const totalFound = matchedCount + items.length;
       if (totalFound > 0) {
         setStatusBanner(
-          `Đã tự động lấy ${matchedCount} Ảnh Thực Tế gắn thẳng vào các cảnh (đỡ phải vẽ lại) và thêm ${items.length} ảnh tư liệu của "${characterQuery}" vào Kho!`
+          `Đã tự động tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật gắn thẳng vào cảnh + cấp sẵn Ảnh Mẫu & Prompt Kling AI cho ${missingCount} cảnh còn lại để bạn vẽ và reg video!`
         );
       } else {
         setStatusBanner(
-          `Không tìm thấy ảnh công khai cho "${characterQuery}". Bạn có thể bấm nút Vẽ Ảnh Gốc để AI vẽ cảnh này.`
+          `Không tìm thấy ảnh/video công khai cho "${characterQuery}". Đã tạo sẵn trọn bộ Prompt Ảnh & Video Kling AI để bạn vẽ và reg video ngay!`
         );
       }
     } finally {
@@ -176,7 +184,14 @@ export default function App() {
     }
   };
 
-  const handleSelectPreset = (presetId: PresetId) => {
+  const getCharacterNameForPreset = (presetId: PresetId): string => {
+    if (presetId === 'lorne-greene') return 'Lorne Greene';
+    if (presetId === 'clayton-moore') return 'Clayton Moore';
+    if (presetId === 'yul-brynner') return 'Yul Brynner';
+    return 'Lorne Greene';
+  };
+
+  const handleSelectPreset = async (presetId: PresetId) => {
     const presetMeta = REFERENCE_VIDEOS[presetId];
     const presetScenes = PRESET_SCENES_MAP[presetId];
     if (!presetMeta || !presetScenes) return;
@@ -192,10 +207,35 @@ export default function App() {
       referenceVideoUrl: '',
       audioMode: 'stitched-scenes',
     }));
+
+    const charName = getCharacterNameForPreset(presetId);
+    const { updatedScenes, matchedVideosCount, matchedPhotosCount } =
+      await matchAndAssignRealPhotosForScenes(presetScenes, charName);
+    setScenes(updatedScenes);
     setStatusBanner(
-      `Đã chuyển sang ${presetMeta.title} (Đầy đủ kịch bản + Prompt Ảnh/Video Full Khung cho từng cảnh).`
+      `Đã tải ${presetMeta.title}: Tự động lấy ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật trên mạng gắn vào các phân cảnh!`
     );
   };
+
+  // Automatically hydrate initial preset scenes with real web photos & videos on first load
+  useEffect(() => {
+    let cancelled = false;
+    const initRealMedia = async () => {
+      const charName = getCharacterNameForPreset(settings.activePresetId);
+      const { updatedScenes, matchedCount } = await matchAndAssignRealPhotosForScenes(
+        scenes,
+        charName
+      );
+      if (!cancelled && matchedCount > 0) {
+        setScenes(updatedScenes);
+      }
+    };
+    initRealMedia();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAddVaultItems = (newItems: VaultItem[]) => {
     setVaultItems((prev) => [...newItems, ...prev]);
@@ -731,7 +771,7 @@ export default function App() {
         mediaUrl: chosenMediaUrl,
         mediaKind: chosenMediaKind,
         videoTrimStartSec: 0,
-        durationSec: Math.max(4, Math.min(15, Number(raw.durationSec) || 7)),
+        durationSec: Math.max(5, Math.min(15, Math.ceil(Number(raw.durationSec) || 7))),
         narrationText: primaryNarration,
         translationText:
           lang === 'vi'
@@ -779,12 +819,18 @@ export default function App() {
     return mapped;
   };
 
-  // Strictly match and assign ONLY verified real historical photos of the character in smooth chronological order.
-  // Scenes without a verified real photo are NEVER given random/duplicate photos; instead they are marked hasRealPhoto: false with a ready-to-copy Standard Kling AI Prompt!
+  // Strictly match and assign ONLY verified real historical photos AND real videos of the character in smooth chronological order.
+  // Scenes without a verified real photo/video are NEVER given random/duplicate photos; instead they receive the character's reference portrait (characterRefPhotoUrl) + a ready-to-copy Standard Kling AI Prompt to draw & reg video!
   const matchAndAssignRealPhotosForScenes = async (
     targetScenes: StoryScene[],
     topicHint: string
-  ): Promise<{ updatedScenes: StoryScene[]; matchedCount: number; missingCount: number }> => {
+  ): Promise<{
+    updatedScenes: StoryScene[];
+    matchedCount: number;
+    matchedVideosCount: number;
+    matchedPhotosCount: number;
+    missingCount: number;
+  }> => {
     try {
       const res = await fetch('/api/archival/match-scenes', {
         method: 'POST',
@@ -803,16 +849,42 @@ export default function App() {
         const missing = targetScenes.filter(
           (s) => (s.sceneType === 'video' || s.sceneType === 'image') && !s.hasRealPhoto
         ).length;
-        return { updatedScenes: targetScenes, matchedCount: 0, missingCount: missing };
+        return {
+          updatedScenes: targetScenes,
+          matchedCount: 0,
+          matchedVideosCount: 0,
+          matchedPhotosCount: 0,
+          missingCount: missing,
+        };
       }
-      const data = await res.json();
+      const data = await safeParseJsonResponse(res);
       const matchedMap: Record<
         string,
-        { title: string; dataUrl: string; width: number; height: number }
+        {
+          title: string;
+          dataUrl: string;
+          videoUrl?: string;
+          mediaKind?: 'video' | 'image';
+          width: number;
+          height: number;
+        }
       > = data?.matchedBySceneId || {};
+
+      // Primary verified real portrait of the character so scenes missing unique media still give the user a downloadable reference face photo
+      const allPoolItems: Array<{ dataUrl?: string; mediaKind?: string }> = Array.isArray(
+        data?.allPhotos
+      )
+        ? data.allPhotos
+        : [];
+      const primaryCharacterPhotoUrl =
+        allPoolItems.find((item) => item.mediaKind !== 'video' && item.dataUrl)?.dataUrl ||
+        allPoolItems[0]?.dataUrl ||
+        undefined;
 
       const newVaultItems: VaultItem[] = [];
       let matchedCount = 0;
+      let matchedVideosCount = 0;
+      let matchedPhotosCount = 0;
       let missingCount = 0;
 
       const updatedScenes = targetScenes.map((sc, idx) => {
@@ -831,13 +903,14 @@ export default function App() {
         });
 
         const matched = matchedMap[sc.id];
-        if (!matched || !matched.dataUrl) {
-          // Do NOT assign random or repeated photos! Keep clean Kling AI Blueprint card + Standard Kling Prompt
+        if (!matched || (!matched.dataUrl && !matched.videoUrl)) {
+          // Do NOT assign random or repeated photos! Provide character reference portrait + Kling AI Blueprint card + Standard Kling Prompt to draw & reg video
           missingCount++;
           return {
             ...sc,
             hasRealPhoto: false,
             realPhotoTitle: undefined,
+            characterRefPhotoUrl: primaryCharacterPhotoUrl || sc.characterRefPhotoUrl,
             imagePrompt: klingPack.klingImagePrompt,
             videoMotionPrompt: klingPack.klingVideoPrompt,
             klingStandardPrompt: klingPack.combinedBlock,
@@ -856,18 +929,27 @@ export default function App() {
           };
         }
 
+        const isRealVideo = matched.mediaKind === 'video' && Boolean(matched.videoUrl);
         matchedCount++;
+        if (isRealVideo) {
+          matchedVideosCount++;
+        } else {
+          matchedPhotosCount++;
+        }
+
         const vaultItem: VaultItem = {
-          id: `real-photo-${Date.now()}-${idx}`,
-          name: `📸 Ảnh Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`,
-          type: 'image',
-          url: matched.dataUrl,
+          id: `real-media-${Date.now()}-${idx}`,
+          name: isRealVideo
+            ? `🎬 Video Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`
+            : `📸 Ảnh Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`,
+          type: isRealVideo ? 'video' : 'image',
+          url: isRealVideo ? matched.videoUrl! : matched.dataUrl,
           thumbnailUrl: matched.dataUrl,
           width: matched.width,
           height: matched.height,
-          durationSec: sc.durationSec || 7,
+          durationSec: Math.ceil(sc.durationSec || 7),
           sourceTag: 'uploaded',
-          createdAt: 'Ảnh thật chuẩn nhân vật',
+          createdAt: isRealVideo ? 'Video thật chuẩn nhân vật' : 'Ảnh thật chuẩn nhân vật',
         };
         newVaultItems.push(vaultItem);
 
@@ -875,9 +957,10 @@ export default function App() {
           ...sc,
           mediaId: vaultItem.id,
           mediaUrl: vaultItem.url,
-          mediaKind: 'image' as const,
+          mediaKind: (isRealVideo ? 'video' : 'image') as 'video' | 'image',
           hasRealPhoto: true,
           realPhotoTitle: matched.title,
+          characterRefPhotoUrl: primaryCharacterPhotoUrl || matched.dataUrl,
           imagePrompt: klingPack.klingImagePrompt,
           videoMotionPrompt: klingPack.klingVideoPrompt,
           klingStandardPrompt: klingPack.combinedBlock,
@@ -890,12 +973,24 @@ export default function App() {
         setVaultItems((prev) => [...newVaultItems, ...prev]);
       }
 
-      return { updatedScenes, matchedCount, missingCount };
+      return {
+        updatedScenes,
+        matchedCount,
+        matchedVideosCount,
+        matchedPhotosCount,
+        missingCount,
+      };
     } catch {
       const missing = targetScenes.filter(
         (s) => (s.sceneType === 'video' || s.sceneType === 'image') && !s.hasRealPhoto
       ).length;
-      return { updatedScenes: targetScenes, matchedCount: 0, missingCount: missing };
+      return {
+        updatedScenes: targetScenes,
+        matchedCount: 0,
+        matchedVideosCount: 0,
+        matchedPhotosCount: 0,
+        missingCount: missing,
+      };
     }
   };
 
@@ -940,7 +1035,7 @@ export default function App() {
         }),
       });
       if (batchRes.ok) {
-        const batchData = await batchRes.json();
+        const batchData = await safeParseJsonResponse(batchRes);
         resultsBySceneId = batchData?.resultsBySceneId || {};
         if (batchData?.engineUsed === 'gemini-single-pass') {
           lockedEngine = 'gemini-single-pass';
@@ -982,7 +1077,7 @@ export default function App() {
             }),
           });
           if (singleRes.ok) {
-            const singleData = await singleRes.json();
+            const singleData = await safeParseJsonResponse(singleRes);
             rawAudioUrl = singleData?.audioDataUrl;
             engineForScene = singleData?.engine || lockedEngine;
           }
@@ -1002,10 +1097,7 @@ export default function App() {
             ...sc,
             voiceoverUrl: masteredAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(
-              4,
-              Math.round((Math.ceil(durationSec * 10) / 10 + 0.35) * 10) / 10
-            ),
+            durationSec: Math.max(5, Math.ceil(durationSec + 0.25)),
           };
         } catch {
           const dur = await getMediaDuration(rawAudioUrl, 'audio');
@@ -1013,10 +1105,7 @@ export default function App() {
             ...sc,
             voiceoverUrl: rawAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(
-              4,
-              Math.round((Math.ceil(dur * 10) / 10 + 0.35) * 10) / 10
-            ),
+            durationSec: Math.max(5, Math.ceil(dur + 0.25)),
           };
         }
         setScenes([...updated]);
@@ -1033,6 +1122,252 @@ export default function App() {
     return updated;
   };
 
+  const safeParseJsonResponse = async (res: Response): Promise<any> => {
+    const rawText = await res.text();
+    const trimmed = rawText.trim();
+    if (!trimmed || trimmed.startsWith('<')) {
+      return null;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  };
+
+  const buildClientFallbackScenesForTopic = (
+    topic: string,
+    lang: 'en' | 'vi',
+    sceneCount: number
+  ): any[] => {
+    const cleanName = topic.trim() || 'Hollywood Legend';
+    const total = Math.max(4, Math.min(20, Number(sceneCount) || 10));
+    const narrativeCount = total - 1;
+    const motions: MotionEffect[] = ['zoom-in', 'pan-right', 'zoom-out', 'pan-left'];
+
+    const chronologicalBeats = [
+      {
+        title: 'Ánh mắt mở màn huyền thoại',
+        era: 'iconic portrait',
+        sceneType: 'video',
+        en: `Before the world knew the name ${cleanName}, there was only a quiet fire and an unbreakable presence on screen.`,
+        vi: `Trước khi cả thế giới biết đến cái tên ${cleanName}, chỉ có ngọn lửa âm ỉ và thần thái không thể trộn lẫn trên màn ảnh.`,
+      },
+      {
+        title: 'Khởi nguồn & Tuổi thơ',
+        era: '1940s youth early portrait',
+        sceneType: 'image',
+        en: `Every legend begins far from the spotlight. In those early years, life tested ${cleanName} long before fame ever arrived.`,
+        vi: `Mọi huyền thoại đều bắt đầu từ nơi xa ánh hào quang. Những năm tháng đầu đời đã thử thách ${cleanName} trước khi danh vọng tìm đến.`,
+      },
+      {
+        title: 'Những bước chân đầu tiên',
+        era: '1950s early career',
+        sceneType: 'image',
+        en: `With little more than determination, ${cleanName} took small roles and long roads, learning the craft one frame at a time.`,
+        vi: `Chỉ với lòng quyết tâm, ${cleanName} chấp nhận từng vai diễn nhỏ, bền bỉ rèn giũa qua từng khung hình.`,
+      },
+      {
+        title: 'Khoảnh khắc định mệnh',
+        era: 'turning point quote',
+        sceneType: 'quote',
+        en: `Sometimes one single role doesn't just change a career—it changes history forever.`,
+        vi: `Đôi khi chỉ một vai diễn duy nhất không chỉ thay đổi sự nghiệp—mà thay đổi cả lịch sử mãi mãi.`,
+      },
+      {
+        title: 'Bước ngoặt bùng nổ',
+        era: '1960s breakthrough role',
+        sceneType: 'video',
+        en: `When the camera rolled on that defining breakthrough, ${cleanName} commanded every second with effortless intensity.`,
+        vi: `Khi máy quay bắt đầu ghi hình vai diễn bước ngoặt ấy, ${cleanName} đã làm chủ từng giây bằng thần thái cuốn hút.`,
+      },
+      {
+        title: 'Phong cách độc bản',
+        era: '1960s classic film portrait',
+        sceneType: 'image',
+        en: `Audiences had never seen anyone quite like ${cleanName}. A single glance spoke louder than a page of dialogue.`,
+        vi: `Khán giả chưa từng thấy ai giống như ${cleanName}. Chỉ một ánh nhìn cũng đủ sức nặng hơn cả trang lời thoại.`,
+      },
+      {
+        title: 'Chinh phục màn ảnh rộng',
+        era: '1965 movie scene',
+        sceneType: 'image',
+        en: `From dusty frontier towns to grand theater screens, every performance carried a raw, unforgettable authenticity.`,
+        vi: `Từ những vùng đất miền Viễn Tây đầy gió bụi đến màn ảnh rộng, mỗi vai diễn đều mang chất chân thực khó quên.`,
+      },
+      {
+        title: 'Đỉnh cao danh vọng',
+        era: '1970s peak stardom',
+        sceneType: 'video',
+        en: `At the height of stardom, ${cleanName} stood at the center of cinema, turning bold stories into timeless classics.`,
+        vi: `Ở đỉnh cao danh vọng, ${cleanName} đứng ở tâm điểm điện ảnh, biến những câu chuyện táo bạo thành tác phẩm kinh điển.`,
+      },
+      {
+        title: 'Bản lĩnh sau ống kính',
+        era: '1970s behind the scenes',
+        sceneType: 'image',
+        en: `Behind the camera, discipline and quiet conviction guided every choice, refusing to follow easy trends.`,
+        vi: `Phía sau ống kính, sự kỷ luật và niềm tin sắt đá đã dẫn lối cho mọi quyết định, không bao giờ chạy theo lối mòn.`,
+      },
+      {
+        title: 'Thử thách & Bản lĩnh',
+        era: 'quote resilience',
+        sceneType: 'quote',
+        en: `True greatness is not measured when the crowd cheers, but when the storm hits.`,
+        vi: `Sự vĩ đại thực sự không đo bằng tiếng vỗ tay, mà ở cách đứng vững giữa giông bão.`,
+      },
+      {
+        title: 'Vượt qua sóng gió',
+        era: '1975 dramatic portrait',
+        sceneType: 'image',
+        en: `Through changing eras and personal trials, ${cleanName} reinvented the journey without ever losing that signature soul.`,
+        vi: `Đi qua bao biến thiên thời cuộc và thử thách riêng, ${cleanName} tự làm mới mình mà không đánh mất bản sắc.`,
+      },
+      {
+        title: 'Biểu tượng vượt thời gian',
+        era: '1980s iconic portrait',
+        sceneType: 'video',
+        en: `New generations discovered those classic frames and found a hero whose courage felt both larger than life and deeply human.`,
+        vi: `Nhiều thế hệ mới tìm lại những thước phim xưa và bắt gặp một biểu tượng vừa phi thường vừa rất đỗi con người.`,
+      },
+      {
+        title: 'Những tác phẩm để đời',
+        era: '1985 award portrait',
+        sceneType: 'image',
+        en: `Decade after decade, the body of work grew into a monument of dedication, artistry, and quiet strength.`,
+        vi: `Thập kỷ này nối tiếp thập kỷ khác, gia tài nghệ thuật ấy trở thành tượng đài của sự cống hiến và sức mạnh nội tâm.`,
+      },
+      {
+        title: 'Triết lý sống sâu sắc',
+        era: 'quote wisdom',
+        sceneType: 'quote',
+        en: `Fame fades with the spotlight, but character echoes across generations.`,
+        vi: `Danh vọng có thể phai mờ theo ánh đèn sân khấu, nhưng nhân cách sẽ vang vọng qua nhiều thế hệ.`,
+      },
+      {
+        title: 'Truyền lửa cho thế hệ sau',
+        era: '1990s mentor portrait',
+        sceneType: 'image',
+        en: `To young artists and lifelong fans alike, ${cleanName} remained a guiding light of integrity and timeless grace.`,
+        vi: `Với các nghệ sĩ trẻ và khán giả trung thành, ${cleanName} luôn là ngọn hải đăng của sự chính trực và phong thái lịch lãm.`,
+      },
+      {
+        title: 'Năm tháng hoàng kim',
+        era: 'later years portrait',
+        sceneType: 'image',
+        en: `Even in the quieter chapters of life, every wrinkle and silver hair told the story of a life fully lived.`,
+        vi: `Ngay cả trong những chương trầm lắng hơn của cuộc đời, từng dấu ấn thời gian đều kể về một hành trình sống trọn vẹn.`,
+      },
+      {
+        title: 'Khoảnh khắc lắng đọng',
+        era: 'classic monochrome portrait',
+        sceneType: 'image',
+        en: `Looking back across the decades, the roles were many, yet the heart behind them remained unmistakably one.`,
+        vi: `Nhìn lại chặng đường hàng chục năm, dù hóa thân vào bao số phận, trái tim phía sau vẫn luôn vẹn nguyên một chữ tâm.`,
+      },
+      {
+        title: 'Huyền thoại trong lòng khán giả',
+        era: 'tribute portrait',
+        sceneType: 'image',
+        en: `Long after the credits roll, the voice, the silhouette, and the spirit of ${cleanName} continue to inspire millions.`,
+        vi: `Rất lâu sau khi dòng chữ kết phim khép lại, giọng nói, bóng dáng và tinh thần của ${cleanName} vẫn truyền cảm hứng cho hàng triệu người.`,
+      },
+      {
+        title: 'Di sản bất hủ',
+        era: 'final legacy portrait',
+        sceneType: 'video',
+        en: `Because legends like ${cleanName} never truly leave us—they live on in every story we remember and cherish.`,
+        vi: `Bởi những huyền thoại như ${cleanName} chưa bao giờ thực sự rời xa—họ sống mãi trong từng ký ức chúng ta trân trọng.`,
+      },
+    ];
+
+    const selectedBeats: typeof chronologicalBeats = [];
+    for (let i = 0; i < narrativeCount; i++) {
+      const idx =
+        narrativeCount === 1
+          ? 0
+          : Math.min(
+              chronologicalBeats.length - 1,
+              Math.round((i * (chronologicalBeats.length - 1)) / (narrativeCount - 1))
+            );
+      selectedBeats.push(chronologicalBeats[idx]);
+    }
+
+    return selectedBeats.map((beat, idx) => ({
+      title: beat.title,
+      sceneType: beat.sceneType,
+      narrationText: lang === 'vi' ? beat.vi : beat.en,
+      translationText: lang === 'vi' ? beat.en : beat.vi,
+      visualPrompt:
+        beat.sceneType === 'video'
+          ? `CẦN VIDEO: ${beat.title} (${cleanName})`
+          : beat.sceneType === 'quote'
+          ? `THẺ CHỮ ĐEN: ${beat.title}`
+          : `CẦN ẢNH TĨNH: ${beat.title} (${cleanName})`,
+      archivalKeywords: `${cleanName} ${beat.era}`,
+      motionEffect: motions[idx % motions.length],
+      colorFilter: idx % 2 === 0 ? 'bw-vintage' : 'color-warm',
+      frameStyle: 'full-bleed',
+      durationSec: 7,
+    }));
+  };
+
+  const buildClientFallbackScenesFromRawScript = (
+    rawScript: string,
+    targetSceneCount: number
+  ): any[] => {
+    const paragraphs = rawScript
+      .split(/\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    let segments = [...paragraphs];
+    const targetTotal =
+      targetSceneCount >= 4
+        ? targetSceneCount
+        : Math.max(6, Math.min(20, segments.length + 1));
+    const targetNarrative = targetTotal - 1;
+
+    if (segments.length < targetNarrative) {
+      const allSentences = rawScript
+        .replace(/\n+/g, ' ')
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (allSentences.length >= targetNarrative) {
+        segments = [];
+        const perGroup = allSentences.length / targetNarrative;
+        for (let i = 0; i < targetNarrative; i++) {
+          const start = Math.floor(i * perGroup);
+          const end = Math.max(start + 1, Math.floor((i + 1) * perGroup));
+          segments.push(allSentences.slice(start, end).join(' '));
+        }
+      }
+    }
+
+    const motions: MotionEffect[] = ['zoom-in', 'pan-right', 'zoom-out', 'pan-left'];
+    return segments.slice(0, targetNarrative).map((seg, idx) => {
+      const isQuote = idx > 1 && idx < targetNarrative - 1 && idx % 5 === 3;
+      const isVideo = !isQuote && (idx === 0 || idx === targetNarrative - 1 || idx % 3 === 0);
+      const sType = isQuote ? 'quote' : isVideo ? 'video' : 'image';
+      return {
+        title: `Phân cảnh #${String(idx + 1).padStart(2, '0')}`,
+        sceneType: sType,
+        narrationText: seg,
+        translationText: seg,
+        visualPrompt:
+          sType === 'video'
+            ? `CẦN VIDEO: Phân cảnh #${idx + 1}`
+            : sType === 'quote'
+            ? `THẺ CHỮ ĐEN: Phân cảnh #${idx + 1}`
+            : `CẦN ẢNH TĨNH: Phân cảnh #${idx + 1}`,
+        motionEffect: motions[idx % motions.length],
+        colorFilter: idx % 2 === 0 ? 'bw-vintage' : 'color-warm',
+        frameStyle: 'full-bleed',
+        durationSec: 7,
+      };
+    });
+  };
+
   // 1-CLICK FULL AUTO-PILOT PIPELINE (Script + Per-Scene Real Archival Photos + 100% TTS Voiceover + Auto-Play)
   const handleRunFullAutoPilot = async (
     characterOrTopic: string,
@@ -1046,29 +1381,38 @@ export default function App() {
 
     try {
       // Step 1: Generate Storyboard & Prompts
-      setAutoPilotStepText('Bước 1/4: Đang viết kịch bản & chia cảnh Video/Ảnh...');
-      const storyRes = await fetch('/api/story/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: characterOrTopic,
-          language: lang,
-          sceneCount,
-          includeQuotes: true,
-          channelTitle: settings.channelTitle,
-          channelSubtitle: settings.channelMotto,
-          customBaseUrl: proxyBaseUrl,
-          customModel: proxyModel,
-          aspectRatio: settings.aspectRatio,
-        }),
-      });
-      const storyData = await storyRes.json();
-      if (!storyRes.ok || !Array.isArray(storyData.scenes)) {
-        throw new Error(storyData.error || 'Không thể tạo kịch bản.');
+      setAutoPilotStepText(`Bước 1/4: Đang viết kịch bản & chia ${sceneCount} cảnh Video/Ảnh...`);
+      let rawScenesList: any[] | null = null;
+      try {
+        const storyRes = await fetch('/api/story/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: characterOrTopic,
+            language: lang,
+            sceneCount,
+            includeQuotes: true,
+            channelTitle: settings.channelTitle,
+            channelSubtitle: settings.channelMotto,
+            customBaseUrl: proxyBaseUrl,
+            customModel: proxyModel,
+            aspectRatio: settings.aspectRatio,
+          }),
+        });
+        const storyData = await safeParseJsonResponse(storyRes);
+        if (storyRes.ok && Array.isArray(storyData?.scenes) && storyData.scenes.length > 0) {
+          rawScenesList = storyData.scenes;
+        }
+      } catch {
+        // Will use client-side chronological builder below
+      }
+
+      if (!rawScenesList || rawScenesList.length === 0) {
+        rawScenesList = buildClientFallbackScenesForTopic(characterOrTopic, lang, sceneCount);
       }
 
       const initialScenes = mapApiScenesToStoryScenes(
-        storyData.scenes,
+        rawScenesList,
         lang,
         [],
         characterOrTopic,
@@ -1084,13 +1428,14 @@ export default function App() {
         audioMode: 'stitched-scenes',
       }));
 
-      // Step 2: Automatically match & attach ONLY verified real historical photos per scene in chronological order!
+      // Step 2: Automatically match & attach ONLY verified real historical photos AND videos per scene in chronological order!
       setAutoPilotStepText(
-        `Bước 2/4: Đang lọc Ảnh Thật chuẩn của "${characterOrTopic}" (không lấy ảnh lung tung) & tạo Prompt Kling AI cho cảnh thiếu ảnh...`
+        `Bước 2/4: Đang tìm Ảnh Thật & Video Thật của "${characterOrTopic}" + cấp Ảnh Mẫu & Prompt Kling AI cho cảnh thiếu...`
       );
       const {
         updatedScenes: scenesWithRealPhotos,
-        matchedCount,
+        matchedVideosCount,
+        matchedPhotosCount,
         missingCount,
       } = await matchAndAssignRealPhotosForScenes(initialScenes, characterOrTopic);
       setScenes(scenesWithRealPhotos);
@@ -1108,7 +1453,7 @@ export default function App() {
       setCurrentTimeSec(0);
       setIsPlaying(true);
       setStatusBanner(
-        `⚡ Đã sắp xếp mượt mà "${characterOrTopic}": Lấy được ${matchedCount} Ảnh Thật chuẩn nhân vật (không lấy ảnh lung tung) + Tạo sẵn ${missingCount} Prompt Chuẩn Kling AI theo thứ tự cho các đoạn chưa có ảnh thật + Đọc thuyết minh đủ 100%!`
+        `⚡ Đã dựng ${finalScenes.length} cảnh "${characterOrTopic}": Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + Cấp sẵn Ảnh Mẫu & ${missingCount} Bộ Prompt để bạn Vẽ và Reg Video Kling AI (số giây tròn) + Đọc thuyết minh đủ 100%!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Lỗi khi chạy tự động A-Z.');
@@ -1128,29 +1473,38 @@ export default function App() {
     setStatusBanner(null);
 
     try {
-      const response = await fetch('/api/story/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          language: lang,
-          sceneCount,
-          includeQuotes: true,
-          channelTitle: settings.channelTitle,
-          channelSubtitle: settings.channelMotto,
-          customBaseUrl: proxyBaseUrl,
-          customModel: proxyModel,
-          aspectRatio: settings.aspectRatio,
-        }),
-      });
+      let rawScenesList: any[] | null = null;
+      try {
+        const response = await fetch('/api/story/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic,
+            language: lang,
+            sceneCount,
+            includeQuotes: true,
+            channelTitle: settings.channelTitle,
+            channelSubtitle: settings.channelMotto,
+            customBaseUrl: proxyBaseUrl,
+            customModel: proxyModel,
+            aspectRatio: settings.aspectRatio,
+          }),
+        });
 
-      const data = await response.json();
-      if (!response.ok || !Array.isArray(data.scenes)) {
-        throw new Error(data.error || 'Không thể tạo kịch bản.');
+        const data = await safeParseJsonResponse(response);
+        if (response.ok && Array.isArray(data?.scenes) && data.scenes.length > 0) {
+          rawScenesList = data.scenes;
+        }
+      } catch {
+        // Fallback below
+      }
+
+      if (!rawScenesList || rawScenesList.length === 0) {
+        rawScenesList = buildClientFallbackScenesForTopic(topic, lang, sceneCount);
       }
 
       const initialScenes = mapApiScenesToStoryScenes(
-        data.scenes,
+        rawScenesList,
         lang,
         [],
         topic,
@@ -1166,13 +1520,17 @@ export default function App() {
       }));
       setCurrentTimeSec(0);
 
-      // Automatically fetch ONLY verified real photos for scenes; scenes without a real photo get a Standard Kling AI Prompt
-      const { updatedScenes, matchedCount, missingCount } =
-        await matchAndAssignRealPhotosForScenes(initialScenes, topic);
+      // Automatically fetch ONLY verified real photos & videos for scenes; scenes without real media get a Reference Image + Standard Kling AI Prompt
+      const {
+        updatedScenes,
+        matchedVideosCount,
+        matchedPhotosCount,
+        missingCount,
+      } = await matchAndAssignRealPhotosForScenes(initialScenes, topic);
       setScenes(updatedScenes);
       setIsPromptStudioOpen(true);
       setStatusBanner(
-        `Đã sắp xếp mượt mà ${updatedScenes.length} phân cảnh: Lấy được ${matchedCount} Ảnh Thật chuẩn nhân vật (không lấy ảnh lung tung) và tạo sẵn ${missingCount} Prompt Chuẩn Kling AI cho các cảnh chưa có ảnh thật!`
+        `Đã sắp xếp mượt mà ${updatedScenes.length} phân cảnh: Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật chuẩn nhân vật + Cấp sẵn Ảnh Mẫu & ${missingCount} Bộ Prompt Kling AI để bạn vẽ và reg video!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Có lỗi khi tạo kịch bản AI.');
@@ -1195,29 +1553,38 @@ export default function App() {
 
     try {
       setAutoPilotStepText('Bước 1/4: Đang chia phân cảnh kịch bản theo thứ tự mượt mà...');
-      const response = await fetch('/api/story/parse-script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawScript,
-          language: lang,
-          sceneCount: targetSceneCount,
-          channelTitle: settings.channelTitle,
-          channelSubtitle: settings.channelMotto,
-          customBaseUrl: proxyBaseUrl,
-          customModel: proxyModel,
-          aspectRatio: settings.aspectRatio,
-        }),
-      });
+      let rawScenesList: any[] | null = null;
+      try {
+        const response = await fetch('/api/story/parse-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rawScript,
+            language: lang,
+            sceneCount: targetSceneCount,
+            channelTitle: settings.channelTitle,
+            channelSubtitle: settings.channelMotto,
+            customBaseUrl: proxyBaseUrl,
+            customModel: proxyModel,
+            aspectRatio: settings.aspectRatio,
+          }),
+        });
 
-      const data = await response.json();
-      if (!response.ok || !Array.isArray(data.scenes)) {
-        throw new Error(data.error || 'Không thể phân tích kịch bản.');
+        const data = await safeParseJsonResponse(response);
+        if (response.ok && Array.isArray(data?.scenes) && data.scenes.length > 0) {
+          rawScenesList = data.scenes;
+        }
+      } catch {
+        // Fallback below
+      }
+
+      if (!rawScenesList || rawScenesList.length === 0) {
+        rawScenesList = buildClientFallbackScenesFromRawScript(rawScript, targetSceneCount);
       }
 
       const topicForPhotos = characterHint.trim() || settings.projectTitle || 'Hollywood Legend';
       const initialScenes = mapApiScenesToStoryScenes(
-        data.scenes,
+        rawScenesList,
         lang,
         [],
         topicForPhotos,
@@ -1235,11 +1602,12 @@ export default function App() {
       setCurrentTimeSec(0);
 
       setAutoPilotStepText(
-        `Bước 2/4: Đang lọc Ảnh Thật chuẩn nhân vật & tạo Prompt Kling AI cho các cảnh thiếu ảnh...`
+        `Bước 2/4: Đang tìm Ảnh Thật & Video Thật chuẩn nhân vật + tạo Ảnh Mẫu & Prompt Kling AI cho các cảnh thiếu...`
       );
       const {
         updatedScenes: scenesWithPhotos,
-        matchedCount,
+        matchedVideosCount,
+        matchedPhotosCount,
         missingCount,
       } = await matchAndAssignRealPhotosForScenes(initialScenes, topicForPhotos);
       setScenes(scenesWithPhotos);
@@ -1254,11 +1622,11 @@ export default function App() {
         setCurrentTimeSec(0);
         setIsPlaying(true);
         setStatusBanner(
-          `⚡ Đã dựng hoàn chỉnh từ kịch bản (${finalScenes.length} cảnh sắp xếp mượt mà: lấy ${matchedCount} Ảnh Thật chuẩn + tạo sẵn ${missingCount} Prompt Chuẩn Kling AI cho cảnh thiếu ảnh + đọc đủ 100%)!`
+          `⚡ Đã dựng hoàn chỉnh từ kịch bản (${finalScenes.length} cảnh: tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + cấp sẵn Ảnh Mẫu & ${missingCount} Prompt Kling AI để vẽ/reg video + đọc đủ 100%)!`
         );
       } else {
         setStatusBanner(
-          `Đã sắp xếp kịch bản thành ${scenesWithPhotos.length} đoạn mượt mà: lấy được ${matchedCount} Ảnh Thật chuẩn nhân vật và tạo sẵn ${missingCount} Prompt Chuẩn Kling AI cho các đoạn chưa có ảnh thật!`
+          `Đã sắp xếp kịch bản thành ${scenesWithPhotos.length} đoạn mượt mà: tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật chuẩn nhân vật + cấp sẵn Ảnh Mẫu & ${missingCount} Prompt Kling AI cho các đoạn cần vẽ và reg video!`
         );
       }
     } catch (err: any) {
@@ -1292,9 +1660,9 @@ export default function App() {
           aspectRatio: settings.aspectRatio,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.imageDataUrl) {
-        throw new Error(data.error || 'Không thể vẽ ảnh.');
+      const data = await safeParseJsonResponse(res);
+      if (!res.ok || !data?.imageDataUrl) {
+        throw new Error(data?.error || 'Không thể vẽ ảnh tự động (Hãy copy Prompt Chuẩn Kling AI để vẽ trên Kling AI / ChatGPT Pro).');
       }
 
       const newItem: VaultItem = {
@@ -1571,6 +1939,7 @@ export default function App() {
             isPlaying={isPlaying}
             onTogglePlay={setIsPlaying}
             triggerExportCounter={triggerExportCounter}
+            onEnsureVoiceoversBeforeExport={handleGenerateAllVoiceovers}
           />
         </div>
 

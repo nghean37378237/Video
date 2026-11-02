@@ -180,14 +180,14 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         onUpdateScene(activeScene.id, {
           voiceoverUrl: masteredAudioUrl,
           voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
-          durationSec: Math.max(4, Math.ceil(durationSec * 10) / 10 + 0.35),
+          durationSec: Math.max(5, Math.ceil(durationSec + 0.25)),
         });
       } catch {
         const exactDur = await getMediaDuration(data.audioDataUrl, 'audio');
         onUpdateScene(activeScene.id, {
           voiceoverUrl: data.audioDataUrl,
           voiceEngineUsed: `${voiceName}:${activeVoiceLang}:${engineUsed}`,
-          durationSec: Math.max(4, Math.ceil(exactDur * 10) / 10 + 0.35),
+          durationSec: Math.max(5, Math.ceil(exactDur + 0.25)),
         });
       }
 
@@ -275,11 +275,11 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 type="number"
                 min={2}
                 max={60}
-                step={0.5}
-                value={activeScene.durationSec}
+                step={1}
+                value={Math.ceil(activeScene.durationSec || 5)}
                 onChange={(e) =>
                   onUpdateScene(activeScene.id, {
-                    durationSec: Math.max(2, parseFloat(e.target.value) || 5),
+                    durationSec: Math.max(2, Math.round(parseFloat(e.target.value) || 5)),
                   })
                 }
                 className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-[#0B0F17] border border-slate-700 rounded-md text-amber-400 focus:outline-none focus:border-amber-500"
@@ -937,10 +937,10 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             <div className="space-y-3 p-3 rounded-lg bg-[#0B0F17] border border-slate-800">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Kiểu chuyển cảnh giữa các đoạn (Smooth Transitions)
+                  Kiểu chuyển cảnh điện ảnh (Cinema Film Transitions)
                 </label>
                 <select
-                  value={settings.transitionStyle || 'crossfade'}
+                  value={settings.transitionStyle || 'cinema-auto'}
                   onChange={(e) =>
                     onUpdateSettings({
                       transitionStyle: e.target.value as ProjectSettings['transitionStyle'],
@@ -948,17 +948,26 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   }
                   className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-100"
                 >
-                  <option value="crossfade">
-                    Mượt Đan Xen (Cross-Dissolve 60fps — Khuyên dùng)
+                  <option value="cinema-auto">
+                    🎬 Đạo Diễn Điện Ảnh Tự Động (Mượt Như Phim — Khuyên dùng)
                   </option>
-                  <option value="dip-to-black">
-                    Mờ Qua Đen Điện Ảnh (Cinema Dip-to-Black)
+                  <option value="crossfade">
+                    ✨ Hòa Tan Tiêu Cự Mượt (Optical Focus Dissolve)
                   </option>
                   <option value="film-glow">
-                    Ánh Chớp Phim Cổ Điển (Vintage Film Glow)
+                    🎞️ Cháy Sáng Phim Nhựa 35mm (Warm Film Light Leak)
+                  </option>
+                  <option value="cinema-zoom">
+                    🔍 Thu Phóng Tiêu Cự 3D (Smooth Lens Zoom)
+                  </option>
+                  <option value="cinema-pan">
+                    ↔️ Lướt Máy Quay Điện Ảnh (Smooth Whip Pan)
+                  </option>
+                  <option value="dip-to-black">
+                    🌑 Mờ Sâu Qua Đen Điện Ảnh (Velvet Cinema Fade)
                   </option>
                   <option value="cut">
-                    Cắt Trực Tiếp Làm Mềm Cạnh (Soft Cut)
+                    ⚡ Cắt Trực Tiếp Làm Mềm Cạnh (Soft Cut)
                   </option>
                 </select>
               </div>
@@ -967,15 +976,15 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-slate-300">Độ mượt chuyển cảnh (Thời gian hòa trộn)</span>
                   <span className="font-mono-tabular text-amber-400">
-                    {(settings.transitionDurationSec ?? 0.75).toFixed(2)}s
+                    {(settings.transitionDurationSec ?? 1.2).toFixed(2)}s
                   </span>
                 </div>
                 <input
                   type="range"
-                  min={0.3}
-                  max={1.5}
+                  min={0.5}
+                  max={2.0}
                   step={0.05}
-                  value={settings.transitionDurationSec ?? 0.75}
+                  value={settings.transitionDurationSec ?? 1.2}
                   onChange={(e) =>
                     onUpdateSettings({ transitionDurationSec: parseFloat(e.target.value) })
                   }
