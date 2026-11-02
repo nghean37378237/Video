@@ -389,11 +389,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             : Math.max(1, scene.durationSec - 0.2);
 
           if (localTimeSec < effectiveAudioDur - 0.12) {
-            const driftThreshold = isPlaying && !justSwitchedScene ? 1.15 : 0.35;
-            if (
+            const shouldSeek =
               hasKnownDuration &&
-              Math.abs(voiceAud.currentTime - localTimeSec) > driftThreshold
-            ) {
+              (justSwitchedScene
+                ? localTimeSec > 0.45 && Math.abs(voiceAud.currentTime - localTimeSec) > 0.45
+                : Math.abs(voiceAud.currentTime - localTimeSec) > 1.85);
+            if (shouldSeek) {
               try {
                 voiceAud.currentTime = Math.min(voiceAud.duration - 0.05, localTimeSec);
               } catch {

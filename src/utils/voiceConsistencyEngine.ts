@@ -26,11 +26,11 @@ export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePe
     gender: 'male',
     geminiAnchorPrompt:
       'Warm, deep, resonant American documentary baritone narrator like Life Legends. Speak at a calm, unhurried, reflective storytelling pace (135 words per minute) with rich chest resonance, intimate close-mic studio warmth, gentle emotional gravitas, and natural dramatic pauses between phrases.',
-    fallbackPitchSemitones: -4.4,
-    fallbackTempoFactor: 0.96,
-    lowShelfGainDb: 6.2,
-    midPresenceGainDb: 2.4,
-    highShelfGainDb: -2.8,
+    fallbackPitchSemitones: 0,
+    fallbackTempoFactor: 1.0,
+    lowShelfGainDb: 1.4,
+    midPresenceGainDb: 0.8,
+    highShelfGainDb: -0.4,
   },
   Fenrir: {
     id: 'Fenrir',
@@ -39,11 +39,11 @@ export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePe
     gender: 'male',
     geminiAnchorPrompt:
       'Deep, authoritative, resonant bass-baritone historical documentary narrator. Maintain a calm, deliberate storytelling cadence with warm studio chest resonance and natural dramatic pauses.',
-    fallbackPitchSemitones: -5.8,
-    fallbackTempoFactor: 0.93,
-    lowShelfGainDb: 7.5,
-    midPresenceGainDb: 2.0,
-    highShelfGainDb: -3.5,
+    fallbackPitchSemitones: 0,
+    fallbackTempoFactor: 1.0,
+    lowShelfGainDb: 1.8,
+    midPresenceGainDb: 0.6,
+    highShelfGainDb: -0.6,
   },
   Puck: {
     id: 'Puck',
@@ -52,11 +52,11 @@ export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePe
     gender: 'male',
     geminiAnchorPrompt:
       'STRICT VOICE LOCK: Speak with a consistent, natural, engaging mid-range male storyteller voice. Maintain identical speaking rate, warm conversational clarity, and steady pitch from start to finish.',
-    fallbackPitchSemitones: -3.1,
+    fallbackPitchSemitones: 0,
     fallbackTempoFactor: 1.0,
-    lowShelfGainDb: 4.2,
-    midPresenceGainDb: 2.8,
-    highShelfGainDb: -1.4,
+    lowShelfGainDb: 1.0,
+    midPresenceGainDb: 0.9,
+    highShelfGainDb: 0.0,
   },
   Kore: {
     id: 'Kore',
@@ -65,11 +65,11 @@ export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePe
     gender: 'female',
     geminiAnchorPrompt:
       'STRICT VOICE LOCK: Speak with a consistent, calm, warm, empathetic female documentary narrator voice. Keep exact same soft cadence, pitch stability, and intimate studio tone throughout.',
-    fallbackPitchSemitones: -0.9,
-    fallbackTempoFactor: 0.96,
-    lowShelfGainDb: 2.8,
-    midPresenceGainDb: 2.2,
-    highShelfGainDb: -1.0,
+    fallbackPitchSemitones: 0,
+    fallbackTempoFactor: 1.0,
+    lowShelfGainDb: 0.8,
+    midPresenceGainDb: 0.8,
+    highShelfGainDb: -0.2,
   },
   Zephyr: {
     id: 'Zephyr',
@@ -78,11 +78,11 @@ export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePe
     gender: 'female',
     geminiAnchorPrompt:
       'STRICT VOICE LOCK: Speak with a consistent, articulate, bright and poised female narrator voice. Maintain uniform speed, crisp diction, and identical pitch across all sentences.',
-    fallbackPitchSemitones: 1.1,
-    fallbackTempoFactor: 1.02,
-    lowShelfGainDb: 1.4,
-    midPresenceGainDb: 3.2,
-    highShelfGainDb: 1.2,
+    fallbackPitchSemitones: 0,
+    fallbackTempoFactor: 1.0,
+    lowShelfGainDb: 0.5,
+    midPresenceGainDb: 1.0,
+    highShelfGainDb: 0.4,
   },
 };
 
@@ -177,101 +177,12 @@ function encodeFloat32ToWavDataUrl(samples: Float32Array, sampleRate: number): s
   return `data:audio/wav;base64,${btoa(binary)}`;
 }
 
-/**
- * WSOLA (Waveform Similarity Overlap-Add) Time-Stretcher + Cubic Resampler.
- * Allows shifting vocal pitch (e.g., -4.4 or -5.8 semitones for deep male baritone/bass)
- * WITHOUT slowing down the speaking tempo!
- */
-function pitchShiftAndTimeStretchMono(
-  input: Float32Array,
-  sampleRate: number,
-  pitchSemitones: number,
-  tempoFactor: number
-): Float32Array {
-  const pitchRatio = Math.pow(2, pitchSemitones / 12);
-  if (Math.abs(pitchSemitones) < 0.15 && Math.abs(tempoFactor - 1.0) < 0.02) {
-    return input;
-  }
-
-  // Step 1: Time-stretch by stretchRatio = pitchRatio / tempoFactor using Hann-windowed WSOLA
-  // so that when we subsequently resample by pitchRatio, the final duration is input.length / tempoFactor.
-  const stretchRatio = pitchRatio / Math.max(0.5, Math.min(1.6, tempoFactor));
-  const winSize = Math.floor(sampleRate * 0.032); // 32ms window (~768 samples at 24kHz)
-  const hopOut = Math.floor(winSize / 2); // 50% overlap (16ms hop)
-  const hopIn = hopOut / stretchRatio;
-  const searchRange = Math.floor(sampleRate * 0.008); // +/- 8ms cross-correlation search
-
-  const stretchedLen = Math.max(winSize * 2, Math.floor(input.length * stretchRatio));
-  const stretched = new Float32Array(stretchedLen);
-  const norm = new Float32Array(stretchedLen);
-
-  const hann = new Float32Array(winSize);
-  for (let i = 0; i < winSize; i++) {
-    hann[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (winSize - 1)));
-  }
-
-  let inPos = 0;
-  let outPos = 0;
-
-  while (outPos + winSize < stretchedLen && inPos + winSize < input.length) {
-    let bestOffset = 0;
-    if (outPos > 0) {
-      let bestCorr = -Infinity;
-      const compareLen = Math.floor(winSize / 3);
-      const minOff = Math.max(-Math.floor(inPos), -searchRange);
-      const maxOff = Math.min(input.length - winSize - Math.floor(inPos), searchRange);
-
-      for (let off = minOff; off <= maxOff; off += 2) {
-        let corr = 0;
-        const candStart = Math.floor(inPos) + off;
-        for (let k = 0; k < compareLen; k += 2) {
-          corr += stretched[outPos + k] * input[candStart + k];
-        }
-        if (corr > bestCorr) {
-          bestCorr = corr;
-          bestOffset = off;
-        }
-      }
-    }
-
-    const actualIn = Math.max(0, Math.min(input.length - winSize, Math.floor(inPos) + bestOffset));
-    for (let i = 0; i < winSize; i++) {
-      const w = hann[i];
-      stretched[outPos + i] += input[actualIn + i] * w;
-      norm[outPos + i] += w * w;
-    }
-
-    inPos += hopIn;
-    outPos += hopOut;
-  }
-
-  for (let i = 0; i < stretchedLen; i++) {
-    if (norm[i] > 0.001) {
-      stretched[i] /= norm[i];
-    }
-  }
-
-  // Step 2: Resample by pitchRatio using linear interpolation to shift pitch to target semitones
-  const finalLen = Math.max(Math.floor(sampleRate * 0.4), Math.floor(stretchedLen / pitchRatio));
-  const output = new Float32Array(finalLen);
-  for (let i = 0; i < finalLen; i++) {
-    const srcIdx = i * pitchRatio;
-    const idx0 = Math.floor(srcIdx);
-    const frac = srcIdx - idx0;
-    const s0 = stretched[Math.min(stretchedLen - 1, idx0)] || 0;
-    const s1 = stretched[Math.min(stretchedLen - 1, idx0 + 1)] || 0;
-    output[i] = s0 + frac * (s1 - s0);
-  }
-
-  return output;
-}
-
 let activePreviewAudio: HTMLAudioElement | null = null;
 
 /**
  * Immediately plays a voiceover preview in the browser so the user can hear the newly selected voice right away.
  */
-export function playInstantVoicePreview(audioUrl: string, volume = 1.0): void {
+export function playInstantVoicePreview(audioUrl: string, volume = 0.9): void {
   try {
     if (activePreviewAudio) {
       activePreviewAudio.pause();
@@ -279,7 +190,7 @@ export function playInstantVoicePreview(audioUrl: string, volume = 1.0): void {
       activePreviewAudio = null;
     }
     const aud = new Audio(audioUrl);
-    aud.volume = Math.min(1, Math.max(0.1, volume));
+    aud.volume = Math.min(0.95, Math.max(0.1, volume));
     activePreviewAudio = aud;
     aud.play().catch(() => {});
   } catch {
@@ -288,15 +199,15 @@ export function playInstantVoicePreview(audioUrl: string, volume = 1.0): void {
 }
 
 /**
- * Masters any raw TTS audio clip through an identical 24kHz Studio Documentary EQ,
- * Persona Acoustic Lock (including independent WSOLA Pitch & Tempo shifting for fallback engines),
- * Anti-Pop Fade Envelope, and Constant RMS Loudness Normalizer (-16 LUFS)
- * so every scene from start to finish sounds like a single continuous studio recording.
+ * Masters any raw TTS audio clip through a clean 44.1kHz Studio Documentary EQ,
+ * transparent optical dynamics leveling, anti-pop fade envelope, and pure linear
+ * loudness normalization (capped at -1.3 dBFS true peak with ZERO non-linear wave-shaping
+ * or artificial pitch-shift phase artifacts) so every scene sounds crystal-clear and warm.
  */
 export async function masterAudioToConsistentStudioWav(
   rawAudioDataUrl: string,
   voiceName: ProjectSettings['ttsVoice'],
-  engineUsed: string = 'standard-locked'
+  _engineUsed: string = 'edge-neural-studio'
 ): Promise<{ masteredAudioUrl: string; durationSec: number }> {
   const profile = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
 
@@ -310,77 +221,48 @@ export async function masterAudioToConsistentStudioWav(
 
   try {
     const decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
-    const targetSampleRate = 24000;
+    const targetSampleRate = 44100;
 
-    // Resample decoded input to 24kHz mono first
     const baseFrames = Math.max(
       Math.ceil(decoded.duration * targetSampleRate),
       Math.floor(targetSampleRate * 0.5)
     );
-    const baseOffline = new OfflineAudioContext(1, baseFrames, targetSampleRate);
-    const baseSrc = baseOffline.createBufferSource();
-    baseSrc.buffer = decoded;
-    baseSrc.connect(baseOffline.destination);
-    baseSrc.start(0);
-    const baseRendered = await baseOffline.startRendering();
-    let workingSamples: Float32Array = new Float32Array(baseRendered.getChannelData(0));
-
-    // When using the standard fallback stream (which has a neutral female source voice),
-    // apply WSOLA Pitch & Tempo shifting so Charon, Fenrir, Puck become authentic deep male voices
-    // and Kore, Zephyr have distinct female vocal timbres without distorting speaking speed!
-    const isNativeMultiVoiceEngine =
-      engineUsed === 'gemini-tts' ||
-      engineUsed === 'gemini-single-pass' ||
-      engineUsed === 'openai-tts';
-
-    if (!isNativeMultiVoiceEngine) {
-      workingSamples = pitchShiftAndTimeStretchMono(
-        workingSamples,
-        targetSampleRate,
-        profile.fallbackPitchSemitones,
-        profile.fallbackTempoFactor
-      );
-    }
-
-    const eqOffline = new OfflineAudioContext(1, workingSamples.length, targetSampleRate);
-    const eqBuffer = eqOffline.createBuffer(1, workingSamples.length, targetSampleRate);
-    eqBuffer.getChannelData(0).set(workingSamples);
-
+    const eqOffline = new OfflineAudioContext(1, baseFrames, targetSampleRate);
     const source = eqOffline.createBufferSource();
-    source.buffer = eqBuffer;
+    source.buffer = decoded;
 
-    // 1. High-pass filter at 70Hz to remove low rumble
+    // 1. Clean Butterworth high-pass filter at 75Hz to remove sub-bass rumble without touching vocal chest warmth
     const highPass = eqOffline.createBiquadFilter();
     highPass.type = 'highpass';
-    highPass.frequency.value = 70;
-    highPass.Q.value = 0.7;
+    highPass.frequency.value = 75;
+    highPass.Q.value = 0.707;
 
-    // 2. Warm studio chest resonance low-shelf at 150Hz
+    // 2. Subtle warm studio chest resonance at 140Hz (+0.5dB to +1.8dB max so speakers never buzz)
     const lowShelf = eqOffline.createBiquadFilter();
     lowShelf.type = 'lowshelf';
-    lowShelf.frequency.value = 150;
+    lowShelf.frequency.value = 140;
     lowShelf.gain.value = profile.lowShelfGainDb;
 
-    // 3. Vocal presence & articulation boost at 2650Hz
+    // 3. Gentle vocal articulation clarity at 2800Hz
     const midPresence = eqOffline.createBiquadFilter();
     midPresence.type = 'peaking';
-    midPresence.frequency.value = 2650;
-    midPresence.Q.value = 1.1;
+    midPresence.frequency.value = 2800;
+    midPresence.Q.value = 0.9;
     midPresence.gain.value = profile.midPresenceGainDb;
 
-    // 4. Smooth de-essing high-shelf at 7500Hz
+    // 4. Smooth air / de-essing shelf at 7800Hz
     const highShelf = eqOffline.createBiquadFilter();
     highShelf.type = 'highshelf';
-    highShelf.frequency.value = 7500;
+    highShelf.frequency.value = 7800;
     highShelf.gain.value = profile.highShelfGainDb;
 
-    // 5. Broadcast vocal leveling compressor so quiet and loud syllables stay uniform
+    // 5. Transparent optical vocal compressor (1.8:1 ratio, 18ms attack so low vocal fundamentals never distort)
     const compressor = eqOffline.createDynamicsCompressor();
-    compressor.threshold.value = -20;
-    compressor.knee.value = 12;
-    compressor.ratio.value = 3.5;
-    compressor.attack.value = 0.006;
-    compressor.release.value = 0.16;
+    compressor.threshold.value = -18;
+    compressor.knee.value = 18;
+    compressor.ratio.value = 1.8;
+    compressor.attack.value = 0.018;
+    compressor.release.value = 0.22;
 
     source.connect(highPass);
     highPass.connect(lowShelf);
@@ -393,8 +275,8 @@ export async function masterAudioToConsistentStudioWav(
     const rendered = await eqOffline.startRendering();
     const rawSamples = rendered.getChannelData(0);
 
-    // Trim leading/trailing dead silence while preserving natural 80ms breath padding
-    const silenceThreshold = 0.006;
+    // Trim leading/trailing dead silence while preserving natural breath padding
+    const silenceThreshold = 0.004;
     let firstActive = 0;
     let lastActive = rawSamples.length - 1;
 
@@ -405,51 +287,50 @@ export async function masterAudioToConsistentStudioWav(
       lastActive--;
     }
 
-    const padStart = Math.max(0, firstActive - Math.floor(targetSampleRate * 0.05));
-    const padEnd = Math.min(rawSamples.length, lastActive + Math.floor(targetSampleRate * 0.12));
+    const padStart = Math.max(0, firstActive - Math.floor(targetSampleRate * 0.06));
+    const padEnd = Math.min(rawSamples.length, lastActive + Math.floor(targetSampleRate * 0.14));
     const trimmedLength = Math.max(Math.floor(targetSampleRate * 0.5), padEnd - padStart);
     const mono = new Float32Array(trimmedLength);
     mono.set(rawSamples.subarray(padStart, padStart + trimmedLength));
 
-    // Constant RMS Loudness Normalization (Target RMS = 0.165, Peak Limiter = 0.92)
+    // Pure Linear Loudness Normalization with True-Peak Ceiling (0.86 = -1.3 dBFS)
+    // Eliminates non-linear tanh wave-shaping so there is 0.00% harmonic distortion or buzzing!
     let sumSq = 0;
     let activeCount = 0;
+    let peakAbs = 0;
     for (let i = 0; i < mono.length; i++) {
       const val = mono[i];
-      if (Math.abs(val) > 0.01) {
+      const absVal = Math.abs(val);
+      if (absVal > peakAbs) peakAbs = absVal;
+      if (absVal > 0.01) {
         sumSq += val * val;
         activeCount++;
       }
     }
 
     const currentRms = activeCount > 0 ? Math.sqrt(sumSq / activeCount) : 0.1;
-    const targetRms = 0.165;
-    const gain = Math.min(3.2, Math.max(0.45, targetRms / Math.max(0.02, currentRms)));
+    const targetRms = 0.125;
+    const desiredRmsGain = Math.min(2.0, Math.max(0.55, targetRms / Math.max(0.025, currentRms)));
+    const maxPeakCeilingGain = peakAbs > 0.001 ? 0.86 / peakAbs : 1.0;
+    const finalLinearGain = Math.min(desiredRmsGain, maxPeakCeilingGain);
 
-    // Apply constant RMS gain + soft-clip limiter + 25ms fade-in / 50ms fade-out
     const fadeInSamples = Math.min(
-      Math.floor(targetSampleRate * 0.025),
-      Math.floor(mono.length * 0.1)
+      Math.floor(targetSampleRate * 0.02),
+      Math.floor(mono.length * 0.08)
     );
     const fadeOutSamples = Math.min(
-      Math.floor(targetSampleRate * 0.05),
-      Math.floor(mono.length * 0.15)
+      Math.floor(targetSampleRate * 0.045),
+      Math.floor(mono.length * 0.12)
     );
 
     for (let i = 0; i < mono.length; i++) {
-      let s = mono[i] * gain;
-      if (s > 0.82) {
-        s = 0.82 + 0.12 * Math.tanh((s - 0.82) / 0.12);
-      } else if (s < -0.82) {
-        s = -0.82 - 0.12 * Math.tanh((-s - 0.82) / 0.12);
-      }
-
+      let s = mono[i] * finalLinearGain;
       if (i < fadeInSamples) {
         s *= i / fadeInSamples;
       } else if (i > mono.length - fadeOutSamples) {
         s *= (mono.length - i) / fadeOutSamples;
       }
-      mono[i] = s;
+      mono[i] = Math.max(-0.95, Math.min(0.95, s));
     }
 
     const masteredAudioUrl = encodeFloat32ToWavDataUrl(mono, targetSampleRate);

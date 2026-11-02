@@ -48,15 +48,24 @@ export class DocumentaryAudioEngine {
       this.bgGain = this.ctx.createGain();
 
       this.bgGain.gain.value = this.targetBgVolume;
-      this.masterGain.gain.value = 1.0;
+      this.masterGain.gain.value = 0.92;
       this.speakerGain.gain.value = 1.0;
 
-      // bgGain -> masterGain
+      // Transparent studio master safety limiter so voiceover + background music sum never clips > 0 dBFS
+      const masterLimiter = this.ctx.createDynamicsCompressor();
+      masterLimiter.threshold.value = -1.5;
+      masterLimiter.knee.value = 3;
+      masterLimiter.ratio.value = 12;
+      masterLimiter.attack.value = 0.005;
+      masterLimiter.release.value = 0.12;
+
+      // bgGain -> masterGain -> masterLimiter
       this.bgGain.connect(this.masterGain);
-      // masterGain -> destNode (recording stream ALWAYS receives full unmuted audio!)
-      this.masterGain.connect(this.destNode);
-      // masterGain -> speakerGain -> ctx.destination (live speakers)
-      this.masterGain.connect(this.speakerGain);
+      this.masterGain.connect(masterLimiter);
+      // masterLimiter -> destNode (recording stream ALWAYS receives full unmuted, unclipped audio!)
+      masterLimiter.connect(this.destNode);
+      // masterLimiter -> speakerGain -> ctx.destination (live speakers)
+      masterLimiter.connect(this.speakerGain);
       this.speakerGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {

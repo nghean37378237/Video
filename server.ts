@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2245,6 +2246,84 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   const DEFAULT_LIFE_LEGENDS_VOICE_STYLE =
     "Warm, deep, resonant American documentary baritone narrator like Life Legends. Speak at a calm, unhurried, reflective storytelling pace (135 words per minute) with rich chest resonance, intimate close-mic studio warmth, gentle emotional gravitas, and natural dramatic pauses between phrases.";
 
+  // Studio 24kHz 96kbps Neural Voice Mapping (5 distinct personas x 2 languages = 10 dedicated studio voices)
+  const STUDIO_NEURAL_VOICE_MAP: Record<"en" | "vi", Record<string, string>> = {
+    en: {
+      Charon: "en-US-ChristopherNeural", // Deep, warm American documentary baritone (Will Sampson / Life Legends style)
+      Fenrir: "en-US-EricNeural", // Authoritative, deep resonant historical narrator
+      Puck: "en-US-GuyNeural", // Natural, engaging conversational male storyteller
+      Kore: "en-US-AriaNeural", // Warm, calm, empathetic female documentary narrator
+      Zephyr: "en-US-JennyNeural", // Crisp, articulate modern female narrator
+    },
+    vi: {
+      Charon: "en-US-AndrewMultilingualNeural", // Warm, deep male baritone fluent in Vietnamese + English names
+      Fenrir: "en-US-BrianMultilingualNeural", // Deep, authoritative male narrator fluent in Vietnamese + English names
+      Puck: "en-AU-WilliamMultilingualNeural", // Natural, expressive male storyteller fluent in Vietnamese + English names
+      Kore: "en-US-AvaMultilingualNeural", // Warm, soulful female narrator fluent in Vietnamese + English names
+      Zephyr: "en-US-EmmaMultilingualNeural", // Clear, bright female narrator fluent in Vietnamese + English names
+    },
+  };
+
+  function escapeXmlForSsml(raw: string): string {
+    return raw
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  async function synthesizeStudioNeuralTts(
+    rawText: string,
+    voiceName: string = "Charon",
+    forcedLang?: "vi" | "en"
+  ): Promise<string | null> {
+    const cleanText = rawText.replace(/\s+/g, " ").trim();
+    if (!cleanText) return null;
+
+    const isVietnamese =
+      /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
+        cleanText
+      );
+    const lang: "vi" | "en" = forcedLang || (isVietnamese ? "vi" : "en");
+    const langMap = STUDIO_NEURAL_VOICE_MAP[lang] || STUDIO_NEURAL_VOICE_MAP.en;
+    const edgeVoice = langMap[voiceName] || langMap.Charon || "en-US-ChristopherNeural";
+    const escapedText = escapeXmlForSsml(cleanText);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const tts = new MsEdgeTTS({
+        connectionTimeoutMs: 6500,
+        synthesisTimeoutMs: 12000,
+      });
+      try {
+        await tts.setMetadata(
+          edgeVoice,
+          OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3
+        );
+        const { audioStream } = tts.toStream(escapedText);
+        const audioBuffer = await new Promise<Buffer>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          audioStream.on("data", (chunk: Buffer) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          audioStream.on("error", (err) => reject(err));
+          audioStream.on("end", () => resolve(Buffer.concat(chunks)));
+        });
+        tts.close();
+        if (audioBuffer.length > 400) {
+          return `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`;
+        }
+      } catch {
+        try {
+          tts.close();
+        } catch {
+          // Ignore close error
+        }
+      }
+    }
+    return null;
+  }
+
   async function synthesizeSingleSceneGeminiTts(
     cleanText: string,
     voiceName: string,
@@ -2341,14 +2420,31 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const cleanText = text.trim();
       const forcedLang: "vi" | "en" | undefined =
         language === "vi" || language === "en" ? language : undefined;
-      const engineKey = preferredEngine || "auto";
-      const cacheKey = `${voiceName}::${forcedLang || "auto"}::${engineKey}::${cleanText}`;
+      const engineKey = preferredEngine || "edge-neural-studio";
+      const cacheKey = `v3::${voiceName}::${forcedLang || "auto"}::${engineKey}::${cleanText}`;
       const cached = ttsAudioCache.get(cacheKey);
       if (cached) {
         res.json(cached);
         return;
       }
 
+      // Primary Tier: 24kHz 96kbps Studio Neural Voice (Zero distortion, distinct Male/Female voices, zero rate limits)
+      const studioNeuralUrl = await synthesizeStudioNeuralTts(cleanText, voiceName, forcedLang);
+      if (studioNeuralUrl) {
+        const payload = {
+          audioDataUrl: studioNeuralUrl,
+          engine: "edge-neural-studio",
+        };
+        if (ttsAudioCache.size > 250) {
+          const oldestKey = ttsAudioCache.keys().next().value;
+          if (oldestKey) ttsAudioCache.delete(oldestKey);
+        }
+        ttsAudioCache.set(cacheKey, payload);
+        res.json(payload);
+        return;
+      }
+
+      // Secondary Tier: Gemini Studio TTS
       if (preferredEngine !== "standard-locked") {
         const wavDataUrl = await synthesizeSingleSceneGeminiTts(cleanText, voiceName, style, 0);
         if (wavDataUrl) {
@@ -2356,7 +2452,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             audioDataUrl: wavDataUrl,
             engine: "gemini-tts",
           };
-          if (ttsAudioCache.size > 200) {
+          if (ttsAudioCache.size > 250) {
             const oldestKey = ttsAudioCache.keys().next().value;
             if (oldestKey) ttsAudioCache.delete(oldestKey);
           }
@@ -2366,14 +2462,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         }
       }
 
-      // Guaranteed Consistent Stream with locked language so voice never changes language mid-video
+      // Final Fallback
       const fallbackDataUrl = await generateFallbackMp3Tts(cleanText, forcedLang);
       if (fallbackDataUrl) {
         const payload = {
           audioDataUrl: fallbackDataUrl,
           engine: "standard-locked",
         };
-        if (ttsAudioCache.size > 200) {
+        if (ttsAudioCache.size > 250) {
           const oldestKey = ttsAudioCache.keys().next().value;
           if (oldestKey) ttsAudioCache.delete(oldestKey);
         }
@@ -2391,14 +2487,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   });
 
   // 4b. Generate 100% UNIFORM Voiceover Batch Across Entire Video (Zero Engine Switching Mid-Video!)
-  // Synthesizes each scene in parallel batches of 3 across Gemini TTS models for crystal-clear per-scene baritone narration.
   app.post("/api/tts/generate-batch", async (req, res) => {
     try {
       const {
         items = [],
         voiceName = "Charon",
         language = "en",
-        preferredEngine,
         style = DEFAULT_LIFE_LEGENDS_VOICE_STYLE,
       } = req.body || {};
 
@@ -2416,115 +2510,95 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .filter((it) => it.id && it.text.length > 0);
 
       if (validItems.length === 0) {
-        res.json({ resultsBySceneId: {}, engineUsed: "standard-locked" });
+        res.json({ resultsBySceneId: {}, engineUsed: "edge-neural-studio" });
         return;
       }
 
       const resultsBySceneId: Record<string, { audioDataUrl: string; engine: string }> = {};
 
-      // Attempt 1: Per-Scene Multi-Model Gemini Studio Baritone TTS in fast batches of 3
-      if (preferredEngine !== "standard-locked") {
-        let geminiSuccessCount = 0;
-        const batchSize = 3;
+      // Synthesize all scenes in parallel batches of 4 using 24kHz 96kbps Studio Neural Voices
+      // so every scene from #01 to #N uses the exact same crystal-clear neural voice without 429 drops
+      const batchSize = 4;
+      let studioNeuralCount = 0;
 
-        for (let b = 0; b < validItems.length; b += batchSize) {
-          const chunk = validItems.slice(b, b + batchSize);
-          await Promise.all(
-            chunk.map(async (item, idxInChunk) => {
-              const globalIdx = b + idxInChunk;
-              const cacheKey = `${voiceName}::${forcedLang}::gemini-tts::${item.text}`;
-              const cached = ttsAudioCache.get(cacheKey);
-              if (cached) {
-                resultsBySceneId[item.id] = cached;
-                geminiSuccessCount++;
-                return;
-              }
-
-              const wavDataUrl = await synthesizeSingleSceneGeminiTts(
-                item.text,
-                voiceName,
-                style,
-                globalIdx
-              );
-              if (wavDataUrl) {
-                const payload = {
-                  audioDataUrl: wavDataUrl,
-                  engine: "gemini-single-pass",
-                };
-                if (ttsAudioCache.size > 200) {
-                  const oldestKey = ttsAudioCache.keys().next().value;
-                  if (oldestKey) ttsAudioCache.delete(oldestKey);
-                }
-                ttsAudioCache.set(cacheKey, payload);
-                resultsBySceneId[item.id] = payload;
-                geminiSuccessCount++;
-              }
-            })
-          );
-        }
-
-        // If all or most scenes succeeded with Gemini TTS, fill any remaining gap and return
-        if (geminiSuccessCount > 0) {
-          for (const item of validItems) {
-            if (!resultsBySceneId[item.id]) {
-              const retryWav = await synthesizeSingleSceneGeminiTts(
-                item.text,
-                voiceName,
-                style,
-                0
-              );
-              if (retryWav) {
-                resultsBySceneId[item.id] = {
-                  audioDataUrl: retryWav,
-                  engine: "gemini-single-pass",
-                };
-              } else {
-                const fb = await generateFallbackMp3Tts(item.text, forcedLang);
-                if (fb) {
-                  resultsBySceneId[item.id] = {
-                    audioDataUrl: fb,
-                    engine: "standard-locked",
-                  };
-                }
-              }
+      for (let b = 0; b < validItems.length; b += batchSize) {
+        const chunk = validItems.slice(b, b + batchSize);
+        await Promise.all(
+          chunk.map(async (item) => {
+            const cacheKey = `v3::${voiceName}::${forcedLang}::edge-neural-studio::${item.text}`;
+            const cached = ttsAudioCache.get(cacheKey);
+            if (cached) {
+              resultsBySceneId[item.id] = cached;
+              studioNeuralCount++;
+              return;
             }
-          }
 
-          res.json({
-            resultsBySceneId,
-            engineUsed: "gemini-single-pass",
-          });
-          return;
-        }
+            const neuralUrl = await synthesizeStudioNeuralTts(
+              item.text,
+              voiceName,
+              forcedLang
+            );
+            if (neuralUrl) {
+              const payload = {
+                audioDataUrl: neuralUrl,
+                engine: "edge-neural-studio",
+              };
+              if (ttsAudioCache.size > 250) {
+                const oldestKey = ttsAudioCache.keys().next().value;
+                if (oldestKey) ttsAudioCache.delete(oldestKey);
+              }
+              ttsAudioCache.set(cacheKey, payload);
+              resultsBySceneId[item.id] = payload;
+              studioNeuralCount++;
+            }
+          })
+        );
       }
 
-      // Attempt 2: 100% Uniform Standard-Locked Stream across EVERY scene in the video
+      // Fill any missing scene with retry or Gemini TTS
       for (const item of validItems) {
-        const cacheKey = `${voiceName}::${forcedLang}::standard-locked::${item.text}`;
-        const cached = ttsAudioCache.get(cacheKey);
-        if (cached) {
-          resultsBySceneId[item.id] = cached;
-          continue;
-        }
-
-        const audioDataUrl = await generateFallbackMp3Tts(item.text, forcedLang);
-        if (audioDataUrl) {
-          const payload = {
-            audioDataUrl,
-            engine: "standard-locked",
-          };
-          if (ttsAudioCache.size > 200) {
-            const oldestKey = ttsAudioCache.keys().next().value;
-            if (oldestKey) ttsAudioCache.delete(oldestKey);
+        if (!resultsBySceneId[item.id]) {
+          const retryNeural = await synthesizeStudioNeuralTts(
+            item.text,
+            voiceName,
+            forcedLang
+          );
+          if (retryNeural) {
+            resultsBySceneId[item.id] = {
+              audioDataUrl: retryNeural,
+              engine: "edge-neural-studio",
+            };
+            studioNeuralCount++;
+            continue;
           }
-          ttsAudioCache.set(cacheKey, payload);
-          resultsBySceneId[item.id] = payload;
+
+          const geminiWav = await synthesizeSingleSceneGeminiTts(
+            item.text,
+            voiceName,
+            style,
+            0
+          );
+          if (geminiWav) {
+            resultsBySceneId[item.id] = {
+              audioDataUrl: geminiWav,
+              engine: "gemini-single-pass",
+            };
+            continue;
+          }
+
+          const fb = await generateFallbackMp3Tts(item.text, forcedLang);
+          if (fb) {
+            resultsBySceneId[item.id] = {
+              audioDataUrl: fb,
+              engine: "standard-locked",
+            };
+          }
         }
       }
 
       res.json({
         resultsBySceneId,
-        engineUsed: "standard-locked",
+        engineUsed: studioNeuralCount > 0 ? "edge-neural-studio" : "gemini-single-pass",
       });
     } catch (error: any) {
       res.status(500).json({
