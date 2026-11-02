@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { StoryScene, VaultItem } from '../types';
 import { formatSecLabel } from '../utils/frameExtractor';
@@ -22,6 +23,8 @@ interface TimelineStripProps {
   activeSceneId: string;
   onSelectScene: (sceneId: string, startSec: number) => void;
   onMoveScene: (sceneId: string, direction: -1 | 1) => void;
+  onSwapSceneMedia?: (sceneIdA: string, sceneIdB: string) => void;
+  onBatchSwapVideoImageMedia?: () => void;
   onUpdateScene?: (sceneId: string, patch: Partial<StoryScene>) => void;
   currentTimeSec: number;
   onOpenPromptStudio: () => void;
@@ -38,6 +41,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   activeSceneId,
   onSelectScene,
   onMoveScene,
+  onSwapSceneMedia,
+  onBatchSwapVideoImageMedia,
   onUpdateScene,
   currentTimeSec,
   onOpenPromptStudio,
@@ -45,7 +50,12 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   onSmartBatchUploadFiles,
 }) => {
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
+  const [swapSourceSceneId, setSwapSourceSceneId] = useState<string | null>(null);
   let runningSec = 0;
+
+  const swapSourceIdx = swapSourceSceneId
+    ? scenes.findIndex((s) => s.id === swapSourceSceneId)
+    : -1;
 
   const visualScenes = scenes.filter(
     (s) => s.sceneType === 'video' || s.sceneType === 'image'
@@ -127,7 +137,33 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-slate-400 font-mono-tabular shrink-0">
+        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono-tabular shrink-0">
+          {swapSourceSceneId && swapSourceIdx >= 0 && (
+            <button
+              type="button"
+              onClick={() => setSwapSourceSceneId(null)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-sans font-bold whitespace-nowrap shrink-0"
+              title="Bấm vào cảnh thứ 2 bên dưới để đổi Video/Ảnh với cảnh này, hoặc bấm vào đây để hủy"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>
+                Đang chọn đảo Cảnh #{String(swapSourceIdx + 1).padStart(2, '0')} (Bấm cảnh đích hoặc Hủy)
+              </span>
+            </button>
+          )}
+
+          {onBatchSwapVideoImageMedia && (
+            <button
+              type="button"
+              onClick={onBatchSwapVideoImageMedia}
+              title="Đảo chéo vị trí Video và Ảnh giữa các phân cảnh nhưng GIỮ NGUYÊN 100% thứ tự nội dung kịch bản, phụ đề và giọng đọc từ đầu đến cuối"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
+              <span>Đảo Video ⇄ Ảnh (Giữ Nguyên Nội Dung)</span>
+            </button>
+          )}
+
           {onSmartBatchUploadFiles && (
             <label
               title="Chọn nhiều file Ảnh/Video cùng lúc (tên bất kỳ hoặc đặt tên 1.mp4, 2.png, canh 1.mp4)"
@@ -231,10 +267,27 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               ? 'border-t-[3px] border-t-emerald-500'
               : 'border-t-[3px] border-t-amber-500';
 
+          const isVisualScene = scene.sceneType === 'video' || scene.sceneType === 'image';
+          const isSwapSource = swapSourceSceneId === scene.id;
+          const isSwapTargetCandidate =
+            Boolean(swapSourceSceneId) && swapSourceSceneId !== scene.id && isVisualScene;
+
           return (
             <div
               key={scene.id}
-              onClick={() => onSelectScene(scene.id, startSec)}
+              draggable={isVisualScene}
+              onDragStart={(e) => {
+                if (!isVisualScene) return;
+                e.dataTransfer.setData('text/legendcut-scene-id', scene.id);
+              }}
+              onClick={() => {
+                if (isSwapTargetCandidate && onSwapSceneMedia && swapSourceSceneId) {
+                  onSwapSceneMedia(swapSourceSceneId, scene.id);
+                  setSwapSourceSceneId(null);
+                  return;
+                }
+                onSelectScene(scene.id, startSec);
+              }}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOverSceneId(scene.id);
@@ -243,13 +296,28 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOverSceneId(null);
+                const draggedSceneId = e.dataTransfer.getData('text/legendcut-scene-id');
+                if (
+                  draggedSceneId &&
+                  draggedSceneId !== scene.id &&
+                  isVisualScene &&
+                  onSwapSceneMedia
+                ) {
+                  onSwapSceneMedia(draggedSceneId, scene.id);
+                  setSwapSourceSceneId(null);
+                  return;
+                }
                 const file = e.dataTransfer.files?.[0];
                 if (file && onUploadFileForScene) {
                   onUploadFileForScene(scene.id, file);
                 }
               }}
               className={`group relative w-64 shrink-0 rounded-lg border ${topAccentBorderClass} p-2.5 flex flex-col justify-between cursor-pointer transition-all ${
-                dragOverSceneId === scene.id
+                isSwapSource
+                  ? 'bg-amber-950/60 border-amber-400 ring-2 ring-amber-400/70'
+                  : isSwapTargetCandidate
+                  ? 'bg-[#172033] border-amber-400/70 hover:border-amber-300'
+                  : dragOverSceneId === scene.id
                   ? 'bg-emerald-950/60 border-emerald-400 ring-2 ring-emerald-400/50'
                   : isSelected
                   ? 'bg-[#172033] border-amber-500 shadow-md'
@@ -524,19 +592,57 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       />
                     </label>
                   )}
+                  {isVisualScene && onSwapSceneMedia && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isSwapSource) {
+                          setSwapSourceSceneId(null);
+                        } else if (swapSourceSceneId) {
+                          onSwapSceneMedia(swapSourceSceneId, scene.id);
+                          setSwapSourceSceneId(null);
+                        } else {
+                          setSwapSourceSceneId(scene.id);
+                        }
+                      }}
+                      title={
+                        isSwapSource
+                          ? 'Đang chọn cảnh này để đảo Video/Ảnh — bấm để hủy'
+                          : swapSourceSceneId && swapSourceIdx >= 0
+                          ? `Bấm để đổi Video/Ảnh của cảnh này với Cảnh #${String(swapSourceIdx + 1).padStart(2, '0')} (Giữ nguyên thứ tự nội dung chữ & giọng đọc)`
+                          : 'Chọn cảnh này để đảo Video/Ảnh với 1 cảnh khác (Giữ nguyên thứ tự nội dung chữ & giọng đọc)'
+                      }
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-semibold border transition-colors ${
+                        isSwapSource
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                          : isSwapTargetCandidate
+                          ? 'bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border-amber-400'
+                          : 'bg-slate-800/90 hover:bg-slate-700 text-sky-300 border-slate-700'
+                      }`}
+                    >
+                      <ArrowLeftRight className="w-2.5 h-2.5" />
+                      <span>
+                        {isSwapSource
+                          ? 'Hủy'
+                          : isSwapTargetCandidate && swapSourceIdx >= 0
+                          ? `Đổi #${String(swapSourceIdx + 1).padStart(2, '0')}`
+                          : 'Đảo'}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => onMoveScene(scene.id, -1)}
-                    disabled={idx === 0}
-                    title="Chuyển sang trái"
-                    className="p-0.5 hover:text-white disabled:opacity-30"
+                    disabled={idx === 0 || !isVisualScene}
+                    title="Đảo riêng Video/Ảnh sang cảnh bên trái (Giữ nguyên thứ tự nội dung chữ & giọng đọc)"
+                    className="p-0.5 hover:text-amber-300 disabled:opacity-30"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onMoveScene(scene.id, 1)}
-                    disabled={idx === scenes.length - 1}
-                    title="Chuyển sang phải"
-                    className="p-0.5 hover:text-white disabled:opacity-30"
+                    disabled={idx === scenes.length - 1 || !isVisualScene}
+                    title="Đảo riêng Video/Ảnh sang cảnh bên phải (Giữ nguyên thứ tự nội dung chữ & giọng đọc)"
+                    className="p-0.5 hover:text-amber-300 disabled:opacity-30"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>

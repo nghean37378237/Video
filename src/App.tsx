@@ -2032,17 +2032,122 @@ export default function App() {
     }
   };
 
+  // Swap ONLY the Video/Image media & visual role between two scenes while keeping sequential script content & voiceovers 100% unchanged
+  const handleSwapSceneMedia = (sceneIdA: string, sceneIdB: string) => {
+    if (sceneIdA === sceneIdB) return;
+    const idxA = scenes.findIndex((s) => s.id === sceneIdA);
+    const idxB = scenes.findIndex((s) => s.id === sceneIdB);
+    if (idxA < 0 || idxB < 0) return;
+
+    const sceneA = scenes[idxA];
+    const sceneB = scenes[idxB];
+    if (
+      sceneA.sceneType === 'outro' ||
+      sceneB.sceneType === 'outro' ||
+      sceneA.sceneType === 'quote' ||
+      sceneB.sceneType === 'quote'
+    ) {
+      return;
+    }
+
+    const nextScenes = scenes.map((s, idx) => {
+      if (idx === idxA) {
+        return {
+          ...sceneA,
+          // Swap visual role & media from B -> A, while keeping A's order, title, narrationText, translationText, voiceoverUrl, durationSec!
+          sceneType: sceneB.sceneType,
+          mediaId: sceneB.mediaId,
+          mediaUrl: sceneB.mediaUrl,
+          mediaKind: sceneB.mediaKind,
+          hasRealPhoto: sceneB.hasRealPhoto,
+          realPhotoTitle: sceneB.realPhotoTitle,
+          motionEffect: sceneB.motionEffect,
+        };
+      }
+      if (idx === idxB) {
+        return {
+          ...sceneB,
+          // Swap visual role & media from A -> B, while keeping B's order, title, narrationText, translationText, voiceoverUrl, durationSec!
+          sceneType: sceneA.sceneType,
+          mediaId: sceneA.mediaId,
+          mediaUrl: sceneA.mediaUrl,
+          mediaKind: sceneA.mediaKind,
+          hasRealPhoto: sceneA.hasRealPhoto,
+          realPhotoTitle: sceneA.realPhotoTitle,
+          motionEffect: sceneA.motionEffect,
+        };
+      }
+      return s;
+    });
+
+    setScenes(nextScenes);
+    setStatusBanner(
+      `🔄 Đã đảo Video/Ảnh giữa Cảnh #${String(idxA + 1).padStart(2, '0')} và Cảnh #${String(idxB + 1).padStart(2, '0')} — Giữ nguyên 100% thứ tự nội dung lời đọc & giọng thuyết minh!`
+    );
+  };
+
+  // Move ONLY the Video/Image left or right to the nearest visual scene while keeping all script text & voiceover order intact
   const handleMoveScene = (sceneId: string, direction: -1 | 1) => {
     const idx = scenes.findIndex((s) => s.id === sceneId);
     if (idx < 0) return;
-    const targetIdx = idx + direction;
+    const current = scenes[idx];
+    if (current.sceneType === 'outro' || current.sceneType === 'quote') return;
+
+    let targetIdx = idx + direction;
+    while (
+      targetIdx >= 0 &&
+      targetIdx < scenes.length &&
+      (scenes[targetIdx].sceneType === 'quote' || scenes[targetIdx].sceneType === 'outro')
+    ) {
+      targetIdx += direction;
+    }
     if (targetIdx < 0 || targetIdx >= scenes.length) return;
 
+    handleSwapSceneMedia(sceneId, scenes[targetIdx].id);
+  };
+
+  // Batch alternate / swap Video <-> Image across visual scenes while preserving sequential story content & >50% video rule
+  const handleBatchSwapVideoImageMedia = () => {
+    const visualIndices = scenes
+      .map((s, idx) => (s.sceneType === 'video' || s.sceneType === 'image' ? idx : -1))
+      .filter((idx) => idx >= 0);
+
+    if (visualIndices.length < 2) return;
+
+    // Pair adjacent visual scenes (or swap Video scenes with Image scenes) so their media & visual roles swap while text stays locked
     const copy = [...scenes];
-    const [moved] = copy.splice(idx, 1);
-    copy.splice(targetIdx, 0, moved);
-    const reordered = copy.map((s, i) => ({ ...s, order: i + 1 }));
-    setScenes(reordered);
+    for (let i = 0; i + 1 < visualIndices.length; i += 2) {
+      const idxA = visualIndices[i];
+      const idxB = visualIndices[i + 1];
+      const sceneA = copy[idxA];
+      const sceneB = copy[idxB];
+
+      copy[idxA] = {
+        ...sceneA,
+        sceneType: sceneB.sceneType,
+        mediaId: sceneB.mediaId,
+        mediaUrl: sceneB.mediaUrl,
+        mediaKind: sceneB.mediaKind,
+        hasRealPhoto: sceneB.hasRealPhoto,
+        realPhotoTitle: sceneB.realPhotoTitle,
+        motionEffect: sceneB.motionEffect,
+      };
+      copy[idxB] = {
+        ...sceneB,
+        sceneType: sceneA.sceneType,
+        mediaId: sceneA.mediaId,
+        mediaUrl: sceneA.mediaUrl,
+        mediaKind: sceneA.mediaKind,
+        hasRealPhoto: sceneA.hasRealPhoto,
+        realPhotoTitle: sceneA.realPhotoTitle,
+        motionEffect: sceneA.motionEffect,
+      };
+    }
+
+    setScenes(copy);
+    setStatusBanner(
+      '🔀 Đã đảo chéo Video ⇄ Ảnh giữa các cặp phân cảnh trên dòng thời gian — Nội dung kịch bản, phụ đề và giọng đọc giữ nguyên 100% đúng thứ tự!'
+    );
   };
 
   return (
@@ -2219,6 +2324,8 @@ export default function App() {
           setCurrentTimeSec(startSec + 0.05);
         }}
         onMoveScene={handleMoveScene}
+        onSwapSceneMedia={handleSwapSceneMedia}
+        onBatchSwapVideoImageMedia={handleBatchSwapVideoImageMedia}
         onUpdateScene={handleUpdateScene}
         currentTimeSec={currentTimeSec}
         onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
