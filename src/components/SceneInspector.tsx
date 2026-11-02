@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Mic,
   Sparkles,
@@ -18,6 +18,7 @@ import {
   Download,
   Upload,
   ExternalLink,
+  History,
 } from 'lucide-react';
 import {
   ColorFilter,
@@ -39,10 +40,15 @@ import {
   VideoScriptStyle,
 } from '../utils/fullFrameHelper';
 import {
+  BG_MUSIC_STYLE_LABELS,
+  loadSavedAudioPreferences,
   masterAudioToConsistentStudioWav,
   playInstantVoicePreview,
   resolveConsistentSceneText,
+  saveAudioPreferences,
+  SavedAudioPreferences,
   VOICE_PERSONA_PROFILES,
+  VOICE_SHORT_LABELS,
 } from '../utils/voiceConsistencyEngine';
 import { soundEngine } from '../utils/audioSynth';
 
@@ -86,6 +92,20 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isDownloadingFullFrame, setIsDownloadingFullFrame] = useState(false);
   const [isFetchingRealPhoto, setIsFetchingRealPhoto] = useState(false);
+  const [savedAudioPrefs, setSavedAudioPrefs] = useState<SavedAudioPreferences>(() =>
+    loadSavedAudioPreferences()
+  );
+
+  useEffect(() => {
+    const onSaved = (e: Event) => {
+      const custom = e as CustomEvent<SavedAudioPreferences>;
+      if (custom.detail) {
+        setSavedAudioPrefs(custom.detail);
+      }
+    };
+    window.addEventListener('legendcut:audioprefs-saved', onSaved);
+    return () => window.removeEventListener('legendcut:audioprefs-saved', onSaved);
+  }, []);
 
   const ratioSpec = getAspectRatioSpec(settings.aspectRatio);
 
@@ -812,13 +832,88 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-amber-400" />
-                Chọn Giọng Đọc &amp; Nhạc Nền Phù Hợp
+                Chọn Giọng Đọc &amp; Nhạc Nền (Tự Động Lưu)
               </span>
-              {activeScene.voiceoverUrl && (
-                <span className="text-[11px] text-emerald-400 flex items-center gap-1 whitespace-nowrap">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Đã chuẩn hóa ({activeScene.durationSec}s)
+              <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1 whitespace-nowrap">
+                <CheckCircle2 className="w-3 h-3" />
+                Đã lưu ({savedAudioPrefs.updatedAtLabel})
+              </span>
+            </div>
+
+            {/* Saved Selection Banner & Quick Restore History */}
+            <div className="p-2 rounded bg-slate-900/90 border border-emerald-500/30 space-y-1.5">
+              <div className="text-[10px] text-emerald-300 font-semibold leading-snug">
+                💾 Đã lưu trước khi chạy:{' '}
+                <span className="text-amber-300">
+                  {VOICE_SHORT_LABELS[settings.ttsVoice]} ({activeVoiceLang.toUpperCase()})
+                </span>{' '}
+                +{' '}
+                <span className="text-sky-300">
+                  {BG_MUSIC_STYLE_LABELS[settings.bgMusicStyle]} ({Math.round(settings.bgMusicVolume * 100)}%)
                 </span>
+              </div>
+              {savedAudioPrefs.history && savedAudioPrefs.history.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-slate-800">
+                  <div className="text-[9px] text-slate-400 flex items-center gap-1">
+                    <History className="w-2.5 h-2.5 text-amber-400" />
+                    Quá trình chọn gần đây (Bấm để chọn lại):
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {savedAudioPrefs.history.slice(0, 4).map((item, idx) => {
+                      const isCurrent =
+                        item.ttsVoice === settings.ttsVoice &&
+                        item.voiceLanguage === activeVoiceLang &&
+                        item.bgMusicStyle === settings.bgMusicStyle;
+                      return (
+                        <button
+                          key={item.id || idx}
+                          type="button"
+                          onClick={() => {
+                            onUpdateSettings({
+                              ttsVoice: item.ttsVoice,
+                              voiceLanguage: item.voiceLanguage,
+                              bgMusicStyle: item.bgMusicStyle,
+                              bgMusicVolume: item.bgMusicVolume,
+                              lockedTtsEngine: undefined,
+                            });
+                            saveAudioPreferences({
+                              ttsVoice: item.ttsVoice,
+                              voiceLanguage: item.voiceLanguage,
+                              bgMusicStyle: item.bgMusicStyle,
+                              bgMusicVolume: item.bgMusicVolume,
+                            });
+                            soundEngine.previewBackgroundMusic(
+                              item.bgMusicStyle,
+                              item.bgMusicVolume,
+                              settings.customBgMusicUrl,
+                              5000
+                            );
+                            handleGenerateSceneTTS(item.ttsVoice, item.voiceLanguage, true);
+                          }}
+                          className={`px-1.5 py-0.5 text-[9px] rounded border transition-colors ${
+                            isCurrent
+                              ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-semibold'
+                              : 'bg-[#0B0F17] border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {idx === 0 ? '★ ' : ''}
+                          {item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
+                          {item.bgMusicStyle === 'western-acoustic'
+                            ? 'Guitar'
+                            : item.bgMusicStyle === 'emotional-piano'
+                            ? 'Piano'
+                            : item.bgMusicStyle === 'cinematic-strings'
+                            ? 'Dàn Dây'
+                            : item.bgMusicStyle === 'vintage-americana'
+                            ? 'Viễn Tây'
+                            : item.bgMusicStyle === 'custom'
+                            ? 'MP3'
+                            : 'Tắt nhạc'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -875,6 +970,12 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                           bgMusicVolume: combo.vol,
                           lockedTtsEngine: undefined,
                         });
+                        saveAudioPreferences({
+                          ttsVoice: combo.voice,
+                          voiceLanguage: activeVoiceLang,
+                          bgMusicStyle: combo.music,
+                          bgMusicVolume: combo.vol,
+                        });
                         soundEngine.previewBackgroundMusic(
                           combo.music,
                           combo.vol,
@@ -903,7 +1004,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
               <div className="flex items-center justify-between gap-2">
                 <label className="block text-[10px] font-semibold text-slate-300">
-                  1. Giọng đọc thuyết minh (Chọn để đổi &amp; nghe thử ngay):
+                  1. Giọng đọc thuyết minh (Chọn để lưu &amp; nghe thử ngay):
                 </label>
                 <button
                   type="button"
@@ -923,6 +1024,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                       voiceLanguage: newLang,
                       lockedTtsEngine: undefined,
                     });
+                    saveAudioPreferences({ voiceLanguage: newLang });
                     handleGenerateSceneTTS(settings.ttsVoice, newLang, true);
                   }}
                   title="Khóa ngôn ngữ giọng đọc xuyên suốt từ đầu đến cuối"
@@ -940,6 +1042,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                       ttsVoice: newVoice,
                       lockedTtsEngine: undefined,
                     });
+                    saveAudioPreferences({ ttsVoice: newVoice, voiceLanguage: activeVoiceLang });
                     handleGenerateSceneTTS(newVoice, activeVoiceLang, true);
                   }}
                   className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
@@ -1002,6 +1105,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 onChange={(e) => {
                   const newStyle = e.target.value as ProjectSettings['bgMusicStyle'];
                   onUpdateSettings({ bgMusicStyle: newStyle });
+                  saveAudioPreferences({ bgMusicStyle: newStyle });
                   soundEngine.previewBackgroundMusic(
                     newStyle,
                     settings.bgMusicVolume,
@@ -1039,6 +1143,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   onChange={(e) => {
                     const v = parseFloat(e.target.value);
                     onUpdateSettings({ bgMusicVolume: v });
+                    saveAudioPreferences({ bgMusicVolume: v });
                     soundEngine.setBgVolume(v);
                   }}
                   className="flex-1 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
@@ -1056,6 +1161,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                         bgMusicStyle: 'custom',
                         customBgMusicUrl: url,
                       });
+                      saveAudioPreferences({ bgMusicStyle: 'custom' });
                       soundEngine.previewBackgroundMusic('custom', settings.bgMusicVolume, url, 7000);
                     }}
                     className="hidden"

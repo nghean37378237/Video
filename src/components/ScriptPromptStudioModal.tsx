@@ -21,8 +21,10 @@ import {
   AlertCircle,
   Download,
   Maximize2,
+  Mic,
+  Volume2,
 } from 'lucide-react';
-import { StoryScene, VaultItem } from '../types';
+import { ProjectSettings, StoryScene, VaultItem } from '../types';
 import {
   AspectRatioOption,
   buildFullFrameImagePrompt,
@@ -36,6 +38,13 @@ import {
   KLING_NEGATIVE_PROMPT,
   VideoScriptStyle,
 } from '../utils/fullFrameHelper';
+import { soundEngine } from '../utils/audioSynth';
+import {
+  BG_MUSIC_STYLE_LABELS,
+  loadSavedAudioPreferences,
+  saveAudioPreferences,
+  VOICE_SHORT_LABELS,
+} from '../utils/voiceConsistencyEngine';
 
 interface ScriptPromptStudioModalProps {
   isOpen: boolean;
@@ -43,12 +52,17 @@ interface ScriptPromptStudioModalProps {
   scenes: StoryScene[];
   vaultItems: VaultItem[];
   aspectRatio?: AspectRatioOption;
+  settings?: ProjectSettings;
+  onUpdateSettings?: (patch: Partial<ProjectSettings>) => void;
   onParseRawScript: (
     rawScript: string,
     lang: 'en' | 'vi',
     runAutoPilotAfter?: boolean,
     characterHint?: string,
-    targetSceneCount?: number
+    targetSceneCount?: number,
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
+    overrideMusicVol?: number
   ) => Promise<void>;
   isParsingScript: boolean;
   onGenerateAIStory: (topic: string, lang: 'vi' | 'en', sceneCount: number) => Promise<void>;
@@ -72,6 +86,8 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   scenes,
   vaultItems,
   aspectRatio = '3:4',
+  settings,
+  onUpdateSettings,
   onParseRawScript,
   isParsingScript,
   onGenerateAIStory,
@@ -96,7 +112,10 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
     `A circus performer. A nightclub singer. A king. A gunfighter. Yul Brynner lived more lives than most men could ever dream of.\n\nThe shaved head, the piercing eyes, that slow confident walk. He didn't need to raise his voice. He just stood there, and the scene was his.\n\nBut his story didn't begin in Hollywood. It began far away, in Vladivostok, Russia, on July eleventh, nineteen twenty.\n\nAs a boy, he moved to China, then to France. New countries, new languages, and a restless young heart that never stood still.`
   );
   const [scriptCharacterHint, setScriptCharacterHint] = useState('Yul Brynner');
-  const [scriptLang, setScriptLang] = useState<'en' | 'vi'>('en');
+  const savedAudioInit = loadSavedAudioPreferences();
+  const [scriptLang, setScriptLang] = useState<'en' | 'vi'>(
+    settings?.voiceLanguage || savedAudioInit.voiceLanguage || 'en'
+  );
   const [pasteSceneCount, setPasteSceneCount] = useState<number>(14);
   const [chatGptCharacter, setChatGptCharacter] = useState('Clint Eastwood');
   const [chatGptLang, setChatGptLang] = useState<'en' | 'vi'>('en');
@@ -1657,11 +1676,20 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Ngôn ngữ phụ đề & giọng đọc:
+                    Ngôn ngữ phụ đề &amp; giọng đọc:
                   </label>
                   <select
                     value={scriptLang}
-                    onChange={(e) => setScriptLang(e.target.value as 'en' | 'vi')}
+                    onChange={(e) => {
+                      const nextLang = e.target.value as 'en' | 'vi';
+                      setScriptLang(nextLang);
+                      onUpdateSettings?.({
+                        voiceLanguage: nextLang,
+                        subtitleLanguage: nextLang,
+                        lockedTtsEngine: undefined,
+                      });
+                      saveAudioPreferences({ voiceLanguage: nextLang });
+                    }}
                     className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100"
                   >
                     <option value="en">Tiếng Anh (Chuẩn Life Legends)</option>
@@ -1670,8 +1698,103 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                 </div>
               </div>
 
+              {/* Pre-run Voice & Background Music selector inside Paste Script tab */}
+              {settings && (
+                <div className="p-3.5 rounded-xl bg-[#111827] border border-amber-500/40 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5" />
+                      Chọn Giọng Đọc &amp; Nhạc Nền Trước Khi Chạy (Tự Động Lưu):
+                    </span>
+                    <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      💾 Đang lưu: {VOICE_SHORT_LABELS[settings.ttsVoice]} ({scriptLang.toUpperCase()}) +{' '}
+                      {BG_MUSIC_STYLE_LABELS[settings.bgMusicStyle]}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        1. Giọng đọc thuyết minh (Áp dụng xuyên suốt):
+                      </label>
+                      <select
+                        value={settings.ttsVoice}
+                        onChange={(e) => {
+                          const v = e.target.value as ProjectSettings['ttsVoice'];
+                          onUpdateSettings?.({ ttsVoice: v, lockedTtsEngine: undefined });
+                          saveAudioPreferences({ ttsVoice: v, voiceLanguage: scriptLang });
+                        }}
+                        className="w-full px-3 py-2 text-xs bg-[#0B0F17] border border-slate-700 rounded-lg text-slate-100"
+                      >
+                        <option value="Charon">Charon — Nam Trầm Ấm (Chuẩn Mẫu Will Sampson)</option>
+                        <option value="Fenrir">Fenrir — Nam Trầm Sâu Uy Nghiêm</option>
+                        <option value="Puck">Puck — Nam Truyền Cảm Tự Nhiên</option>
+                        <option value="Kore">Kore — Nữ Trầm Dịu Sâu Lắng</option>
+                        <option value="Zephyr">Zephyr — Nữ Trong Trẻo Nghệ Thuật</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300">
+                          2. Nhạc nền phim tài liệu ({Math.round(settings.bgMusicVolume * 100)}%):
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            soundEngine.previewBackgroundMusic(
+                              settings.bgMusicStyle,
+                              settings.bgMusicVolume,
+                              settings.customBgMusicUrl,
+                              6000
+                            )
+                          }
+                          className="px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded flex items-center gap-1"
+                        >
+                          <Volume2 className="w-3 h-3" />
+                          Nghe thử nhạc
+                        </button>
+                      </div>
+                      <select
+                        value={settings.bgMusicStyle}
+                        onChange={(e) => {
+                          const m = e.target.value as ProjectSettings['bgMusicStyle'];
+                          onUpdateSettings?.({ bgMusicStyle: m });
+                          saveAudioPreferences({ bgMusicStyle: m });
+                          soundEngine.previewBackgroundMusic(
+                            m,
+                            settings.bgMusicVolume,
+                            settings.customBgMusicUrl,
+                            6000
+                          );
+                        }}
+                        className="w-full px-3 py-2 text-xs bg-[#0B0F17] border border-slate-700 rounded-lg text-slate-100"
+                      >
+                        <option value="western-acoustic">
+                          🎸 Guitar Acoustic &amp; Piano Ấm (Chuẩn Mẫu Will Sampson)
+                        </option>
+                        <option value="emotional-piano">
+                          🎹 Piano &amp; Cello Hoài Niệm Sâu Lắng
+                        </option>
+                        <option value="cinematic-strings">
+                          🎻 Dàn Dây Cello &amp; Violin Trầm Hùng
+                        </option>
+                        <option value="vintage-americana">
+                          🤠 Guitar Miễn Viễn Tây Cổ Điển
+                        </option>
+                        <option value="custom">
+                          📁 Nhạc MP3 Tải Lên ({settings.customBgMusicUrl ? 'Đã nạp' : 'Chưa chọn'})
+                        </option>
+                        <option value="none">🔇 Tắt nhạc nền</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <textarea
-                rows={9}
+                rows={8}
                 value={rawScriptInput}
                 onChange={(e) => setRawScriptInput(e.target.value)}
                 placeholder="Dán nội dung kịch bản vào đây..."
@@ -1686,7 +1809,10 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                       scriptLang,
                       false,
                       scriptCharacterHint,
-                      pasteSceneCount
+                      pasteSceneCount,
+                      settings?.ttsVoice,
+                      settings?.bgMusicStyle,
+                      settings?.bgMusicVolume
                     );
                     setActiveTab('checklist');
                   }}
@@ -1696,12 +1822,12 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                   {isParsingScript ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Đang chia đoạn & xuất Prompt...
+                      Đang chia đoạn &amp; xuất Prompt...
                     </>
                   ) : (
                     <>
                       <Wand2 className="w-4 h-4 text-amber-400" />
-                      Chỉ Chia Đoạn ({pasteSceneCount > 0 ? `${pasteSceneCount} Cảnh` : 'Tự Động'}) & Xuất Prompt Kling AI / Ảnh
+                      Chỉ Chia Đoạn ({pasteSceneCount > 0 ? `${pasteSceneCount} Cảnh` : 'Tự Động'}) &amp; Xuất Prompt Kling AI / Ảnh
                     </>
                   )}
                 </button>
@@ -1713,7 +1839,10 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                       scriptLang,
                       true,
                       scriptCharacterHint,
-                      pasteSceneCount
+                      pasteSceneCount,
+                      settings?.ttsVoice,
+                      settings?.bgMusicStyle,
+                      settings?.bgMusicVolume
                     );
                     onClose();
                   }}
@@ -1728,7 +1857,7 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                   ) : (
                     <>
                       <Zap className="w-4 h-4 fill-current" />
-                      Dựng Tự Động A → Z ({pasteSceneCount > 0 ? `${pasteSceneCount} Cảnh` : 'Tự Động'} + Ảnh + Giọng + Ghép)
+                      Dựng Tự Động A → Z (Giọng {settings?.ttsVoice || 'Charon'} + Nhạc Đã Lưu)
                     </>
                   )}
                 </button>

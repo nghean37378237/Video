@@ -37,10 +37,14 @@ import {
   buildStandardKlingDrawPrompt,
 } from './utils/fullFrameHelper';
 import {
+  BG_MUSIC_STYLE_LABELS,
   detectProjectVoiceLanguage,
+  loadSavedAudioPreferences,
   masterAudioToConsistentStudioWav,
   resolveConsistentSceneText,
+  saveAudioPreferences,
   VOICE_PERSONA_PROFILES,
+  VOICE_SHORT_LABELS,
 } from './utils/voiceConsistencyEngine';
 import { CanvasStage } from './components/CanvasStage';
 import { MediaVaultPanel } from './components/MediaVaultPanel';
@@ -51,7 +55,20 @@ import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
 export default function App() {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
   const [scenes, setScenes] = useState<StoryScene[]>(WILL_SAMPSON_SCENES);
-  const [settings, setSettings] = useState<ProjectSettings>(INITIAL_PROJECT_SETTINGS);
+  const [settings, setSettings] = useState<ProjectSettings>(() => {
+    const saved = loadSavedAudioPreferences();
+    return {
+      ...INITIAL_PROJECT_SETTINGS,
+      ttsVoice: saved.ttsVoice || INITIAL_PROJECT_SETTINGS.ttsVoice,
+      voiceLanguage: saved.voiceLanguage || INITIAL_PROJECT_SETTINGS.voiceLanguage,
+      subtitleLanguage: saved.voiceLanguage || INITIAL_PROJECT_SETTINGS.subtitleLanguage,
+      bgMusicStyle: saved.bgMusicStyle || INITIAL_PROJECT_SETTINGS.bgMusicStyle,
+      bgMusicVolume:
+        typeof saved.bgMusicVolume === 'number'
+          ? saved.bgMusicVolume
+          : INITIAL_PROJECT_SETTINGS.bgMusicVolume,
+    };
+  });
   const [activeSceneId, setActiveSceneId] = useState<string>(WILL_SAMPSON_SCENES[0].id);
   const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -72,6 +89,26 @@ export default function App() {
   const [isLightTheme, setIsLightTheme] = useState<boolean>(true);
 
   const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
+
+  const handleUpdateSettings = useCallback((patch: Partial<ProjectSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      if (
+        patch.ttsVoice !== undefined ||
+        patch.voiceLanguage !== undefined ||
+        patch.bgMusicStyle !== undefined ||
+        patch.bgMusicVolume !== undefined
+      ) {
+        saveAudioPreferences({
+          ttsVoice: next.ttsVoice,
+          voiceLanguage: next.voiceLanguage || (next.subtitleLanguage === 'vi' ? 'vi' : 'en'),
+          bgMusicStyle: next.bgMusicStyle,
+          bgMusicVolume: next.bgMusicVolume,
+        });
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1515,16 +1552,36 @@ export default function App() {
   const handleRunFullAutoPilot = async (
     characterOrTopic: string,
     lang: 'en' | 'vi',
-    sceneCount: number
+    sceneCount: number,
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
+    overrideMusicVolume?: number
   ) => {
     if (isRunningAutoPilot || !characterOrTopic.trim()) return;
     setIsRunningAutoPilot(true);
     setIsPlaying(false);
     setStatusBanner(null);
 
+    const chosenVoice = overrideVoice || settings.ttsVoice || 'Charon';
+    const chosenMusic = overrideMusicStyle || settings.bgMusicStyle || 'western-acoustic';
+    const chosenVol =
+      typeof overrideMusicVolume === 'number' ? overrideMusicVolume : settings.bgMusicVolume;
+
+    // Persist the pre-run selection before starting
+    saveAudioPreferences({
+      ttsVoice: chosenVoice,
+      voiceLanguage: lang,
+      bgMusicStyle: chosenMusic,
+      bgMusicVolume: chosenVol,
+      storyTopic: characterOrTopic,
+      sceneCount,
+    });
+
     try {
       // Step 1: Generate Storyboard & Prompts
-      setAutoPilotStepText(`Bước 1/4: Đang viết kịch bản & chia ${sceneCount} cảnh Video/Ảnh...`);
+      setAutoPilotStepText(
+        `Bước 1/4: Đang viết kịch bản ${sceneCount} cảnh (Đã khóa Giọng ${chosenVoice} + ${BG_MUSIC_STYLE_LABELS[chosenMusic]})...`
+      );
       let rawScenesList: any[] | null = null;
       try {
         const storyRes = await fetch('/api/story/generate', {
@@ -1568,6 +1625,10 @@ export default function App() {
         ...prev,
         projectTitle: characterOrTopic.slice(0, 45),
         subtitleLanguage: lang,
+        voiceLanguage: lang,
+        ttsVoice: chosenVoice,
+        bgMusicStyle: chosenMusic,
+        bgMusicVolume: chosenVol,
         audioMode: 'stitched-scenes',
       }));
 
@@ -1583,11 +1644,12 @@ export default function App() {
       } = await matchAndAssignRealPhotosForScenes(initialScenes, characterOrTopic);
       setScenes(scenesWithRealPhotos);
 
-      // Step 3: Generate AI Documentary Voiceover for all scenes
+      // Step 3: Generate AI Documentary Voiceover for all scenes using the exact pre-selected voice!
       const finalScenes = await generateVoiceoversForScenesList(
         scenesWithRealPhotos,
         lang,
-        (msg) => setAutoPilotStepText(msg)
+        (msg) => setAutoPilotStepText(msg),
+        chosenVoice
       );
       setScenes(finalScenes);
 
@@ -1596,7 +1658,7 @@ export default function App() {
       setCurrentTimeSec(0);
       setIsPlaying(true);
       setStatusBanner(
-        `⚡ Đã dựng ${finalScenes.length} cảnh "${characterOrTopic}": Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + Cấp sẵn Ảnh Mẫu & ${missingCount} Bộ Prompt để bạn Vẽ và Reg Video Kling AI (số giây tròn) + Đọc thuyết minh đủ 100%!`
+        `⚡ Đã dựng ${finalScenes.length} cảnh "${characterOrTopic}" với Giọng ${VOICE_SHORT_LABELS[chosenVoice]} (${lang.toUpperCase()}) + Nhạc ${BG_MUSIC_STYLE_LABELS[chosenMusic]} (Đã lưu lựa chọn): Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Bộ Prompt Kling AI!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Lỗi khi chạy tự động A-Z.');
@@ -1614,6 +1676,12 @@ export default function App() {
   ) => {
     setIsGeneratingStory(true);
     setStatusBanner(null);
+
+    saveAudioPreferences({
+      voiceLanguage: lang,
+      storyTopic: topic,
+      sceneCount,
+    });
 
     try {
       let rawScenesList: any[] | null = null;
@@ -1659,6 +1727,7 @@ export default function App() {
         ...prev,
         projectTitle: topic.slice(0, 45),
         subtitleLanguage: lang,
+        voiceLanguage: lang,
         audioMode: 'stitched-scenes',
       }));
       setCurrentTimeSec(0);
@@ -1688,11 +1757,26 @@ export default function App() {
     lang: 'en' | 'vi',
     runAutoPilotAfter = false,
     characterHint = '',
-    targetSceneCount = 0
+    targetSceneCount = 0,
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
+    overrideMusicVol?: number
   ) => {
     setIsParsingScript(true);
     if (runAutoPilotAfter) setIsRunningAutoPilot(true);
     setStatusBanner(null);
+
+    const chosenVoice = overrideVoice || settings.ttsVoice || 'Charon';
+    const chosenMusic = overrideMusicStyle || settings.bgMusicStyle || 'western-acoustic';
+    const chosenVol =
+      typeof overrideMusicVol === 'number' ? overrideMusicVol : settings.bgMusicVolume;
+
+    saveAudioPreferences({
+      ttsVoice: chosenVoice,
+      voiceLanguage: lang,
+      bgMusicStyle: chosenMusic,
+      bgMusicVolume: chosenVol,
+    });
 
     try {
       setAutoPilotStepText('Bước 1/4: Đang chia phân cảnh kịch bản theo thứ tự mượt mà...');
@@ -1740,6 +1824,10 @@ export default function App() {
         ...prev,
         projectTitle: characterHint || prev.projectTitle,
         subtitleLanguage: lang,
+        voiceLanguage: lang,
+        ttsVoice: chosenVoice,
+        bgMusicStyle: chosenMusic,
+        bgMusicVolume: chosenVol,
         audioMode: 'stitched-scenes',
       }));
       setCurrentTimeSec(0);
@@ -1759,13 +1847,14 @@ export default function App() {
         const finalScenes = await generateVoiceoversForScenesList(
           scenesWithPhotos,
           lang,
-          (msg) => setAutoPilotStepText(msg)
+          (msg) => setAutoPilotStepText(msg),
+          chosenVoice
         );
         setScenes(finalScenes);
         setCurrentTimeSec(0);
         setIsPlaying(true);
         setStatusBanner(
-          `⚡ Đã dựng hoàn chỉnh từ kịch bản (${finalScenes.length} cảnh: tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + cấp sẵn Ảnh Mẫu & ${missingCount} Prompt Kling AI để vẽ/reg video + đọc đủ 100%)!`
+          `⚡ Đã dựng hoàn chỉnh từ kịch bản (${finalScenes.length} cảnh) với Giọng ${VOICE_SHORT_LABELS[chosenVoice]} (${lang.toUpperCase()}) + Nhạc ${BG_MUSIC_STYLE_LABELS[chosenMusic]} (Đã lưu lựa chọn): Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Prompt Kling AI!`
         );
       } else {
         setStatusBanner(
@@ -2076,6 +2165,8 @@ export default function App() {
             activePresetId={settings.activePresetId}
             onSelectPreset={handleSelectPreset}
             onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
           />
         </div>
 
@@ -2104,7 +2195,7 @@ export default function App() {
             onAddScene={handleAddScene}
             onDeleteScene={handleDeleteScene}
             settings={settings}
-            onUpdateSettings={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+            onUpdateSettings={handleUpdateSettings}
             onGenerateAllVoiceovers={handleGenerateAllVoiceovers}
             isGeneratingAllTTS={isGeneratingAllTTS}
             ttsProgressText={ttsProgressText}
@@ -2140,6 +2231,8 @@ export default function App() {
         scenes={scenes}
         vaultItems={vaultItems}
         aspectRatio={settings.aspectRatio}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
         onParseRawScript={handleParseRawScript}
         isParsingScript={isParsingScript}
         onGenerateAIStory={handleGenerateAIStory}

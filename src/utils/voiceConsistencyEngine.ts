@@ -462,3 +462,224 @@ export async function masterAudioToConsistentStudioWav(
     decodeCtx.close().catch(() => {});
   }
 }
+
+export interface SavedAudioSelectionEntry {
+  id: string;
+  ttsVoice: ProjectSettings['ttsVoice'];
+  voiceLanguage: 'vi' | 'en';
+  bgMusicStyle: ProjectSettings['bgMusicStyle'];
+  bgMusicVolume: number;
+  savedAtLabel: string;
+}
+
+export interface SavedAudioPreferences {
+  ttsVoice: ProjectSettings['ttsVoice'];
+  voiceLanguage: 'vi' | 'en';
+  bgMusicStyle: ProjectSettings['bgMusicStyle'];
+  bgMusicVolume: number;
+  storyTopic?: string;
+  sceneCount?: number;
+  updatedAtLabel: string;
+  history: SavedAudioSelectionEntry[];
+}
+
+const SAVED_AUDIO_PREFS_KEY = 'legendcut_saved_audio_prefs_v2';
+
+export const BG_MUSIC_STYLE_LABELS: Record<ProjectSettings['bgMusicStyle'], string> = {
+  'western-acoustic': '🎸 Guitar Acoustic Will Sampson',
+  'emotional-piano': '🎹 Piano & Cello Hoài Niệm',
+  'cinematic-strings': '🎻 Dàn Dây Điện Ảnh Sử Thi',
+  'vintage-americana': '🤠 Guitar Viễn Tây Cổ Điển',
+  custom: '📁 Nhạc MP3 Tải Lên Riêng',
+  none: '🔇 Tắt Nhạc Nền',
+};
+
+export const VOICE_SHORT_LABELS: Record<ProjectSettings['ttsVoice'], string> = {
+  Charon: 'Charon (Nam Trầm Ấm)',
+  Fenrir: 'Fenrir (Nam Uy Nghiêm)',
+  Puck: 'Puck (Nam Tự Nhiên)',
+  Kore: 'Kore (Nữ Trầm Dịu)',
+  Zephyr: 'Zephyr (Nữ Trong Trẻo)',
+};
+
+function formatNowTime(): string {
+  try {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return 'Vừa xong';
+  }
+}
+
+export function loadSavedAudioPreferences(): SavedAudioPreferences {
+  const fallback: SavedAudioPreferences = {
+    ttsVoice: 'Charon',
+    voiceLanguage: 'en',
+    bgMusicStyle: 'western-acoustic',
+    bgMusicVolume: 0.25,
+    storyTopic: 'Clint Eastwood',
+    sceneCount: 8,
+    updatedAtLabel: formatNowTime(),
+    history: [
+      {
+        id: 'init-default',
+        ttsVoice: 'Charon',
+        voiceLanguage: 'en',
+        bgMusicStyle: 'western-acoustic',
+        bgMusicVolume: 0.25,
+        savedAtLabel: 'Mặc định',
+      },
+    ],
+  };
+
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(SAVED_AUDIO_PREFS_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return fallback;
+
+    const validVoices: ProjectSettings['ttsVoice'][] = [
+      'Charon',
+      'Fenrir',
+      'Puck',
+      'Kore',
+      'Zephyr',
+    ];
+    const validMusic: ProjectSettings['bgMusicStyle'][] = [
+      'western-acoustic',
+      'emotional-piano',
+      'cinematic-strings',
+      'vintage-americana',
+      'custom',
+      'none',
+    ];
+
+    const ttsVoice = validVoices.includes(parsed.ttsVoice) ? parsed.ttsVoice : fallback.ttsVoice;
+    const voiceLanguage =
+      parsed.voiceLanguage === 'vi' || parsed.voiceLanguage === 'en'
+        ? parsed.voiceLanguage
+        : fallback.voiceLanguage;
+    const bgMusicStyle = validMusic.includes(parsed.bgMusicStyle)
+      ? parsed.bgMusicStyle
+      : fallback.bgMusicStyle;
+    const bgMusicVolume =
+      typeof parsed.bgMusicVolume === 'number' && !Number.isNaN(parsed.bgMusicVolume)
+        ? Math.max(0, Math.min(0.8, parsed.bgMusicVolume))
+        : fallback.bgMusicVolume;
+
+    const history = Array.isArray(parsed.history) && parsed.history.length > 0
+      ? parsed.history.slice(0, 6)
+      : [
+          {
+            id: 'restored-default',
+            ttsVoice,
+            voiceLanguage,
+            bgMusicStyle,
+            bgMusicVolume,
+            savedAtLabel: parsed.updatedAtLabel || 'Đã lưu',
+          },
+        ];
+
+    return {
+      ttsVoice,
+      voiceLanguage,
+      bgMusicStyle,
+      bgMusicVolume,
+      storyTopic: typeof parsed.storyTopic === 'string' ? parsed.storyTopic : fallback.storyTopic,
+      sceneCount: typeof parsed.sceneCount === 'number' ? parsed.sceneCount : fallback.sceneCount,
+      updatedAtLabel: parsed.updatedAtLabel || fallback.updatedAtLabel,
+      history,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveAudioPreferences(
+  patch: Partial<
+    Pick<
+      SavedAudioPreferences,
+      'ttsVoice' | 'voiceLanguage' | 'bgMusicStyle' | 'bgMusicVolume' | 'storyTopic' | 'sceneCount'
+    >
+  >
+): SavedAudioPreferences {
+  const current = loadSavedAudioPreferences();
+  const nextVoice = patch.ttsVoice ?? current.ttsVoice;
+  const nextLang = patch.voiceLanguage ?? current.voiceLanguage;
+  const nextMusic = patch.bgMusicStyle ?? current.bgMusicStyle;
+  const nextVol =
+    patch.bgMusicVolume !== undefined ? patch.bgMusicVolume : current.bgMusicVolume;
+  const nextTopic = patch.storyTopic !== undefined ? patch.storyTopic : current.storyTopic;
+  const nextSceneCount = patch.sceneCount !== undefined ? patch.sceneCount : current.sceneCount;
+  const nowLabel = formatNowTime();
+
+  const audioChanged =
+    patch.ttsVoice !== undefined ||
+    patch.voiceLanguage !== undefined ||
+    patch.bgMusicStyle !== undefined ||
+    patch.bgMusicVolume !== undefined;
+
+  let nextHistory = [...(current.history || [])];
+  if (audioChanged) {
+    const top = nextHistory[0];
+    const isSameCombo =
+      top &&
+      top.ttsVoice === nextVoice &&
+      top.voiceLanguage === nextLang &&
+      top.bgMusicStyle === nextMusic;
+
+    const newEntry: SavedAudioSelectionEntry = {
+      id: `sel-${Date.now()}`,
+      ttsVoice: nextVoice,
+      voiceLanguage: nextLang,
+      bgMusicStyle: nextMusic,
+      bgMusicVolume: nextVol,
+      savedAtLabel: nowLabel,
+    };
+
+    if (isSameCombo) {
+      nextHistory[0] = newEntry;
+    } else {
+      // Remove any older duplicate of the exact same voice+lang+music so history stays clean
+      nextHistory = nextHistory.filter(
+        (h) =>
+          !(
+            h.ttsVoice === nextVoice &&
+            h.voiceLanguage === nextLang &&
+            h.bgMusicStyle === nextMusic
+          )
+      );
+      nextHistory.unshift(newEntry);
+      nextHistory = nextHistory.slice(0, 6);
+    }
+  }
+
+  const updated: SavedAudioPreferences = {
+    ttsVoice: nextVoice,
+    voiceLanguage: nextLang,
+    bgMusicStyle: nextMusic,
+    bgMusicVolume: nextVol,
+    storyTopic: nextTopic,
+    sceneCount: nextSceneCount,
+    updatedAtLabel: nowLabel,
+    history: nextHistory,
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(SAVED_AUDIO_PREFS_KEY, JSON.stringify(updated));
+      window.dispatchEvent(
+        new CustomEvent('legendcut:audioprefs-saved', { detail: updated })
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+  }
+
+  return updated;
+}
+

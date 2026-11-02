@@ -11,11 +11,13 @@ import {
   SkipForward,
   CheckCircle2,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { ProjectSettings, StoryScene, TransitionStyle, VaultItem } from '../types';
 import { FIXED_OUTRO_LOGO_URL, REFERENCE_VIDEOS } from '../data/lorneGreenePreset';
 import { soundEngine } from '../utils/audioSynth';
 import { formatSecLabel } from '../utils/frameExtractor';
+import { BG_MUSIC_STYLE_LABELS } from '../utils/voiceConsistencyEngine';
 
 const SAMPLE_VIDEO_URLS = new Set(
   Object.values(REFERENCE_VIDEOS)
@@ -41,7 +43,10 @@ interface CanvasStageProps {
   isPlaying: boolean;
   onTogglePlay: (playing: boolean) => void;
   triggerExportCounter: number;
-  onEnsureVoiceoversBeforeExport?: () => Promise<void>;
+  onEnsureVoiceoversBeforeExport?: (
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideLang?: 'vi' | 'en'
+  ) => Promise<void>;
 }
 
 export const CanvasStage: React.FC<CanvasStageProps> = ({
@@ -1328,16 +1333,22 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
     // If any narrative scene is missing TTS voiceover OR has a different voice persona than the currently selected settings.ttsVoice, auto-sync before export!
     const currentVoice = settings.ttsVoice || 'Charon';
+    const currentLang = settings.voiceLanguage;
     const needsVoiceSync = scenes.some((s) => {
       if (s.sceneType === 'outro' || !s.narrationText?.trim()) return false;
       if (!s.voiceoverUrl) return true;
       if (s.voiceEngineUsed && !s.voiceEngineUsed.startsWith(`${currentVoice}:`)) return true;
-      if (s.voiceoverUrl.includes('/ws_scene_') && currentVoice !== 'Charon') return true;
+      if (currentLang && s.voiceEngineUsed && !s.voiceEngineUsed.startsWith(`${currentVoice}:${currentLang}:`)) {
+        return true;
+      }
+      if (s.voiceoverUrl.includes('/ws_scene_') && (currentVoice !== 'Charon' || currentLang === 'vi')) {
+        return true;
+      }
       return false;
     });
     if (needsVoiceSync && onEnsureVoiceoversBeforeExport) {
       try {
-        await onEnsureVoiceoversBeforeExport();
+        await onEnsureVoiceoversBeforeExport(currentVoice, currentLang);
       } catch {
         // Continue export even if a scene failed
       }
@@ -1445,6 +1456,51 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   }, [triggerExportCounter, startVideoExport]);
 
   const activeSceneInfo = getSceneAtTime(currentTimeSec);
+
+  const [isSyncingVoiceBeforePlay, setIsSyncingVoiceBeforePlay] = useState(false);
+
+  const handleTogglePlayWithSavedVoice = async () => {
+    if (isPlaying) {
+      onTogglePlay(false);
+      return;
+    }
+    if (isSyncingVoiceBeforePlay) return;
+
+    const currentVoice = settings.ttsVoice || 'Charon';
+    const currentLang = settings.voiceLanguage;
+    const needsVoiceSync = scenes.some((s) => {
+      if (s.sceneType === 'outro' || !s.narrationText?.trim()) return false;
+      if (!s.voiceoverUrl) return true;
+      if (s.voiceEngineUsed && !s.voiceEngineUsed.startsWith(`${currentVoice}:`)) return true;
+      if (
+        currentLang &&
+        s.voiceEngineUsed &&
+        !s.voiceEngineUsed.startsWith(`${currentVoice}:${currentLang}:`)
+      ) {
+        return true;
+      }
+      if (
+        s.voiceoverUrl.includes('/ws_scene_') &&
+        (currentVoice !== 'Charon' || currentLang === 'vi')
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    if (needsVoiceSync && onEnsureVoiceoversBeforeExport) {
+      setIsSyncingVoiceBeforePlay(true);
+      try {
+        await onEnsureVoiceoversBeforeExport(currentVoice, currentLang);
+      } catch {
+        // Continue playback
+      } finally {
+        setIsSyncingVoiceBeforePlay(false);
+      }
+    }
+
+    onTogglePlay(true);
+  };
 
   const jumpScene = (delta: number) => {
     const targetIdx = Math.max(0, Math.min(scenes.length - 1, activeSceneInfo.index + delta));
@@ -1577,7 +1633,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             ref={canvasRef}
             width={canvasW}
             height={canvasH}
-            onClick={() => onTogglePlay(!isPlaying)}
+            onClick={() => handleTogglePlayWithSavedVoice()}
             className="w-full h-full object-contain cursor-pointer"
           />
         </div>
@@ -1607,7 +1663,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => {
@@ -1628,10 +1684,16 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               <SkipBack className="w-4 h-4" />
             </button>
             <button
-              onClick={() => onTogglePlay(!isPlaying)}
-              className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-md transition-colors whitespace-nowrap shrink-0"
+              onClick={handleTogglePlayWithSavedVoice}
+              disabled={isSyncingVoiceBeforePlay}
+              className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-xs rounded-md transition-colors whitespace-nowrap shrink-0"
             >
-              {isPlaying ? (
+              {isSyncingVoiceBeforePlay ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Đang áp giọng {settings.ttsVoice} đã lưu...
+                </>
+              ) : isPlaying ? (
                 <>
                   <Pause className="w-4 h-4 fill-current" />
                   Tạm dừng
@@ -1639,7 +1701,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current" />
-                  Phát Video Ghép
+                  Phát Video Ghép ({settings.ttsVoice})
                 </>
               )}
             </button>
@@ -1659,15 +1721,16 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
             <button
               onClick={() => {
                 const evt = new CustomEvent('legendcut:audiomode', { detail: 'stitched-scenes' });
                 window.dispatchEvent(evt);
               }}
-              className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500 text-slate-950 transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 py-1 text-[11px] font-semibold rounded bg-amber-500 text-slate-950 transition-colors whitespace-nowrap shrink-0"
             >
-              Nhạc Nền + Giọng Đọc Ghép
+              💾 Giọng {settings.ttsVoice} ({(settings.voiceLanguage || 'en').toUpperCase()}) +{' '}
+              {BG_MUSIC_STYLE_LABELS[settings.bgMusicStyle]}
             </button>
           </div>
         </div>

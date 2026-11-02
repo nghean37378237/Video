@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Upload,
   Film,
@@ -16,14 +16,29 @@ import {
   MessageSquareCode,
   Zap,
   Globe,
+  Mic,
+  Volume2,
+  History,
+  CheckCircle2,
 } from 'lucide-react';
-import { PresetId, StoryScene, VaultItem } from '../types';
+import { PresetId, ProjectSettings, StoryScene, VaultItem } from '../types';
 import {
   cleanDisplayFileName,
   detectMediaKindFromFile,
   extractVideoThumbnail,
   getMediaDuration,
 } from '../utils/frameExtractor';
+import { soundEngine } from '../utils/audioSynth';
+import {
+  BG_MUSIC_STYLE_LABELS,
+  loadSavedAudioPreferences,
+  masterAudioToConsistentStudioWav,
+  playInstantVoicePreview,
+  saveAudioPreferences,
+  SavedAudioPreferences,
+  VOICE_PERSONA_PROFILES,
+  VOICE_SHORT_LABELS,
+} from '../utils/voiceConsistencyEngine';
 
 interface MediaVaultPanelProps {
   vaultItems: VaultItem[];
@@ -38,7 +53,14 @@ interface MediaVaultPanelProps {
   isExtractingFrames?: boolean;
   onGenerateAIStory: (topic: string, lang: 'vi' | 'en', sceneCount: number) => Promise<void>;
   isGeneratingStory: boolean;
-  onRunFullAutoPilot: (characterOrTopic: string, lang: 'en' | 'vi', sceneCount: number) => Promise<void>;
+  onRunFullAutoPilot: (
+    characterOrTopic: string,
+    lang: 'en' | 'vi',
+    sceneCount: number,
+    overrideVoice?: ProjectSettings['ttsVoice'],
+    overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
+    overrideMusicVolume?: number
+  ) => Promise<void>;
   isRunningAutoPilot: boolean;
   autoPilotStepText: string;
   onFetchArchivalPhotos: (characterQuery: string) => Promise<void>;
@@ -46,6 +68,8 @@ interface MediaVaultPanelProps {
   activePresetId: PresetId;
   onSelectPreset: (presetId: PresetId) => void;
   onOpenPromptStudio: () => void;
+  settings: ProjectSettings;
+  onUpdateSettings: (patch: Partial<ProjectSettings>) => void;
 }
 
 export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
@@ -65,14 +89,117 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   onFetchArchivalPhotos,
   isFetchingArchival,
   onOpenPromptStudio,
+  settings,
+  onUpdateSettings,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'video' | 'image'>('all');
   const [activeSubTab, setActiveSubTab] = useState<'auto-pilot' | 'vault'>('auto-pilot');
-  const [storyTopic, setStoryTopic] = useState('Clint Eastwood');
-  const [storyLang, setStoryLang] = useState<'vi' | 'en'>('en');
-  const [sceneCount, setSceneCount] = useState<number>(8);
+
+  const initialSaved = loadSavedAudioPreferences();
+  const [storyTopic, setStoryTopic] = useState<string>(
+    initialSaved.storyTopic || 'Clint Eastwood'
+  );
+  const [storyLang, setStoryLang] = useState<'vi' | 'en'>(
+    settings.voiceLanguage || initialSaved.voiceLanguage || 'en'
+  );
+  const [sceneCount, setSceneCount] = useState<number>(initialSaved.sceneCount || 8);
+  const [savedPrefs, setSavedPrefs] = useState<SavedAudioPreferences>(initialSaved);
+  const [isPreviewingVoice, setIsPreviewingVoice] = useState<boolean>(false);
+  const [justSavedFlash, setJustSavedFlash] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Listen to global audio preference updates so Inspector, Modal, and Left Panel stay 100% synced
+  useEffect(() => {
+    const onSavedEvt = (e: Event) => {
+      const custom = e as CustomEvent<SavedAudioPreferences>;
+      if (custom.detail) {
+        setSavedPrefs(custom.detail);
+        setStoryLang(custom.detail.voiceLanguage);
+        setJustSavedFlash(true);
+        setTimeout(() => setJustSavedFlash(false), 1800);
+      }
+    };
+    window.addEventListener('legendcut:audioprefs-saved', onSavedEvt);
+    return () => window.removeEventListener('legendcut:audioprefs-saved', onSavedEvt);
+  }, []);
+
+  const handleSelectPreRunAudio = (patch: {
+    ttsVoice?: ProjectSettings['ttsVoice'];
+    voiceLanguage?: 'vi' | 'en';
+    bgMusicStyle?: ProjectSettings['bgMusicStyle'];
+    bgMusicVolume?: number;
+    customBgMusicUrl?: string;
+  }) => {
+    const nextVoice = patch.ttsVoice ?? settings.ttsVoice;
+    const nextLang = patch.voiceLanguage ?? storyLang;
+    const nextMusic = patch.bgMusicStyle ?? settings.bgMusicStyle;
+    const nextVol = patch.bgMusicVolume ?? settings.bgMusicVolume;
+
+    if (patch.voiceLanguage) {
+      setStoryLang(patch.voiceLanguage);
+    }
+
+    onUpdateSettings({
+      ttsVoice: nextVoice,
+      voiceLanguage: nextLang,
+      subtitleLanguage: nextLang,
+      bgMusicStyle: nextMusic,
+      bgMusicVolume: nextVol,
+      ...(patch.customBgMusicUrl ? { customBgMusicUrl: patch.customBgMusicUrl } : {}),
+      lockedTtsEngine: undefined,
+    });
+
+    const updated = saveAudioPreferences({
+      ttsVoice: nextVoice,
+      voiceLanguage: nextLang,
+      bgMusicStyle: nextMusic,
+      bgMusicVolume: nextVol,
+      storyTopic,
+      sceneCount,
+    });
+    setSavedPrefs(updated);
+  };
+
+  const handlePreviewSelectedVoice = async (
+    voiceToPreview: ProjectSettings['ttsVoice'],
+    langToPreview: 'vi' | 'en'
+  ) => {
+    if (isPreviewingVoice) return;
+    setIsPreviewingVoice(true);
+    try {
+      const sampleText =
+        langToPreview === 'vi'
+          ? `Trước khi cả thế giới biết đến cái tên ${storyTopic || 'huyền thoại'}, chỉ có ngọn lửa đam mê và thần thái không thể trộn lẫn.`
+          : `Before the world knew the name ${storyTopic || 'this legend'}, there was only a quiet fire and an unbreakable presence on screen.`;
+      const persona = VOICE_PERSONA_PROFILES[voiceToPreview] || VOICE_PERSONA_PROFILES.Charon;
+      const res = await fetch('/api/tts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: sampleText,
+          voiceName: voiceToPreview,
+          language: langToPreview,
+          style: persona.geminiAnchorPrompt,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.audioDataUrl) {
+          const { masteredAudioUrl } = await masterAudioToConsistentStudioWav(
+            data.audioDataUrl,
+            voiceToPreview,
+            data.engine
+          );
+          await playInstantVoicePreview(masteredAudioUrl);
+        }
+      }
+    } catch {
+      // Ignore preview error
+    } finally {
+      setIsPreviewingVoice(false);
+    }
+  };
 
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -169,27 +296,25 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             <div>
               <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                 <Zap className="w-4 h-4" />
-                NHẬP TÊN NHÂN VẬT / CHỦ ĐỀ (Dựng Mới Hoàn Toàn)
+                NHẬP TÊN NHÂN VẬT &amp; CHỌN NHẠC / GIỌNG TRƯỚC KHI CHẠY
               </h3>
               <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                Gõ <strong>Tên Nhân Vật</strong> (VD: <em>Clint Eastwood, John Wayne, Elvis Presley, Bruce Lee...</em>). App sẽ làm mới từ đầu:
+                Chọn <strong>Nhân vật + Giọng đọc + Nhạc nền</strong> bên dưới. Hệ thống sẽ <strong>tự động lưu lại quá trình chọn</strong> của bạn và áp dụng xuyên suốt khi bấm Chạy!
               </p>
-              <ul className="text-[11px] text-slate-400 mt-1.5 space-y-0.5 pl-1">
-                <li>1. Tự viết kịch bản & tạo Prompt Ảnh/Video Full Khung (3:4)</li>
-                <li>2. Tự tìm & tải 8–10 <strong>Ảnh lịch sử thật</strong> của nhân vật vào Kho</li>
-                <li>3. Tự tạo <strong>Giọng đọc thuyết minh trầm ấm</strong> cho mọi cảnh</li>
-                <li>4. Tự ghép nhạc nền, phụ đề vàng & phát ngay!</li>
-              </ul>
             </div>
 
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-slate-200">
-                Nhập Tên Nhân Vật (hoặc Nhân vật + Câu chuyện):
+                1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):
               </label>
               <input
                 type="text"
                 value={storyTopic}
-                onChange={(e) => setStoryTopic(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setStoryTopic(val);
+                  saveAudioPreferences({ storyTopic: val });
+                }}
                 placeholder="VD: Clint Eastwood, John Wayne, Audrey Hepburn..."
                 className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
@@ -207,7 +332,11 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ].map((name) => (
                 <button
                   key={name}
-                  onClick={() => setStoryTopic(name)}
+                  type="button"
+                  onClick={() => {
+                    setStoryTopic(name);
+                    saveAudioPreferences({ storyTopic: name });
+                  }}
                   className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                     storyTopic === name
                       ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
@@ -219,52 +348,326 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ))}
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  Ngôn ngữ giọng đọc & phụ đề
-                </label>
-                <select
-                  value={storyLang}
-                  onChange={(e) => setStoryLang(e.target.value as 'vi' | 'en')}
-                  className="w-full px-2 py-1.5 text-xs bg-[#111827] border border-slate-700 rounded-md text-slate-100"
+            {/* PRE-RUN VOICE & BACKGROUND MUSIC SELECTOR + SAVED SELECTION LOG */}
+            <div className="p-2.5 rounded-lg bg-[#111827] border border-amber-500/40 space-y-2.5">
+              <div className="flex items-center justify-between gap-1.5">
+                <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
+                  <Mic className="w-3.5 h-3.5" />
+                  2. Chọn Giọng Đọc &amp; Nhạc Nền Trước Khi Chạy:
+                </span>
+                <span
+                  className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                    justSavedFlash
+                      ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50'
+                      : 'bg-emerald-500/10 text-emerald-400'
+                  }`}
                 >
-                  <option value="en">Tiếng Anh (Chuẩn mẫu)</option>
-                  <option value="vi">Tiếng Việt</option>
-                </select>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Đã lưu ({savedPrefs.updatedAtLabel})
+                </span>
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  Số phân cảnh
-                </label>
+
+              {/* 1-Click Quick Combo Presets */}
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  {
+                    id: 'combo-legends',
+                    label: '🤠 Chuẩn Life Legends',
+                    sub: 'Charon + Guitar Ấm',
+                    voice: 'Charon' as const,
+                    music: 'western-acoustic' as const,
+                    vol: 0.25,
+                  },
+                  {
+                    id: 'combo-epic',
+                    label: '🎬 Sử Thi Trầm Hùng',
+                    sub: 'Fenrir + Dàn Dây',
+                    voice: 'Fenrir' as const,
+                    music: 'cinematic-strings' as const,
+                    vol: 0.22,
+                  },
+                  {
+                    id: 'combo-nostalgic',
+                    label: '🎹 Hồi Ức Lắng Đọng',
+                    sub: 'Puck + Piano & Cello',
+                    voice: 'Puck' as const,
+                    music: 'emotional-piano' as const,
+                    vol: 0.24,
+                  },
+                  {
+                    id: 'combo-female',
+                    label: '🌸 Nữ Tự Sự Dịu Dàng',
+                    sub: 'Kore + Piano Tự Sự',
+                    voice: 'Kore' as const,
+                    music: 'emotional-piano' as const,
+                    vol: 0.2,
+                  },
+                ].map((c) => {
+                  const isActive =
+                    settings.ttsVoice === c.voice && settings.bgMusicStyle === c.music;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        handleSelectPreRunAudio({
+                          ttsVoice: c.voice,
+                          bgMusicStyle: c.music,
+                          bgMusicVolume: c.vol,
+                        });
+                        soundEngine.previewBackgroundMusic(
+                          c.music,
+                          c.vol,
+                          settings.customBgMusicUrl,
+                          5000
+                        );
+                        handlePreviewSelectedVoice(c.voice, storyLang);
+                      }}
+                      className={`p-1.5 rounded border text-left transition-colors ${
+                        isActive
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                          : 'bg-[#0B0F17] hover:bg-slate-800 border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold leading-tight">{c.label}</div>
+                      <div className="text-[9px] text-slate-400 leading-tight mt-0.5">{c.sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Individual Voice Persona + Language Selection */}
+              <div className="space-y-1 pt-1 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-slate-300">
+                    Giọng đọc thuyết minh &amp; Ngôn ngữ:
+                  </label>
+                  <button
+                    type="button"
+                    disabled={isPreviewingVoice}
+                    onClick={() => handlePreviewSelectedVoice(settings.ttsVoice, storyLang)}
+                    className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 text-emerald-300 border border-emerald-500/40 rounded transition-colors flex items-center gap-1"
+                  >
+                    <Volume2 className="w-2.5 h-2.5" />
+                    {isPreviewingVoice ? 'Đang tạo thử...' : 'Nghe thử giọng'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-5 gap-1">
+                  <select
+                    value={storyLang}
+                    onChange={(e) => {
+                      const newLang = e.target.value as 'vi' | 'en';
+                      handleSelectPreRunAudio({ voiceLanguage: newLang });
+                      handlePreviewSelectedVoice(settings.ttsVoice, newLang);
+                    }}
+                    className="col-span-2 px-1.5 py-1.5 text-[11px] font-semibold bg-[#0B0F17] border border-slate-700 rounded text-amber-300"
+                  >
+                    <option value="en">🇺🇸 Tiếng Anh</option>
+                    <option value="vi">🇻🇳 Tiếng Việt</option>
+                  </select>
+
+                  <select
+                    value={settings.ttsVoice}
+                    onChange={(e) => {
+                      const newVoice = e.target.value as ProjectSettings['ttsVoice'];
+                      handleSelectPreRunAudio({ ttsVoice: newVoice });
+                      handlePreviewSelectedVoice(newVoice, storyLang);
+                    }}
+                    className="col-span-3 px-1.5 py-1.5 text-[11px] bg-[#0B0F17] border border-slate-700 rounded text-slate-100"
+                  >
+                    <option value="Charon">Charon — Nam Trầm Ấm (Chuẩn Mẫu)</option>
+                    <option value="Fenrir">Fenrir — Nam Trầm Sâu Uy Nghiêm</option>
+                    <option value="Puck">Puck — Nam Truyền Cảm Tự Nhiên</option>
+                    <option value="Kore">Kore — Nữ Trầm Dịu Sâu Lắng</option>
+                    <option value="Zephyr">Zephyr — Nữ Trong Trẻo Nghệ Thuật</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Individual Background Music Selection */}
+              <div className="space-y-1 pt-1 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-slate-300">
+                    Nhạc nền phim tài liệu ({Math.round(settings.bgMusicVolume * 100)}%):
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        soundEngine.previewBackgroundMusic(
+                          settings.bgMusicStyle,
+                          settings.bgMusicVolume,
+                          settings.customBgMusicUrl,
+                          6000
+                        )
+                      }
+                      className="px-1.5 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded transition-colors"
+                    >
+                      🔊 Nghe thử nhạc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => soundEngine.stopBackgroundMusic()}
+                      className="px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-200 bg-slate-800 rounded"
+                    >
+                      Dừng
+                    </button>
+                  </div>
+                </div>
+
                 <select
-                  value={sceneCount}
-                  onChange={(e) => setSceneCount(Number(e.target.value))}
-                  className="w-full px-2 py-1.5 text-xs bg-[#111827] border border-slate-700 rounded-md text-slate-100 font-mono-tabular"
+                  value={settings.bgMusicStyle}
+                  onChange={(e) => {
+                    const newMusic = e.target.value as ProjectSettings['bgMusicStyle'];
+                    handleSelectPreRunAudio({ bgMusicStyle: newMusic });
+                    soundEngine.previewBackgroundMusic(
+                      newMusic,
+                      settings.bgMusicVolume,
+                      settings.customBgMusicUrl,
+                      6000
+                    );
+                  }}
+                  className="w-full px-2 py-1.5 text-[11px] bg-[#0B0F17] border border-slate-700 rounded text-slate-100"
                 >
-                  <option value={6}>6 cảnh (Nhanh ~45s)</option>
-                  <option value={8}>8 cảnh (Chuẩn ~65s)</option>
-                  <option value={10}>10 cảnh (Vừa ~85s)</option>
-                  <option value={12}>12 cảnh (Dài ~100s)</option>
-                  <option value={14}>14 cảnh (Sâu ~120s)</option>
-                  <option value={16}>16 cảnh (Đầy đủ ~140s)</option>
-                  <option value={18}>18 cảnh (Chi tiết ~160s)</option>
-                  <option value={20}>20 cảnh (Trọn bộ ~180s)</option>
+                  <option value="western-acoustic">
+                    🎸 Guitar Acoustic &amp; Piano Ấm (Chuẩn Mẫu Will Sampson)
+                  </option>
+                  <option value="emotional-piano">
+                    🎹 Piano &amp; Cello Hoài Niệm Sâu Lắng
+                  </option>
+                  <option value="cinematic-strings">
+                    🎻 Dàn Dây Cello &amp; Violin Trầm Hùng
+                  </option>
+                  <option value="vintage-americana">
+                    🤠 Guitar Miền Viễn Tây Cổ Điển (Thập Niên 60-70)
+                  </option>
+                  <option value="custom">
+                    📁 Nhạc Nền MP3 Tải Lên ({settings.customBgMusicUrl ? 'Đã nạp' : 'Chưa chọn'})
+                  </option>
+                  <option value="none">🔇 Tắt nhạc nền</option>
                 </select>
+
+                <div className="flex items-center gap-2 pt-0.5">
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.8}
+                    step={0.02}
+                    value={settings.bgMusicVolume}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      handleSelectPreRunAudio({ bgMusicVolume: v });
+                      soundEngine.setBgVolume(v);
+                    }}
+                    className="flex-1 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                  <label className="px-2 py-0.5 text-[10px] font-semibold bg-[#0B0F17] hover:bg-slate-800 text-amber-300 border border-slate-700 rounded cursor-pointer shrink-0">
+                    +MP3 Riêng
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const url = URL.createObjectURL(file);
+                        handleSelectPreRunAudio({
+                          bgMusicStyle: 'custom',
+                          customBgMusicUrl: url,
+                        });
+                        soundEngine.previewBackgroundMusic('custom', settings.bgMusicVolume, url, 7000);
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Active Locked Selection Summary & Saved Selection History Log */}
+              <div className="p-2 rounded bg-[#0B0F17] border border-emerald-500/30 space-y-1.5">
+                <div className="text-[10px] text-emerald-300 font-semibold leading-snug">
+                  💾 Đang khóa cho lần chạy này:{' '}
+                  <span className="text-amber-300">
+                    {VOICE_SHORT_LABELS[settings.ttsVoice]} ({storyLang === 'vi' ? 'VI' : 'EN'})
+                  </span>{' '}
+                  +{' '}
+                  <span className="text-sky-300">
+                    {BG_MUSIC_STYLE_LABELS[settings.bgMusicStyle]} ({Math.round(settings.bgMusicVolume * 100)}%)
+                  </span>
+                </div>
+
+                {savedPrefs.history && savedPrefs.history.length > 0 && (
+                  <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                    <div className="text-[9px] font-semibold text-slate-400 flex items-center gap-1">
+                      <History className="w-2.5 h-2.5 text-amber-400" />
+                      Quá trình chọn đã lưu (Bấm để khôi phục nhanh):
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {savedPrefs.history.slice(0, 4).map((item, idx) => {
+                        const isCurrent =
+                          item.ttsVoice === settings.ttsVoice &&
+                          item.voiceLanguage === storyLang &&
+                          item.bgMusicStyle === settings.bgMusicStyle;
+                        return (
+                          <button
+                            key={item.id || idx}
+                            type="button"
+                            onClick={() => {
+                              handleSelectPreRunAudio({
+                                ttsVoice: item.ttsVoice,
+                                voiceLanguage: item.voiceLanguage,
+                                bgMusicStyle: item.bgMusicStyle,
+                                bgMusicVolume: item.bgMusicVolume,
+                              });
+                            }}
+                            title={`Đã lưu lúc ${item.savedAtLabel}`}
+                            className={`px-1.5 py-0.5 text-[9px] rounded border transition-colors ${
+                              isCurrent
+                                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-semibold'
+                                : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {idx === 0 ? '★ ' : ''}
+                            {item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
+                            {item.bgMusicStyle === 'western-acoustic'
+                              ? 'Guitar'
+                              : item.bgMusicStyle === 'emotional-piano'
+                              ? 'Piano'
+                              : item.bgMusicStyle === 'cinematic-strings'
+                              ? 'Dàn Dây'
+                              : item.bgMusicStyle === 'vintage-americana'
+                              ? 'Viễn Tây'
+                              : item.bgMusicStyle === 'custom'
+                              ? 'MP3'
+                              : 'Tắt nhạc'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Quick Scene Count Selector Buttons (including 14, 16, 18, and 20 scenes) */}
             <div className="space-y-1">
-              <span className="block text-[10px] font-medium text-slate-400">
-                Chọn nhanh dạng phân cảnh:
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-slate-300">
+                  3. Chọn số phân cảnh cần dựng:
+                </span>
+                <span className="text-[10px] font-mono-tabular text-amber-400 font-semibold">
+                  Đang chọn: {sceneCount} cảnh
+                </span>
+              </div>
               <div className="grid grid-cols-4 gap-1">
                 {[6, 8, 10, 12, 14, 16, 18, 20].map((cnt) => (
                   <button
                     key={cnt}
                     type="button"
-                    onClick={() => setSceneCount(cnt)}
+                    onClick={() => {
+                      setSceneCount(cnt);
+                      saveAudioPreferences({ sceneCount: cnt });
+                    }}
                     className={`py-1 text-[11px] font-mono-tabular rounded border transition-colors ${
                       sceneCount === cnt
                         ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
@@ -279,7 +682,16 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
 
             {/* 1-CLICK FULL AUTO-PILOT CTA */}
             <button
-              onClick={() => onRunFullAutoPilot(storyTopic, storyLang, sceneCount)}
+              onClick={() =>
+                onRunFullAutoPilot(
+                  storyTopic,
+                  storyLang,
+                  sceneCount,
+                  settings.ttsVoice,
+                  settings.bgMusicStyle,
+                  settings.bgMusicVolume
+                )
+              }
               disabled={isRunningAutoPilot || !storyTopic.trim()}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs rounded-lg shadow-md transition-colors whitespace-nowrap shrink-0"
             >
@@ -291,7 +703,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ) : (
                 <>
                   <Zap className="w-4 h-4 fill-current" />
-                  Chạy Tự Động A → Z (Kịch Bản + Ảnh + Giọng + Ghép)
+                  Chạy Tự Động A → Z (Giọng {settings.ttsVoice} + Nhạc Đã Lưu)
                 </>
               )}
             </button>
