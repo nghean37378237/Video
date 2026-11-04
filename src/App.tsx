@@ -53,6 +53,7 @@ import { SceneInspector } from './components/SceneInspector';
 import { TimelineStrip } from './components/TimelineStrip';
 import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
 import {
+  CutYouTubeResultItem,
   SceneMediaSearchModal,
   ScenePhotoOption,
   SceneVideoOption,
@@ -725,6 +726,116 @@ export default function App() {
       }
     } catch {
       // ignore
+    }
+  };
+
+  // Handler when Admin selects 1 or multiple YouTube videos and cuts them via FFmpeg
+  const handleInsertCutYouTubeClips = (
+    cuts: CutYouTubeResultItem[],
+    targetSceneId?: string | null
+  ) => {
+    if (!cuts || cuts.length === 0) return;
+
+    const newVaultItems: VaultItem[] = cuts.map((cut, i) => ({
+      id: cut.id,
+      name: `✂️ YouTube Đã Cắt #${i + 1} (${cut.originalStartSec}s→${cut.originalEndSec}s): ${cut.title}`,
+      type: 'video',
+      url: cut.videoUrl,
+      thumbnailUrl: cut.thumbnailUrl,
+      width: cut.width || 640,
+      height: cut.height || 360,
+      durationSec: cut.durationSec,
+      sourceTag: 'uploaded',
+      createdAt: cut.sourceLabel,
+    }));
+
+    setVaultItems((prev) => [...newVaultItems, ...prev]);
+
+    const nextScenes = [...scenes];
+    const assignedLabels: string[] = [];
+    const updatedIndices: number[] = [];
+
+    if (targetSceneId && targetSceneId !== '__YOUTUBE_BATCH__' && cuts.length === 1) {
+      const sIdx = nextScenes.findIndex((s) => s.id === targetSceneId);
+      if (sIdx >= 0) {
+        const sc = nextScenes[sIdx];
+        const cut = cuts[0];
+        const vItem = newVaultItems[0];
+        nextScenes[sIdx] = {
+          ...sc,
+          sceneType: 'video',
+          mediaId: vItem.id,
+          mediaUrl: vItem.url,
+          mediaKind: 'video',
+          videoTrimStartSec: cut.trimStartSec,
+          videoTrimEndSec: cut.trimEndSec,
+          characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
+          hasRealPhoto: true,
+          realPhotoTitle: `✂️ Cắt YouTube ${cut.originalStartSec}s→${cut.originalEndSec}s · ${cut.title}`,
+          frameStyle: 'full-bleed',
+          showBottomSubtitles: true,
+        };
+        updatedIndices.push(sIdx);
+        assignedLabels.push(
+          `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.originalStartSec}s→${cut.originalEndSec}s)`
+        );
+      }
+    } else {
+      const videoSceneIndices = nextScenes
+        .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
+        .filter((idx) => idx >= 0);
+
+      let startOffset = 0;
+      if (targetSceneId && targetSceneId !== '__YOUTUBE_BATCH__') {
+        const pos = videoSceneIndices.findIndex((idx) => nextScenes[idx]?.id === targetSceneId);
+        if (pos >= 0) startOffset = pos;
+      }
+
+      cuts.forEach((cut, cutIdx) => {
+        const vItem = newVaultItems[cutIdx];
+        if (!vItem || videoSceneIndices.length === 0) return;
+        const sceneIdx =
+          videoSceneIndices[(startOffset + cutIdx) % videoSceneIndices.length];
+        const sc = nextScenes[sceneIdx];
+        if (!sc) return;
+
+        nextScenes[sceneIdx] = {
+          ...sc,
+          sceneType: 'video',
+          mediaId: vItem.id,
+          mediaUrl: vItem.url,
+          mediaKind: 'video',
+          videoTrimStartSec: cut.trimStartSec,
+          videoTrimEndSec: cut.trimEndSec,
+          characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
+          hasRealPhoto: true,
+          realPhotoTitle: `✂️ Cắt YouTube ${cut.originalStartSec}s→${cut.originalEndSec}s · ${cut.title}`,
+          frameStyle: 'full-bleed',
+          showBottomSubtitles: true,
+        };
+        updatedIndices.push(sceneIdx);
+        assignedLabels.push(
+          `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.originalStartSec}s→${cut.originalEndSec}s)`
+        );
+      });
+    }
+
+    setScenes(nextScenes);
+
+    if (updatedIndices.length > 0) {
+      const firstIdx = updatedIndices[0];
+      const firstScene = nextScenes[firstIdx];
+      if (firstScene) {
+        const jumpSec = nextScenes
+          .slice(0, firstIdx)
+          .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+        setActiveSceneId(firstScene.id);
+        setCurrentTimeSec(jumpSec);
+        setIsPlaying(true);
+      }
+      setStatusBanner(
+        `🎬 Đã cắt thành công ${assignedLabels.length} đoạn video từ YouTube và chèn vào ${assignedLabels.join(', ')} (đang phát ngay)!`
+      );
     }
   };
 
@@ -2883,12 +2994,18 @@ export default function App() {
         isTrimmingRealVideos={isTrimmingRealVideos}
         onOpenSceneMediaSearch={(sceneId) => setSearchingMediaSceneId(sceneId)}
         onQuickCycleSceneMedia={handleQuickCycleSceneMedia}
+        onOpenYouTubePicker={() => setSearchingMediaSceneId('__YOUTUBE_BATCH__')}
       />
 
-      {/* Per-Scene Interactive Photo & Video Cut Search Modal */}
+      {/* Per-Scene or Batch Interactive YouTube & Archival Search Modal */}
       <SceneMediaSearchModal
         isOpen={Boolean(searchingMediaSceneId)}
-        scene={scenes.find((s) => s.id === searchingMediaSceneId) || null}
+        scene={
+          searchingMediaSceneId && searchingMediaSceneId !== '__YOUTUBE_BATCH__'
+            ? scenes.find((s) => s.id === searchingMediaSceneId) || null
+            : null
+        }
+        initialTab="youtube"
         totalScenes={scenes.length}
         characterName={
           loadSavedAudioPreferences().storyTopic ||
@@ -2901,6 +3018,7 @@ export default function App() {
         onClose={() => setSearchingMediaSceneId(null)}
         onSelectVideoForScene={handleSelectVideoForScene}
         onSelectPhotoForScene={handleSelectPhotoForScene}
+        onInsertCutYouTubeClips={handleInsertCutYouTubeClips}
         onUploadLocalFileForScene={handleUploadFileForScene}
       />
 

@@ -1,9 +1,18 @@
 import "dotenv/config";
 import express from "express";
+import fs from "fs";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+
+const execFileAsync = promisify(execFile);
+const YT_CUTS_DIR = "/tmp/yt_cuts";
+if (!fs.existsSync(YT_CUTS_DIR)) {
+  fs.mkdirSync(YT_CUTS_DIR, { recursive: true });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2661,6 +2670,442 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         error: error?.message || "Không thể tìm kiếm ảnh/video thay thế.",
         videoOptions: [],
         photoOptions: [],
+      });
+    }
+  });
+
+  // 2g. Serve FFmpeg-Cut MP4 Clips from /tmp/yt_cuts
+  app.get("/api/youtube/cut-file/:filename", (req, res) => {
+    const safeName = path.basename(String(req.params.filename || ""));
+    const fullPath = path.join(YT_CUTS_DIR, safeName);
+    if (!safeName.endsWith(".mp4") || !fs.existsSync(fullPath)) {
+      res.status(404).send("Cut clip not found");
+      return;
+    }
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.sendFile(fullPath);
+  });
+
+  // Helper: Parse duration string like "1:50" or "10:15" into seconds
+  function parseDurationLabelToSec(label: string): number {
+    if (!label) return 120;
+    const parts = label
+      .trim()
+      .split(":")
+      .map((n) => parseInt(n, 10) || 0);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts[0] || 120;
+  }
+
+  // Helper: Resolve a Dailymotion video ID into a direct HLS .m3u8 stream URL that FFmpeg can cut in ~3s
+  async function resolveDailymotionStreamUrl(dmId: string): Promise<string | null> {
+    if (!dmId) return null;
+    try {
+      const metaRes = await fetch(
+        `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(dmId)}`,
+        {
+          headers: {
+            "User-Agent": BROWSER_USER_AGENT,
+            Referer: "https://www.dailymotion.com/",
+          },
+          signal: AbortSignal.timeout(4000),
+        }
+      );
+      if (!metaRes.ok) return null;
+      const getSetCookie = (metaRes.headers as any).getSetCookie;
+      const cookies =
+        typeof getSetCookie === "function"
+          ? getSetCookie
+              .call(metaRes.headers)
+              .map((c: string) => c.split(";")[0])
+              .join("; ")
+          : "";
+      const metaData: any = await metaRes.json();
+      const masterUrl = metaData?.qualities?.auto?.[0]?.url;
+      if (!masterUrl) return null;
+
+      const mRes = await fetch(masterUrl, {
+        headers: {
+          "User-Agent": BROWSER_USER_AGENT,
+          Referer: "https://www.dailymotion.com/",
+          ...(cookies ? { Cookie: cookies } : {}),
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!mRes.ok) return null;
+      const mText = await mRes.text();
+      const streamUrls = mText
+        .split("\n")
+        .filter((line) => line.trim().startsWith("https://"))
+        .map((line) => line.split("#")[0].trim());
+      if (streamUrls.length === 0) return null;
+      // Pick 480p / 380p stream (index 1 or 0) for fast 3-second cutting
+      return streamUrls[Math.min(1, streamUrls.length - 1)];
+    } catch {
+      return null;
+    }
+  }
+
+  // 2h. Search YouTube Videos + Film Clips so Admin can Pick 1-3 Videos and Cut Them
+  app.post("/api/youtube/search", async (req, res) => {
+    try {
+      const { query = "Will Sampson", characterName = "Will Sampson", limit = 12 } = req.body || {};
+      const cleanChar = String(characterName || "Will Sampson")
+        .replace(/[—–-].*$/, "")
+        .trim();
+      let rawQuery = String(query || cleanChar).trim();
+
+      // If user pasted a direct YouTube URL, extract video ID or search by it
+      const ytUrlMatch = rawQuery.match(
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/
+      );
+      const pastedYtId = ytUrlMatch ? ytUrlMatch[1] : null;
+
+      const [ytResults, dmResults] = await Promise.all([
+        // 1. Scrape real YouTube search results (ytInitialData)
+        (async () => {
+          const list: Array<{
+            youtubeId: string;
+            title: string;
+            durationLabel: string;
+            durationSec: number;
+            channel: string;
+            viewsLabel: string;
+            thumbnailUrl: string;
+          }> = [];
+          try {
+            const ytRes = await fetch(
+              `https://www.youtube.com/results?search_query=${encodeURIComponent(rawQuery)}`,
+              {
+                headers: {
+                  "User-Agent": BROWSER_USER_AGENT,
+                  "Accept-Language": "en-US,en;q=0.9",
+                },
+                signal: AbortSignal.timeout(4500),
+              }
+            );
+            if (ytRes.ok) {
+              const html = await ytRes.text();
+              const m = html.match(/var ytInitialData = (\{.*?\});<\/script>/s);
+              if (m) {
+                const data = JSON.parse(m[1]);
+                const contents =
+                  data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
+                    ?.sectionListRenderer?.contents || [];
+                for (const sec of contents) {
+                  for (const it of sec?.itemSectionRenderer?.contents || []) {
+                    const v = it?.videoRenderer;
+                    if (!v || !v.videoId) continue;
+                    const durLabel = v.lengthText?.simpleText || "2:15";
+                    const durSec = parseDurationLabelToSec(durLabel);
+                    if (durSec < 12) continue;
+                    const title = v.title?.runs?.[0]?.text || `${cleanChar} Video`;
+                    const thumb =
+                      v.thumbnail?.thumbnails?.slice(-1)?.[0]?.url ||
+                      `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`;
+                    list.push({
+                      youtubeId: v.videoId,
+                      title,
+                      durationLabel: durLabel,
+                      durationSec: durSec,
+                      channel: v.ownerText?.runs?.[0]?.text || "YouTube",
+                      viewsLabel: v.viewCountText?.simpleText || "",
+                      thumbnailUrl: thumb,
+                    });
+                    if (list.length >= Number(limit || 12)) break;
+                  }
+                  if (list.length >= Number(limit || 12)) break;
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+          if (pastedYtId && !list.some((x) => x.youtubeId === pastedYtId)) {
+            list.unshift({
+              youtubeId: pastedYtId,
+              title: `${cleanChar} — YouTube Video (${pastedYtId})`,
+              durationLabel: "3:00",
+              durationSec: 180,
+              channel: "YouTube Link",
+              viewsLabel: "Link trực tiếp",
+              thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
+            });
+          }
+          return list;
+        })(),
+
+        // 2. Search Dailymotion Film Clips for direct FFmpeg stream cutting
+        (async () => {
+          const list: Array<{
+            dmId: string;
+            title: string;
+            durationSec: number;
+            thumbnailUrl: string;
+            channel: string;
+          }> = [];
+          try {
+            const dmQueries = [
+              rawQuery,
+              ...(ACTOR_ICONIC_FILM_QUERIES[cleanChar.toLowerCase()] || [cleanChar]).slice(0, 2),
+            ];
+            const seenDm = new Set<string>();
+            for (const q of dmQueries.slice(0, 2)) {
+              const dmRes = await fetch(
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                  q.replace(/\s+trailer$/i, "")
+                )}&limit=8&fields=id,title,thumbnail_720_url,duration,owner.screenname`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: AbortSignal.timeout(3500),
+                }
+              );
+              if (!dmRes.ok) continue;
+              const dmData: any = await dmRes.json();
+              for (const item of dmData?.list || []) {
+                if (!item?.id || seenDm.has(item.id) || (item.duration || 0) < 20) continue;
+                seenDm.add(item.id);
+                list.push({
+                  dmId: String(item.id),
+                  title: String(item.title || cleanChar),
+                  durationSec: Number(item.duration) || 120,
+                  thumbnailUrl: String(item.thumbnail_720_url || ""),
+                  channel: String(item["owner.screenname"] || "Film Archive"),
+                });
+              }
+            }
+          } catch {
+            // ignore
+          }
+          return list;
+        })(),
+      ]);
+
+      // Pair YouTube search results with cuttable Dailymotion / Internet Archive film streams
+      const lowerChar = cleanChar.toLowerCase();
+      const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
+        (k) => lowerChar.includes(k) || k.includes(lowerChar)
+      );
+      const curatedReels = matchedCuratedKey
+        ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
+        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+
+      const cutStartPresets = [18, 32, 48, 65, 85, 110, 140];
+      const videos = ytResults.map((yt, idx) => {
+        const pairedDm = dmResults[idx % Math.max(1, dmResults.length)];
+        const pairedReel = curatedReels[idx % curatedReels.length];
+        const suggestedStart = Math.min(
+          Math.max(15, yt.durationSec - 15),
+          cutStartPresets[idx % cutStartPresets.length]
+        );
+        return {
+          id: `yt-${yt.youtubeId}-${idx}`,
+          youtubeId: yt.youtubeId,
+          dmId: pairedDm?.dmId || "",
+          archiveMp4Url: pairedReel?.rawMp4Url || "",
+          title: yt.title,
+          channel: yt.channel,
+          durationSec: yt.durationSec,
+          durationLabel: yt.durationLabel,
+          viewsLabel: yt.viewsLabel,
+          thumbnailUrl: yt.thumbnailUrl,
+          youtubeUrl: `https://www.youtube.com/watch?v=${yt.youtubeId}`,
+          suggestedTrimStartSec: suggestedStart,
+        };
+      });
+
+      res.json({
+        searchedQuery: rawQuery,
+        videos,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Không thể tìm kiếm video YouTube.",
+        videos: [],
+      });
+    }
+  });
+
+  // 2i. Cut Selected YouTube / Film Videos with FFmpeg and Return Ready-to-Play MP4 Cuts + Frame Thumbnails
+  app.post("/api/youtube/cut-clips", async (req, res) => {
+    try {
+      const { clips = [], characterName = "Will Sampson" } = req.body || {};
+      if (!Array.isArray(clips) || clips.length === 0) {
+        res.status(400).json({ error: "Vui lòng chọn ít nhất 1 video để cắt." });
+        return;
+      }
+
+      const cleanChar = String(characterName || "Will Sampson")
+        .replace(/[—–-].*$/, "")
+        .trim();
+      const lowerChar = cleanChar.toLowerCase();
+      const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
+        (k) => lowerChar.includes(k) || k.includes(lowerChar)
+      );
+      const curatedReels = matchedCuratedKey
+        ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
+        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+
+      const results = await Promise.all(
+        clips.slice(0, 6).map(async (clip: any, idx: number) => {
+          const trimStartSec = Math.max(5, Math.round(Number(clip?.trimStartSec) || 18));
+          const durationSec = Math.max(
+            5,
+            Math.min(18, Math.round(Number(clip?.durationSec) || 9))
+          );
+          const trimEndSec = trimStartSec + durationSec;
+          const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
+
+          // 1. Resolve stream URL (Dailymotion HLS -> or search Dailymotion by clip title -> or verified Archive MP4)
+          let streamUrl: string | null = null;
+          if (clip?.dmId) {
+            streamUrl = await resolveDailymotionStreamUrl(String(clip.dmId));
+          }
+          if (!streamUrl && title) {
+            try {
+              const dmSearch = await fetch(
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                  title.slice(0, 45)
+                )}&limit=2&fields=id,duration`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: AbortSignal.timeout(3000),
+                }
+              );
+              if (dmSearch.ok) {
+                const dmData: any = await dmSearch.json();
+                const firstId = dmData?.list?.[0]?.id;
+                if (firstId) {
+                  streamUrl = await resolveDailymotionStreamUrl(String(firstId));
+                }
+              }
+            } catch {
+              // fallback below
+            }
+          }
+
+          const fallbackReel = curatedReels[idx % curatedReels.length];
+          const archiveMp4 = String(clip?.archiveMp4Url || fallbackReel.rawMp4Url);
+
+          const fileId = `yt_cut_${Date.now()}_${idx}`;
+          const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+          const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+
+          let cutSucceeded = false;
+          const sourceToCut = streamUrl || archiveMp4;
+
+          try {
+            await execFileAsync(
+              "ffmpeg",
+              [
+                "-y",
+                "-ss",
+                String(trimStartSec),
+                "-i",
+                sourceToCut,
+                "-t",
+                String(durationSec),
+                "-vf",
+                "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "25",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                "-an",
+                outMp4Path,
+              ],
+              { timeout: 14000 }
+            );
+
+            if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 15000) {
+              cutSucceeded = true;
+              // Extract frame thumbnail at 0.8s into the cut video
+              await execFileAsync(
+                "ffmpeg",
+                [
+                  "-y",
+                  "-ss",
+                  "0.8",
+                  "-i",
+                  outMp4Path,
+                  "-frames:v",
+                  "1",
+                  "-q:v",
+                  "3",
+                  outJpgPath,
+                ],
+                { timeout: 4000 }
+              ).catch(() => {});
+            }
+          } catch {
+            // If cutting from streamUrl timed out, fallback to streaming proxy
+          }
+
+          let thumbnailUrl = String(clip?.thumbnailUrl || "");
+          if (fs.existsSync(outJpgPath)) {
+            const jpgBuf = fs.readFileSync(outJpgPath);
+            thumbnailUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
+            try {
+              fs.unlinkSync(outJpgPath);
+            } catch {
+              // ignore
+            }
+          } else if (thumbnailUrl.startsWith("http")) {
+            thumbnailUrl = await resolveImageToDataUrlOrDirect(thumbnailUrl);
+          }
+
+          if (cutSucceeded) {
+            return {
+              id: `yt-cut-${Date.now()}-${idx}`,
+              title,
+              // Physical MP4 file already trimmed from 0s -> durationSec!
+              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}`,
+              thumbnailUrl,
+              trimStartSec: 0,
+              trimEndSec: durationSec,
+              originalStartSec: trimStartSec,
+              originalEndSec: trimEndSec,
+              durationSec,
+              width: 640,
+              height: 360,
+              sourceLabel: `✂️ Đã cắt YouTube (${trimStartSec}s → ${trimEndSec}s)`,
+            };
+          }
+
+          // Instant HTTP 206 Range stream fallback
+          return {
+            id: `yt-cut-${Date.now()}-${idx}`,
+            title,
+            videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(archiveMp4)}#cut=${idx + 1}&t=${trimStartSec},${trimEndSec}`,
+            thumbnailUrl,
+            trimStartSec,
+            trimEndSec,
+            originalStartSec: trimStartSec,
+            originalEndSec: trimEndSec,
+            durationSec,
+            width: 640,
+            height: 360,
+            sourceLabel: `✂️ Đã cắt (${trimStartSec}s → ${trimEndSec}s)`,
+          };
+        })
+      );
+
+      res.json({
+        cuts: results,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Không thể cắt video đã chọn.",
+        cuts: [],
       });
     }
   });

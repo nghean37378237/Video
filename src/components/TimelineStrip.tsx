@@ -39,6 +39,7 @@ interface TimelineStripProps {
   isTrimmingRealVideos?: boolean;
   onOpenSceneMediaSearch?: (sceneId: string) => void;
   onQuickCycleSceneMedia?: (sceneId: string) => void;
+  onOpenYouTubePicker?: () => void;
 }
 
 const ACCEPTED_MEDIA_INPUT =
@@ -61,6 +62,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   isTrimmingRealVideos = false,
   onOpenSceneMediaSearch,
   onQuickCycleSceneMedia,
+  onOpenYouTubePicker,
 }) => {
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
   const [swapSourceSceneId, setSwapSourceSceneId] = useState<string | null>(null);
@@ -162,6 +164,18 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               <span>
                 Đang chọn đảo Cảnh #{String(swapSourceIdx + 1).padStart(2, '0')} (Bấm cảnh đích hoặc Hủy)
               </span>
+            </button>
+          )}
+
+          {onOpenYouTubePicker && (
+            <button
+              type="button"
+              onClick={onOpenYouTubePicker}
+              title="Mở kho tìm kiếm YouTube, tích chọn 1–3 video bạn thích và hệ thống tự động cắt chèn vào Timeline"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-red-600/25 hover:bg-red-600/40 text-red-200 border border-red-500/60 font-sans font-bold transition-colors whitespace-nowrap shrink-0"
+            >
+              <Film className="w-3.5 h-3.5 text-red-400" />
+              <span>🔴 Chọn &amp; Cắt Video YouTube</span>
             </button>
           )}
 

@@ -10,9 +10,12 @@ import {
   Scissors,
   Sparkles,
   Upload,
+  Play,
+  Youtube,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { ProjectSettings, StoryScene, VaultItem } from '../types';
-import { buildStandardKlingDrawPrompt } from '../utils/fullFrameHelper';
 import { captureRealVideoFrameThumbnail } from '../utils/realActorVideoTrimmer';
 
 export interface SceneVideoOption {
@@ -39,9 +42,40 @@ export interface ScenePhotoOption {
   year?: number | null;
 }
 
+export interface YouTubeSearchVideoItem {
+  id: string;
+  youtubeId: string;
+  dmId: string;
+  archiveMp4Url: string;
+  title: string;
+  channel: string;
+  durationSec: number;
+  durationLabel: string;
+  viewsLabel: string;
+  thumbnailUrl: string;
+  youtubeUrl: string;
+  suggestedTrimStartSec: number;
+}
+
+export interface CutYouTubeResultItem {
+  id: string;
+  title: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  trimStartSec: number;
+  trimEndSec: number;
+  originalStartSec: number;
+  originalEndSec: number;
+  durationSec: number;
+  width: number;
+  height: number;
+  sourceLabel: string;
+}
+
 interface SceneMediaSearchModalProps {
   isOpen: boolean;
   scene: StoryScene | null;
+  initialTab?: 'youtube' | 'all' | 'video' | 'image';
   totalScenes: number;
   characterName: string;
   settings: ProjectSettings;
@@ -58,57 +92,70 @@ interface SceneMediaSearchModalProps {
     photoOpt: ScenePhotoOption,
     mode: 'keep-video-grok-ref' | 'set-as-image-scene'
   ) => void;
+  onInsertCutYouTubeClips?: (
+    cuts: CutYouTubeResultItem[],
+    targetSceneId?: string | null
+  ) => void;
   onUploadLocalFileForScene?: (sceneId: string, file: File) => void;
 }
 
 export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   isOpen,
   scene,
+  initialTab = 'youtube',
   characterName,
   vaultItems,
   onClose,
   onSelectVideoForScene,
   onSelectPhotoForScene,
+  onInsertCutYouTubeClips,
   onUploadLocalFileForScene,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterTab, setFilterTab] = useState<'all' | 'video' | 'image'>('all');
+  const [filterTab, setFilterTab] = useState<'youtube' | 'all' | 'video' | 'image'>(initialTab);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isCuttingYouTube, setIsCuttingYouTube] = useState<boolean>(false);
   const [cycleOffset, setCycleOffset] = useState<number>(0);
+
+  // YouTube search results & multi-select state
+  const [youtubeVideos, setYoutubeVideos] = useState<YouTubeSearchVideoItem[]>([]);
+  const [selectedYtIds, setSelectedYtIds] = useState<string[]>([]);
+  const [ytTrimStarts, setYtTrimStarts] = useState<Record<string, number>>({});
+  const [previewingYtId, setPreviewingYtId] = useState<string | null>(null);
+
+  // Archival video & photo results
   const [videoOptions, setVideoOptions] = useState<SceneVideoOption[]>([]);
   const [photoOptions, setPhotoOptions] = useState<ScenePhotoOption[]>([]);
   const [customTrimStarts, setCustomTrimStarts] = useState<Record<string, number>>({});
 
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
-  const sceneDur = Math.max(5, Math.round(scene?.durationSec || 8));
+  const sceneDur = Math.max(5, Math.round(scene?.durationSec || 9));
 
-  // Build smart keyword chips tailored to the selected scene
   const suggestedQueries = React.useMemo(() => {
-    if (!scene) return [cleanCharName];
     const list: string[] = [cleanCharName];
-    if (scene.archivalKeywords && scene.archivalKeywords.trim()) {
+    if (scene?.archivalKeywords && scene.archivalKeywords.trim()) {
       list.push(scene.archivalKeywords.trim());
     }
     const lowerChar = cleanCharName.toLowerCase();
     if (lowerChar.includes('will sampson')) {
       list.push(
-        `${cleanCharName} One Flew Over the Cuckoo's Nest`,
-        `${cleanCharName} The Outlaw Josey Wales`,
-        `${cleanCharName} White Buffalo 1977`,
-        `${cleanCharName} portrait 1975`,
-        `Rodeo cowboy bronc riding 1970s`,
-        `Muscogee Creek Oklahoma historical`
+        `Will Sampson One Flew Over the Cuckoo's Nest`,
+        `Will Sampson The Outlaw Josey Wales`,
+        `Will Sampson Interview 1975`,
+        `Will Sampson White Buffalo 1977`,
+        `Will Sampson Orca 1977`,
+        `Rodeo cowboy bronc riding 1970s`
       );
     } else if (lowerChar.includes('lorne greene')) {
       list.push(
         `${cleanCharName} Bonanza Ben Cartwright`,
-        `${cleanCharName} Ponderosa portrait`,
+        `${cleanCharName} Ponderosa`,
         `${cleanCharName} Battlestar Galactica`
       );
     } else if (lowerChar.includes('clayton moore')) {
       list.push(
         `${cleanCharName} The Lone Ranger`,
-        `${cleanCharName} Western cowboy mask`,
+        `${cleanCharName} Lone Ranger interview`,
         `${cleanCharName} Silver horse`
       );
     } else if (lowerChar.includes('yul brynner')) {
@@ -119,34 +166,70 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       );
     } else {
       list.push(
-        `${cleanCharName} portrait`,
-        `${cleanCharName} movie still`,
-        `${cleanCharName} young`,
-        `${cleanCharName} classic film`
+        `${cleanCharName} movie scene`,
+        `${cleanCharName} interview`,
+        `${cleanCharName} trailer`
       );
     }
-    return Array.from(new Set(list)).slice(0, 7);
+    return Array.from(new Set(list)).slice(0, 6);
   }, [scene, cleanCharName]);
 
   const executeSearch = async (queryToRun: string, nextCycle = 0) => {
-    if (!scene) return;
     setIsLoading(true);
+    setPreviewingYtId(null);
+    const effectiveQuery = queryToRun.trim() || cleanCharName;
+
     try {
-      const res = await fetch('/api/archival/search-scene-media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: queryToRun.trim() || cleanCharName,
-          characterName: cleanCharName,
-          sceneDurationSec: sceneDur,
-          limit: 12,
-          cycleOffset: nextCycle,
+      const [ytRes, archRes] = await Promise.all([
+        fetch('/api/youtube/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: effectiveQuery,
+            characterName: cleanCharName,
+            limit: 12,
+          }),
         }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const vids: SceneVideoOption[] = Array.isArray(data?.videoOptions) ? data.videoOptions : [];
-        const imgs: ScenePhotoOption[] = Array.isArray(data?.photoOptions) ? data.photoOptions : [];
+        fetch('/api/archival/search-scene-media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: effectiveQuery,
+            characterName: cleanCharName,
+            sceneDurationSec: sceneDur,
+            limit: 12,
+            cycleOffset: nextCycle,
+          }),
+        }),
+      ]);
+
+      if (ytRes.ok) {
+        const ytData = await ytRes.json();
+        const ytList: YouTubeSearchVideoItem[] = Array.isArray(ytData?.videos)
+          ? ytData.videos
+          : [];
+        setYoutubeVideos(ytList);
+        const nextYtTrims: Record<string, number> = {};
+        ytList.forEach((v) => {
+          nextYtTrims[v.id] = v.suggestedTrimStartSec || 18;
+        });
+        setYtTrimStarts(nextYtTrims);
+        // Pre-select first 3 YouTube videos if opened in batch mode, or first 1 if opened for a single scene
+        if (ytList.length > 0) {
+          setSelectedYtIds(
+            scene ? [ytList[0].id] : ytList.slice(0, 3).map((v) => v.id)
+          );
+        }
+      }
+
+      if (archRes.ok) {
+        const data = await archRes.json();
+        const vids: SceneVideoOption[] = Array.isArray(data?.videoOptions)
+          ? data.videoOptions
+          : [];
+        const imgs: ScenePhotoOption[] = Array.isArray(data?.photoOptions)
+          ? data.photoOptions
+          : [];
         setVideoOptions(vids);
         setPhotoOptions(imgs);
 
@@ -156,7 +239,6 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         });
         setCustomTrimStarts(initialTrims);
 
-        // Background frame extraction so each video option displays its true video frame at trimStartSec
         vids.slice(0, 4).forEach((v) => {
           captureRealVideoFrameThumbnail(v.videoUrl, v.trimStartSec, 7500).then((frameUrl) => {
             if (!frameUrl) return;
@@ -173,22 +255,70 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     }
   };
 
-  // Trigger initial search whenever modal opens for a scene
   useEffect(() => {
-    if (isOpen && scene) {
-      const defaultQuery = scene.archivalKeywords?.trim() || cleanCharName;
+    if (isOpen) {
+      const defaultQuery =
+        scene?.archivalKeywords?.trim() || `${cleanCharName} One Flew Over the Cuckoo's Nest`;
       setSearchQuery(defaultQuery);
-      setFilterTab('all');
+      setFilterTab(initialTab);
       setCycleOffset(0);
       executeSearch(defaultQuery, 0);
     }
-  }, [isOpen, scene?.id]);
+  }, [isOpen, scene?.id, initialTab]);
 
-  if (!isOpen || !scene) return null;
+  if (!isOpen) return null;
 
-  const sceneNumLabel = `#${String(scene.order).padStart(2, '0')}`;
+  const sceneNumLabel = scene ? `#${String(scene.order).padStart(2, '0')}` : null;
 
-  // Also include project's existing vault images so user can pick from already-fetched items
+  const toggleSelectYouTubeVideo = (id: string) => {
+    setSelectedYtIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleCutAndInsertYouTubeVideos = async (specificVideo?: YouTubeSearchVideoItem) => {
+    if (isCuttingYouTube || !onInsertCutYouTubeClips) return;
+    const targetVideos = specificVideo
+      ? [specificVideo]
+      : youtubeVideos.filter((v) => selectedYtIds.includes(v.id));
+    if (targetVideos.length === 0) return;
+
+    setIsCuttingYouTube(true);
+    try {
+      const clipsPayload = targetVideos.map((v) => ({
+        id: v.id,
+        title: v.title,
+        youtubeId: v.youtubeId,
+        dmId: v.dmId,
+        archiveMp4Url: v.archiveMp4Url,
+        thumbnailUrl: v.thumbnailUrl,
+        trimStartSec: ytTrimStarts[v.id] ?? v.suggestedTrimStartSec ?? 18,
+        durationSec: scene ? sceneDur : 9,
+      }));
+
+      const res = await fetch('/api/youtube/cut-clips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clips: clipsPayload,
+          characterName: cleanCharName,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.cuts) && data.cuts.length > 0) {
+          onInsertCutYouTubeClips(
+            data.cuts,
+            specificVideo && scene ? scene.id : scene ? scene.id : null
+          );
+          onClose();
+        }
+      }
+    } finally {
+      setIsCuttingYouTube(false);
+    }
+  };
+
   const vaultPhotoExtras: ScenePhotoOption[] = vaultItems
     .filter((v) => v.type === 'image' && v.url)
     .slice(0, 6)
@@ -208,37 +338,67 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-5xl max-h-[90vh] bg-[#0B0F17] border border-slate-700/90 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="w-full max-w-6xl max-h-[92vh] bg-[#0B0F17] border border-slate-700/90 rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Top Modal Header */}
         <div className="px-5 py-3.5 bg-[#111827] border-b border-slate-800 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-500 text-slate-950">
-                Cảnh {sceneNumLabel} · {sceneDur}s
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
-                  scene.sceneType === 'video'
-                    ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                }`}
-              >
-                {scene.sceneType === 'video' ? '🎬 ĐOẠN VIDEO' : '🖼️ ĐOẠN ẢNH'}
-              </span>
+              {sceneNumLabel ? (
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-500 text-slate-950">
+                  Cảnh {sceneNumLabel} · {sceneDur}s
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white flex items-center gap-1">
+                  <Youtube className="w-3.5 h-3.5" />
+                  <span>Kho Cắt Video YouTube</span>
+                </span>
+              )}
               <h2 className="text-sm font-bold text-slate-100 truncate">
-                Tìm &amp; Đổi Ảnh / Video Thật Khác Cho Cảnh {sceneNumLabel}: {scene.title}
+                {scene
+                  ? `Chọn Video YouTube / Ảnh Thật Để Cắt & Chèn Vào Cảnh ${sceneNumLabel}: ${scene.title}`
+                  : `Chọn 1–3 Video Từ YouTube Để Tự Động Cắt & Chèn Thẳng Vào Timeline`}
               </h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1 truncate">
-              Nội dung lời đọc: <span className="text-amber-200/90 italic">"{scene.narrationText}"</span>
-            </p>
+            {scene ? (
+              <p className="text-xs text-slate-400 mt-1 truncate">
+                Nội dung lời đọc: <span className="text-amber-200/90 italic">"{scene.narrationText}"</span>
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-1">
+                Tìm hoặc dán link YouTube bất kỳ → Tích chọn 1 vài video bạn ưng ý → Chỉnh giây muốn cắt → Bấm <strong className="text-amber-300">Cắt &amp; Chèn Vào Timeline</strong> là xong!
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {onUploadLocalFileForScene && (
+            {selectedYtIds.length > 0 && onInsertCutYouTubeClips && (
+              <button
+                type="button"
+                disabled={isCuttingYouTube}
+                onClick={() => handleCutAndInsertYouTubeVideos()}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 shadow-lg transition-colors"
+              >
+                {isCuttingYouTube ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Đang cắt {selectedYtIds.length} video bằng FFmpeg...</span>
+                  </>
+                ) : (
+                  <>
+                    <Scissors className="w-4 h-4" />
+                    <span>
+                      ✂️ Cắt &amp; Chèn Ngay {selectedYtIds.length} Video Đã Chọn{' '}
+                      {sceneNumLabel ? `Vào Cảnh ${sceneNumLabel}` : 'Vào Timeline'}
+                    </span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {scene && onUploadLocalFileForScene && (
               <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 cursor-pointer transition-colors">
                 <Upload className="w-3.5 h-3.5" />
-                <span>Tải File Từ Máy Vào Cảnh {sceneNumLabel}</span>
+                <span>Tải File Từ Máy</span>
                 <input
                   type="file"
                   accept="image/*,video/*"
@@ -254,6 +414,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 />
               </label>
             )}
+
             <button
               type="button"
               onClick={onClose}
@@ -279,7 +440,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Nhập từ khóa tìm ảnh hoặc video (VD: Will Sampson, Cuckoo's Nest, The Outlaw Josey Wales, Rodeo cowboy...)"
+                placeholder="Nhập tên phim/diễn viên hoặc dán trực tiếp Link YouTube (https://www.youtube.com/watch?v=...) vào đây..."
                 className="w-full pl-9 pr-3 py-2 text-xs bg-[#070A10] border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-amber-500"
               />
             </div>
@@ -287,17 +448,17 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             <button
               type="submit"
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white transition-colors shrink-0"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Đang tìm...</span>
+                  <span>Đang tìm YouTube...</span>
                 </>
               ) : (
                 <>
-                  <Search className="w-3.5 h-3.5" />
-                  <span>Tìm Ảnh &amp; Video</span>
+                  <Youtube className="w-4 h-4" />
+                  <span>Tìm Trên YouTube</span>
                 </>
               )}
             </button>
@@ -311,17 +472,16 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 executeSearch(searchQuery, next);
               }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/40 transition-colors shrink-0"
-              title="Đổi sang các đoạn cắt giây khác của phim và lấy thêm bộ ảnh mới"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Đổi Góc Cắt &amp; Lô Khác</span>
+              <span>Đổi Lô Khác</span>
             </button>
           </form>
 
           {/* Quick Keyword Suggestions + Filter Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-slate-400 font-medium">Gợi ý tìm nhanh:</span>
+              <span className="text-[11px] text-slate-400 font-medium">Tìm nhanh trên YouTube:</span>
               {suggestedQueries.map((q) => (
                 <button
                   key={q}
@@ -332,7 +492,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   }}
                   className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
                     searchQuery === q
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                      ? 'bg-red-500/25 border-red-400 text-red-200'
                       : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
@@ -344,21 +504,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
               <button
                 type="button"
-                onClick={() => setFilterTab('all')}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold ${
-                  filterTab === 'all' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                onClick={() => setFilterTab('youtube')}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 ${
+                  filterTab === 'youtube'
+                    ? 'bg-red-600 text-white'
+                    : 'text-red-300 hover:text-red-200'
                 }`}
               >
-                Tất Cả ({videoOptions.length + combinedPhotos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterTab('video')}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold ${
-                  filterTab === 'video' ? 'bg-sky-500 text-slate-950' : 'text-sky-300 hover:text-sky-200'
-                }`}
-              >
-                🎬 Đoạn Video Thật ({videoOptions.length})
+                <Youtube className="w-3.5 h-3.5" />
+                <span>Nguồn YouTube ({youtubeVideos.length})</span>
               </button>
               <button
                 type="button"
@@ -371,6 +525,17 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               >
                 📸 Ảnh Thật ({combinedPhotos.length})
               </button>
+              <button
+                type="button"
+                onClick={() => setFilterTab('all')}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold ${
+                  filterTab === 'all'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Tất Cả
+              </button>
             </div>
           </div>
         </div>
@@ -379,65 +544,125 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
           {isLoading ? (
             <div className="py-16 flex flex-col items-center justify-center text-slate-300 space-y-3">
-              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+              <Loader2 className="w-8 h-8 animate-spin text-red-400" />
               <p className="text-xs font-semibold">
-                Đang tìm kiếm các đoạn Video Thật &amp; Ảnh Tư Liệu Sạch Chữ cho "{searchQuery}"...
+                Đang tìm kiếm nguồn video trên YouTube &amp; kho phim tư liệu cho "{searchQuery}"...
               </p>
             </div>
           ) : (
             <>
-              {/* 1. Real Trimmed Video Options */}
-              {(filterTab === 'all' || filterTab === 'video') && (
+              {/* SECTION A: YouTube Video Picker & Auto-Cutter */}
+              {(filterTab === 'youtube' || filterTab === 'all') && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                      <Film className="w-4 h-4 text-sky-400" />
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-bold text-red-300 flex items-center gap-1.5">
+                      <Youtube className="w-4 h-4 text-red-500" />
                       <span>
-                        1. Chọn Đoạn Cắt Video Thật ({videoOptions.length} đoạn — Có thể chỉnh giây bắt đầu cắt tùy ý)
+                        Chọn 1 Hoặc Nhiều Video Từ YouTube Để Hệ Thống Tự Cắt &amp; Chèn Vào Video ({youtubeVideos.length} kết quả)
                       </span>
                     </h3>
                     <span className="text-[11px] text-slate-400">
-                      Thời lượng Cảnh {sceneNumLabel}: <strong className="text-amber-300">{sceneDur} giây</strong>
+                      Đã tích chọn: <strong className="text-amber-300">{selectedYtIds.length} video</strong> · Độ dài mỗi đoạn cắt: <strong className="text-emerald-300">{scene ? sceneDur : 9} giây</strong>
                     </span>
                   </div>
 
-                  {videoOptions.length === 0 ? (
+                  {youtubeVideos.length === 0 ? (
                     <div className="p-4 rounded-lg bg-slate-900/70 border border-slate-800 text-xs text-slate-400">
-                      Không tìm thấy cuộn video công khai khớp từ khóa này. Bạn có thể chọn một <strong>Ảnh Thật</strong> bên dưới để làm <strong>Ảnh Gốc + Prompt vẽ video từ Grok / Kling AI</strong>!
+                      Không tìm thấy kết quả YouTube cho từ khóa này. Hãy thử bấm các từ khóa gợi ý màu đỏ phía trên!
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {videoOptions.map((vid, idx) => {
-                        const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec;
-                        const endSec = startSec + sceneDur;
-                        const cleanStreamUrl = vid.videoUrl.split('#')[0];
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {youtubeVideos.map((yt) => {
+                        const isChecked = selectedYtIds.includes(yt.id);
+                        const startSec = ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
+                        const cutDur = scene ? sceneDur : 9;
+                        const endSec = startSec + cutDur;
+                        const isPreviewing = previewingYtId === yt.id;
 
                         return (
                           <div
-                            key={vid.id}
-                            className="rounded-lg bg-[#111827] border border-sky-500/40 hover:border-sky-400 p-3 flex flex-col justify-between gap-2.5 transition-all"
+                            key={yt.id}
+                            className={`rounded-lg bg-[#111827] border p-3 flex flex-col justify-between gap-2.5 transition-all ${
+                              isChecked
+                                ? 'border-amber-400 ring-2 ring-amber-400/40 bg-[#161F33]'
+                                : 'border-slate-800 hover:border-slate-600'
+                            }`}
                           >
                             <div className="space-y-2">
-                              <div className="relative h-36 rounded-md overflow-hidden bg-black border border-slate-800">
-                                <video
-                                  src={`${cleanStreamUrl}#t=${startSec},${endSec}`}
-                                  poster={vid.dataUrl || undefined}
-                                  controls
-                                  muted
-                                  playsInline
-                                  preload="metadata"
-                                  className="w-full h-full object-cover"
-                                />
-                                <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-600/90 text-white">
-                                  ✂️ Đoạn #{idx + 1}: {startSec}s → {endSec}s
+                              {/* Video Preview Box (Thumbnail OR Embedded YouTube Player at startSec) */}
+                              <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
+                                {isPreviewing ? (
+                                  <iframe
+                                    src={`https://www.youtube.com/embed/${yt.youtubeId}?start=${startSec}&end=${endSec}&autoplay=1`}
+                                    title={yt.title}
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                    className="w-full h-full border-0"
+                                  />
+                                ) : (
+                                  <>
+                                    <img
+                                      src={yt.thumbnailUrl}
+                                      alt={yt.title}
+                                      referrerPolicy="no-referrer"
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewingYtId(yt.id)}
+                                      className="absolute inset-0 bg-black/45 hover:bg-black/25 flex items-center justify-center transition-colors group"
+                                      title="Bấm để xem trước đoạn video YouTube này ngay tại giây muốn cắt"
+                                    >
+                                      <div className="px-3 py-1.5 rounded-full bg-red-600 group-hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
+                                        <Play className="w-3.5 h-3.5 fill-current" />
+                                        <span>Xem Thử ({startSec}s→{endSec}s)</span>
+                                      </div>
+                                    </button>
+                                  </>
+                                )}
+
+                                {/* Top-Left Checkbox Badge */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSelectYouTubeVideo(yt.id)}
+                                  className={`absolute top-2 left-2 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow ${
+                                    isChecked
+                                      ? 'bg-amber-500 text-slate-950'
+                                      : 'bg-black/80 text-slate-200 hover:bg-black'
+                                  }`}
+                                >
+                                  {isChecked ? (
+                                    <>
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                      <span>Đã Chọn</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Square className="w-3.5 h-3.5" />
+                                      <span>Tích Chọn</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* Bottom-Right Total Duration Badge */}
+                                <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/85 text-white">
+                                  {yt.durationLabel}
                                 </span>
                               </div>
 
-                              <p className="text-xs font-bold text-slate-100 line-clamp-1" title={vid.title}>
-                                {vid.title}
-                              </p>
+                              <div>
+                                <p
+                                  className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug"
+                                  title={yt.title}
+                                >
+                                  {yt.title}
+                                </p>
+                                <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                  Kênh: {yt.channel} {yt.viewsLabel ? `· ${yt.viewsLabel}` : ''}
+                                </p>
+                              </div>
 
-                              {/* Custom Trim Start Second Selector */}
+                              {/* Trim Start Second Control */}
                               <div className="flex items-center justify-between gap-2 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
                                 <span className="text-slate-300 flex items-center gap-1">
                                   <Scissors className="w-3 h-3 text-amber-400" />
@@ -446,13 +671,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number"
-                                    min={14}
-                                    max={900}
+                                    min={5}
+                                    max={Math.max(30, yt.durationSec - 6)}
                                     step={5}
                                     value={startSec}
                                     onChange={(e) => {
-                                      const val = Math.max(0, parseInt(e.target.value || '18', 10));
-                                      setCustomTrimStarts((prev) => ({ ...prev, [vid.id]: val }));
+                                      const val = Math.max(0, parseInt(e.target.value || '15', 10));
+                                      setYtTrimStarts((prev) => ({ ...prev, [yt.id]: val }));
                                     }}
                                     className="w-16 px-1.5 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
                                   />
@@ -461,16 +686,27 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               </div>
                             </div>
 
+                            {/* 1-Click Cut & Insert This Single Video */}
                             <button
                               type="button"
-                              onClick={() => {
-                                onSelectVideoForScene(scene.id, vid, startSec, endSec);
-                                onClose();
-                              }}
-                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-colors"
+                              disabled={isCuttingYouTube}
+                              onClick={() => handleCutAndInsertYouTubeVideos(yt)}
+                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 transition-colors"
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Chèn Đoạn Video Này Vào Cảnh {sceneNumLabel}</span>
+                              {isCuttingYouTube ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Đang cắt đoạn {startSec}s→{endSec}s...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Scissors className="w-3.5 h-3.5" />
+                                  <span>
+                                    ✂️ Cắt Đoạn {startSec}s→{endSec}s &amp; Chèn{' '}
+                                    {sceneNumLabel ? `Vào Cảnh ${sceneNumLabel}` : 'Ngay'}
+                                  </span>
+                                </>
+                              )}
                             </button>
                           </div>
                         );
@@ -480,107 +716,123 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 </div>
               )}
 
-              {/* 2. Real Photo Options */}
-              {(filterTab === 'all' || filterTab === 'image') && (
-                <div className="space-y-3">
+              {/* SECTION B: Real Photos (when scene needs an image or Grok/Kling reference photo) */}
+              {(filterTab === 'all' || filterTab === 'image') && scene && (
+                <div className="space-y-3 pt-2 border-t border-slate-800">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-emerald-400" />
                       <span>
-                        2. Chọn Ảnh Thật Sạch Chữ Khác ({combinedPhotos.length} ảnh — Dùng làm Đoạn Ảnh hoặc Ảnh Gốc Vẽ Video Grok/Kling)
+                        Chọn Ảnh Thật Sạch Chữ Khác Cho Cảnh {sceneNumLabel} ({combinedPhotos.length} ảnh)
                       </span>
                     </h3>
                   </div>
 
-                  {combinedPhotos.length === 0 ? (
-                    <div className="p-4 rounded-lg bg-slate-900/70 border border-slate-800 text-xs text-slate-400">
-                      Chưa tìm thấy ảnh khớp từ khóa "{searchQuery}". Hãy bấm vào các từ khóa gợi ý phía trên hoặc thử từ khóa ngắn hơn!
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                      {combinedPhotos.map((photo, idx) => (
-                        <div
-                          key={photo.id}
-                          className="rounded-lg bg-[#111827] border border-slate-800 hover:border-emerald-400/70 p-2.5 flex flex-col justify-between gap-2 transition-all"
-                        >
-                          <div className="space-y-1.5">
-                            <div className="relative h-36 rounded overflow-hidden bg-black border border-slate-800">
-                              <img
-                                src={photo.dataUrl}
-                                alt={photo.title}
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover"
-                              />
-                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-600/90 text-white">
-                                Ảnh #{idx + 1}
-                              </span>
-                            </div>
-                            <p
-                              className="text-[11px] font-semibold text-slate-200 line-clamp-1"
-                              title={photo.title}
-                            >
-                              {photo.title}
-                            </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {combinedPhotos.map((photo, idx) => (
+                      <div
+                        key={photo.id}
+                        className="rounded-lg bg-[#111827] border border-slate-800 hover:border-emerald-400/70 p-2.5 flex flex-col justify-between gap-2 transition-all"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="relative h-36 rounded overflow-hidden bg-black border border-slate-800">
+                            <img
+                              src={photo.dataUrl}
+                              alt={photo.title}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-600/90 text-white">
+                              Ảnh #{idx + 1}
+                            </span>
                           </div>
-
-                          <div className="space-y-1">
-                            {scene.sceneType === 'video' ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onSelectPhotoForScene(scene.id, photo, 'keep-video-grok-ref');
-                                    onClose();
-                                  }}
-                                  className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors"
-                                  title="Gắn ảnh này làm Ảnh Gốc tham chiếu + giữ nguyên bộ Prompt để bạn vẽ video trên Grok / Kling AI"
-                                >
-                                  <Sparkles className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">Làm Ảnh Gốc + Prompt Grok/Kling</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
-                                    onClose();
-                                  }}
-                                  className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors"
-                                >
-                                  <ImageIcon className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">Dùng Làm Ảnh Tĩnh Cảnh {sceneNumLabel}</span>
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
-                                    onClose();
-                                  }}
-                                  className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[11px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate">Chọn Ảnh Này Cho Cảnh {sceneNumLabel}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onSelectPhotoForScene(scene.id, photo, 'keep-video-grok-ref');
-                                    onClose();
-                                  }}
-                                  className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 transition-colors"
-                                >
-                                  <Sparkles className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">Đổi Sang Đoạn Video (Grok/Kling)</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          <p
+                            className="text-[11px] font-semibold text-slate-200 line-clamp-1"
+                            title={photo.title}
+                          >
+                            {photo.title}
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        <div className="space-y-1">
+                          {scene.sceneType === 'video' ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectPhotoForScene(scene.id, photo, 'keep-video-grok-ref');
+                                  onClose();
+                                }}
+                                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors"
+                              >
+                                <Sparkles className="w-3 h-3 shrink-0" />
+                                <span className="truncate">Làm Ảnh Gốc + Prompt Grok/Kling</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
+                                  onClose();
+                                }}
+                                className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors"
+                              >
+                                <ImageIcon className="w-3 h-3 shrink-0" />
+                                <span className="truncate">Dùng Làm Ảnh Tĩnh Cảnh {sceneNumLabel}</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
+                                onClose();
+                              }}
+                              className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[11px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">Chọn Ảnh Này Cho Cảnh {sceneNumLabel}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION C: Direct Archival Video Cuts */}
+              {(filterTab === 'all' || filterTab === 'video') && scene && videoOptions.length > 0 && (
+                <div className="space-y-3 pt-2 border-t border-slate-800">
+                  <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                    <Film className="w-4 h-4 text-sky-400" />
+                    <span>Kho Cuộn Phim Archive Cắt Sẵn ({videoOptions.length} đoạn)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {videoOptions.map((vid, idx) => {
+                      const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec;
+                      const endSec = startSec + sceneDur;
+                      return (
+                        <div
+                          key={vid.id}
+                          className="rounded-lg bg-[#111827] border border-sky-500/40 p-3 flex flex-col justify-between gap-2"
+                        >
+                          <p className="text-xs font-bold text-slate-100 truncate">
+                            #{idx + 1}. {vid.title} ({startSec}s→{endSec}s)
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectVideoForScene(scene.id, vid, startSec, endSec);
+                              onClose();
+                            }}
+                            className="w-full px-3 py-1.5 rounded text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950"
+                          >
+                            Chèn Đoạn Phim Này Vào Cảnh {sceneNumLabel}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
