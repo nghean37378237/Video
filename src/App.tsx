@@ -53,6 +53,11 @@ import { SceneInspector } from './components/SceneInspector';
 import { TimelineStrip } from './components/TimelineStrip';
 import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
 import {
+  SceneMediaSearchModal,
+  ScenePhotoOption,
+  SceneVideoOption,
+} from './components/SceneMediaSearchModal';
+import {
   captureRealVideoFrameThumbnail,
   fetchAndAutoTrimActorRealVideos,
 } from './utils/realActorVideoTrimmer';
@@ -93,6 +98,8 @@ export default function App() {
   const [proxyBaseUrl, setProxyBaseUrl] = useState<string>('https://chat.trollllm.xyz/v1');
   const [proxyModel, setProxyModel] = useState<string>('claude-sonnet-4-6');
   const [generatingImageSceneId, setGeneratingImageSceneId] = useState<string | null>(null);
+  const [searchingMediaSceneId, setSearchingMediaSceneId] = useState<string | null>(null);
+  const sceneCycleMapRef = React.useRef<Record<string, number>>({});
   const [isLightTheme, setIsLightTheme] = useState<boolean>(true);
 
   const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
@@ -503,6 +510,221 @@ export default function App() {
       }
     } finally {
       setIsTrimmingRealVideos(false);
+    }
+  };
+
+  // Handler when Admin selects a specific Video Cut from SceneMediaSearchModal for a scene
+  const handleSelectVideoForScene = (
+    sceneId: string,
+    videoOpt: SceneVideoOption,
+    customTrimStartSec: number,
+    customTrimEndSec: number
+  ) => {
+    const cleanStreamUrl = videoOpt.videoUrl.split('#')[0];
+    const finalVideoUrl = `${cleanStreamUrl}#cut=${Date.now()}&t=${customTrimStartSec},${customTrimEndSec}`;
+    const newVaultId = `scene-vid-${Date.now()}`;
+    const dur = Math.max(5, customTrimEndSec - customTrimStartSec);
+
+    const newItem: VaultItem = {
+      id: newVaultId,
+      name: `✂️ Video Đã Cắt (${customTrimStartSec}s→${customTrimEndSec}s): ${videoOpt.title}`,
+      type: 'video',
+      url: finalVideoUrl,
+      thumbnailUrl: videoOpt.dataUrl,
+      width: videoOpt.width || 720,
+      height: videoOpt.height || 404,
+      durationSec: dur,
+      sourceTag: 'uploaded',
+      createdAt: `✂️ Đã cắt ${customTrimStartSec}s → ${customTrimEndSec}s`,
+    };
+
+    setVaultItems((prev) => [newItem, ...prev]);
+
+    const sIdx = scenes.findIndex((s) => s.id === sceneId);
+    if (sIdx >= 0) {
+      const targetScene = scenes[sIdx];
+      const nextScenes = [...scenes];
+      nextScenes[sIdx] = {
+        ...targetScene,
+        sceneType: 'video',
+        mediaId: newVaultId,
+        mediaUrl: finalVideoUrl,
+        mediaKind: 'video',
+        videoTrimStartSec: customTrimStartSec,
+        videoTrimEndSec: customTrimEndSec,
+        characterRefPhotoUrl: videoOpt.dataUrl || targetScene.characterRefPhotoUrl,
+        hasRealPhoto: true,
+        realPhotoTitle: `✂️ Cắt ${customTrimStartSec}s→${customTrimEndSec}s · ${videoOpt.title}`,
+        frameStyle: 'full-bleed',
+        showBottomSubtitles: true,
+      };
+      setScenes(nextScenes);
+
+      const jumpSec = nextScenes
+        .slice(0, sIdx)
+        .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+      setActiveSceneId(sceneId);
+      setCurrentTimeSec(jumpSec);
+      setIsPlaying(true);
+
+      setStatusBanner(
+        `🎬 Đã đổi sang đoạn Video Thật "${videoOpt.title}" (cắt ${customTrimStartSec}s→${customTrimEndSec}s) cho Cảnh #${String(targetScene.order).padStart(2, '0')}!`
+      );
+
+      captureRealVideoFrameThumbnail(finalVideoUrl, customTrimStartSec).then((frameDataUrl) => {
+        if (!frameDataUrl) return;
+        setVaultItems((prev) =>
+          prev.map((item) =>
+            item.id === newVaultId ? { ...item, thumbnailUrl: frameDataUrl } : item
+          )
+        );
+        setScenes((prev) =>
+          prev.map((s) => (s.id === sceneId ? { ...s, characterRefPhotoUrl: frameDataUrl } : s))
+        );
+      });
+    }
+  };
+
+  // Handler when Admin selects a specific Real Photo from SceneMediaSearchModal for a scene
+  const handleSelectPhotoForScene = (
+    sceneId: string,
+    photoOpt: ScenePhotoOption,
+    mode: 'keep-video-grok-ref' | 'set-as-image-scene'
+  ) => {
+    const newVaultId = `scene-img-${Date.now()}`;
+    const newItem: VaultItem = {
+      id: newVaultId,
+      name: `📸 Ảnh Thật: ${photoOpt.title}`,
+      type: 'image',
+      url: photoOpt.dataUrl,
+      thumbnailUrl: photoOpt.dataUrl,
+      width: photoOpt.width || 720,
+      height: photoOpt.height || 900,
+      durationSec: 7,
+      sourceTag: 'uploaded',
+      createdAt: 'Ảnh tư liệu chọn lọc',
+    };
+
+    setVaultItems((prev) => [newItem, ...prev]);
+
+    const sIdx = scenes.findIndex((s) => s.id === sceneId);
+    if (sIdx >= 0) {
+      const targetScene = scenes[sIdx];
+      const rawTopic =
+        loadSavedAudioPreferences().storyTopic ||
+        getCharacterNameForPreset(settings.activePresetId) ||
+        settings.projectTitle.split('—')[0].trim() ||
+        'Will Sampson';
+
+      const newSceneType: SceneType = mode === 'keep-video-grok-ref' ? 'video' : 'image';
+      const klingPack = buildStandardKlingDrawPrompt({
+        order: targetScene.order,
+        totalScenes: scenes.length,
+        characterName: rawTopic,
+        title: targetScene.title,
+        narrationText: targetScene.narrationText,
+        rawImagePrompt: targetScene.imagePrompt || targetScene.visualPrompt,
+        rawVideoPrompt: targetScene.videoMotionPrompt,
+        sceneType: newSceneType,
+        ratio: settings.aspectRatio,
+      });
+
+      const nextScenes = [...scenes];
+      nextScenes[sIdx] = {
+        ...targetScene,
+        sceneType: newSceneType,
+        mediaId: newVaultId,
+        mediaUrl: photoOpt.dataUrl,
+        mediaKind: 'image',
+        characterRefPhotoUrl: photoOpt.dataUrl,
+        videoTrimStartSec: undefined,
+        videoTrimEndSec: undefined,
+        hasRealPhoto: true,
+        realPhotoTitle:
+          mode === 'keep-video-grok-ref'
+            ? `${photoOpt.title} (Ảnh Gốc Tạo Video Grok / Kling)`
+            : photoOpt.title,
+        imagePrompt: klingPack.klingImagePrompt,
+        videoMotionPrompt: klingPack.klingVideoPrompt,
+        klingStandardPrompt: klingPack.combinedBlock,
+        frameStyle: 'full-bleed',
+        showBottomSubtitles: true,
+      };
+      setScenes(nextScenes);
+
+      const jumpSec = nextScenes
+        .slice(0, sIdx)
+        .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+      setActiveSceneId(sceneId);
+      setCurrentTimeSec(jumpSec + 0.05);
+
+      setStatusBanner(
+        mode === 'keep-video-grok-ref'
+          ? `📸 Đã gắn Ảnh Gốc mới "${photoOpt.title}" + Bộ Prompt Grok/Kling cho Cảnh #${String(targetScene.order).padStart(2, '0')}!`
+          : `🖼️ Đã đổi sang Ảnh Thật "${photoOpt.title}" cho Cảnh #${String(targetScene.order).padStart(2, '0')}!`
+      );
+    }
+  };
+
+  // 1-Click Quick-Cycle to the next different photo or video cut right from the Timeline card
+  const handleQuickCycleSceneMedia = async (sceneId: string) => {
+    const sIdx = scenes.findIndex((s) => s.id === sceneId);
+    if (sIdx < 0) return;
+    const sc = scenes[sIdx];
+    const nextCycle = (sceneCycleMapRef.current[sceneId] || 0) + 1;
+    sceneCycleMapRef.current[sceneId] = nextCycle;
+
+    const rawTopic =
+      loadSavedAudioPreferences().storyTopic ||
+      getCharacterNameForPreset(settings.activePresetId) ||
+      settings.projectTitle.split('—')[0].trim() ||
+      'Will Sampson';
+
+    const queryToUse = sc.archivalKeywords?.trim() || rawTopic;
+    setStatusBanner(
+      `⏳ Đang tìm nhanh Ảnh/Video khác cho Cảnh #${String(sc.order).padStart(2, '0')}...`
+    );
+
+    try {
+      const res = await fetch('/api/archival/search-scene-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: queryToUse,
+          characterName: rawTopic,
+          sceneDurationSec: Math.max(5, Math.round(sc.durationSec || 8)),
+          limit: 8,
+          cycleOffset: nextCycle,
+        }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const vids: SceneVideoOption[] = Array.isArray(data?.videoOptions) ? data.videoOptions : [];
+      const imgs: ScenePhotoOption[] = Array.isArray(data?.photoOptions) ? data.photoOptions : [];
+
+      if (sc.mediaKind === 'video' && vids.length > 0) {
+        const pickedVid = vids[nextCycle % vids.length];
+        handleSelectVideoForScene(
+          sceneId,
+          pickedVid,
+          pickedVid.trimStartSec,
+          pickedVid.trimEndSec
+        );
+      } else if (imgs.length > 0) {
+        // Pick an image that is different from current mediaUrl
+        const diffImgs = imgs.filter(
+          (i) => i.dataUrl !== sc.mediaUrl && i.dataUrl !== sc.characterRefPhotoUrl
+        );
+        const pool = diffImgs.length > 0 ? diffImgs : imgs;
+        const pickedImg = pool[nextCycle % pool.length];
+        handleSelectPhotoForScene(
+          sceneId,
+          pickedImg,
+          sc.sceneType === 'video' ? 'keep-video-grok-ref' : 'set-as-image-scene'
+        );
+      }
+    } catch {
+      // ignore
     }
   };
 
@@ -2659,6 +2881,27 @@ export default function App() {
         onSmartBatchUploadFiles={handleSmartBatchUploadFiles}
         onFetchAndInsertTrimmedActorVideos={handleFetchAndInsertTrimmedActorVideos}
         isTrimmingRealVideos={isTrimmingRealVideos}
+        onOpenSceneMediaSearch={(sceneId) => setSearchingMediaSceneId(sceneId)}
+        onQuickCycleSceneMedia={handleQuickCycleSceneMedia}
+      />
+
+      {/* Per-Scene Interactive Photo & Video Cut Search Modal */}
+      <SceneMediaSearchModal
+        isOpen={Boolean(searchingMediaSceneId)}
+        scene={scenes.find((s) => s.id === searchingMediaSceneId) || null}
+        totalScenes={scenes.length}
+        characterName={
+          loadSavedAudioPreferences().storyTopic ||
+          getCharacterNameForPreset(settings.activePresetId) ||
+          settings.projectTitle.split('—')[0].trim() ||
+          'Will Sampson'
+        }
+        settings={settings}
+        vaultItems={vaultItems}
+        onClose={() => setSearchingMediaSceneId(null)}
+        onSelectVideoForScene={handleSelectVideoForScene}
+        onSelectPhotoForScene={handleSelectPhotoForScene}
+        onUploadLocalFileForScene={handleUploadFileForScene}
       />
 
       {/* Full Script Breakdown, Prompt Generator & Intermediary Proxy API Studio Modal */}

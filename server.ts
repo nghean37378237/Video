@@ -2442,7 +2442,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();
 
-      const [videos, photos] = await Promise.all([
+      const [videos, primaryPhotos, filmPhotos] = await Promise.all([
         searchRealArchivalVideos(
           cleanQuery,
           desiredCount,
@@ -2451,9 +2451,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           usedTitles,
           Number(cycleOffset) || 0
         ),
-        searchRealArchivalPhotos(cleanQuery, desiredCount + 3, usedUrls, cleanQuery, usedTitles),
+        searchRealArchivalPhotos(cleanQuery, desiredCount + 4, usedUrls, cleanQuery, usedTitles),
+        searchRealArchivalPhotos(
+          `${cleanQuery} film scene still`,
+          desiredCount + 4,
+          usedUrls,
+          cleanQuery.split(/\s+/)[0],
+          usedTitles
+        ),
       ]);
 
+      const combinedPhotos = [...primaryPhotos, ...filmPhotos];
       const cutOffsets = [18, 44, 95, 120, 160, 210];
       const videoCuts = videos.map((v, idx) => {
         const dur =
@@ -2462,11 +2470,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             : 8;
         const startSec = v.trimStartSec ?? cutOffsets[idx % cutOffsets.length];
         const endSec = startSec + dur;
+        const distinctPhoto =
+          combinedPhotos[(idx + Number(cycleOffset || 0)) % Math.max(1, combinedPhotos.length)];
         return {
           title: v.title,
           videoUrl: v.videoUrl,
-          // Always use a clean verified portrait photo (not an archive.org poster) as initial thumbnail before client extracts the exact video frame
-          dataUrl: v.dataUrl || photos[idx % Math.max(1, photos.length)]?.dataUrl || "",
+          dataUrl: v.dataUrl || distinctPhoto?.dataUrl || "",
           trimStartSec: startSec,
           trimEndSec: endSec,
           width: v.width,
@@ -2477,7 +2486,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       res.json({
         videoCuts,
-        verifiedPhotos: photos,
+        verifiedPhotos: combinedPhotos,
         searchedQuery: cleanQuery,
       });
     } catch (error: any) {
@@ -2485,6 +2494,173 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         error: error?.message || "Không thể tải và cắt video thực tế.",
         videoCuts: [],
         verifiedPhotos: [],
+      });
+    }
+  });
+
+  // 2f. Per-Scene Interactive Image & Video Re-Search Endpoint (Allows Admin to Search & Pick Better Photos/Videos for Any Specific Scene)
+  app.post("/api/archival/search-scene-media", async (req, res) => {
+    try {
+      const {
+        query = "",
+        characterName = "Will Sampson",
+        sceneDurationSec = 8,
+        limit = 10,
+        cycleOffset = 0,
+      } = req.body || {};
+
+      const cleanChar = String(characterName || "Will Sampson")
+        .replace(/[—–-].*$/, "")
+        .trim();
+      const rawSearch = String(query || cleanChar).trim();
+      const dur = Math.max(5, Math.min(20, Math.round(Number(sceneDurationSec) || 8)));
+
+      const usedUrls = new Set<string>();
+      const usedTitles = new Set<string>();
+
+      // Relaxed token anchor: if user typed a custom scene keyword (e.g. "rodeo", "painting", "Oklahoma", "Outlaw Josey Wales"),
+      // match against the user's keyword tokens so scene-specific searches return rich, varied results!
+      const anchorForSearch =
+        rawSearch.toLowerCase().includes(cleanChar.toLowerCase()) ? cleanChar : rawSearch;
+
+      const [videos, exactPhotos, contextualPhotos] = await Promise.all([
+        searchRealArchivalVideos(
+          rawSearch,
+          6,
+          usedUrls,
+          cleanChar,
+          usedTitles,
+          Number(cycleOffset) || 0
+        ),
+        searchRealArchivalPhotos(
+          rawSearch,
+          Math.max(6, Number(limit) || 10),
+          usedUrls,
+          anchorForSearch,
+          usedTitles
+        ),
+        // Also fetch Wikimedia Commons scene/context photos matching the query directly
+        (async () => {
+          const extra: Array<{
+            title: string;
+            dataUrl: string;
+            width: number;
+            height: number;
+            year: number | null;
+          }> = [];
+          try {
+            const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+              `filetype:bitmap ${rawSearch} -poster -cover -logo -newspaper -plaque`
+            )}&gsrnamespace=6&gsrlimit=18&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=860&format=json`;
+            const wikiRes = await fetch(commonsUrl, {
+              headers: { "User-Agent": WIKI_USER_AGENT },
+            });
+            if (wikiRes.ok) {
+              const wikiData: any = await wikiRes.json();
+              const pages = wikiData?.query?.pages ? Object.values(wikiData.query.pages) : [];
+              const rawItems: Array<{
+                title: string;
+                thumbUrl: string;
+                width: number;
+                height: number;
+                year: number | null;
+              }> = [];
+              for (const page of pages as any[]) {
+                if (rawItems.length >= 8) break;
+                const info = page?.imageinfo?.[0];
+                const thumbUrl: string | undefined = info?.thumburl || info?.url;
+                const mime = String(info?.mime || "image/jpeg");
+                const rawTitle = String(page?.title || "");
+                const cleanTitle = rawTitle
+                  .replace(/^File:/i, "")
+                  .replace(/\.[^/.]+$/, "")
+                  .replace(/_/g, " ");
+                if (
+                  !thumbUrl ||
+                  usedUrls.has(thumbUrl) ||
+                  (!mime.includes("jpeg") && !mime.includes("png")) ||
+                  /\b(poster|cover|magazine|newspaper|plaque|grave|marker|logo|icon|map|diagram|signature|autograph)\b/i.test(
+                    cleanTitle
+                  )
+                ) {
+                  continue;
+                }
+                if ((info?.width || 0) < 240 || (info?.height || 0) < 220) continue;
+                usedUrls.add(thumbUrl);
+                rawItems.push({
+                  title: cleanTitle.slice(0, 52),
+                  thumbUrl,
+                  width: info.thumbwidth || info.width || 720,
+                  height: info.thumbheight || info.height || 540,
+                  year: extractPhotoYear(cleanTitle),
+                });
+              }
+              const resolvedExtra = await Promise.all(
+                rawItems.map(async (item) => ({
+                  title: item.title,
+                  dataUrl: await resolveImageToDataUrlOrDirect(item.thumbUrl),
+                  width: item.width,
+                  height: item.height,
+                  year: item.year,
+                }))
+              );
+              extra.push(...resolvedExtra.filter((x) => Boolean(x.dataUrl)));
+            }
+          } catch {
+            // ignore
+          }
+          return extra;
+        })(),
+      ]);
+
+      const allPhotos = [...exactPhotos, ...contextualPhotos];
+
+      // Build 4-6 distinct video cut options with different time windows so the user can choose different moments!
+      const variedCutStarts = [18, 34, 52, 78, 95, 120, 155, 195];
+      const videoOptions = videos.map((v, idx) => {
+        const baseStart =
+          v.trimStartSec ??
+          variedCutStarts[(idx + Number(cycleOffset || 0)) % variedCutStarts.length];
+        const trimStartSec = baseStart + (idx > 2 ? idx * 15 : 0);
+        const trimEndSec = trimStartSec + dur;
+        const distinctThumb =
+          v.dataUrl || allPhotos[idx % Math.max(1, allPhotos.length)]?.dataUrl || "";
+        const cleanStreamUrl = v.videoUrl.split("#")[0];
+        return {
+          id: `vid-opt-${Date.now()}-${idx}`,
+          mediaKind: "video" as const,
+          title: v.title,
+          videoUrl: `${cleanStreamUrl}#cut=${idx + 1}&t=${trimStartSec},${trimEndSec}`,
+          dataUrl: distinctThumb,
+          trimStartSec,
+          trimEndSec,
+          width: v.width || 720,
+          height: v.height || 404,
+          year: v.year,
+          sourceLabel: `✂️ Cắt ${trimStartSec}s → ${trimEndSec}s`,
+        };
+      });
+
+      const photoOptions = allPhotos.map((p, idx) => ({
+        id: `img-opt-${Date.now()}-${idx}`,
+        mediaKind: "image" as const,
+        title: p.title,
+        dataUrl: p.dataUrl,
+        width: p.width || 720,
+        height: p.height || 900,
+        year: p.year,
+      }));
+
+      res.json({
+        searchedQuery: rawSearch,
+        videoOptions,
+        photoOptions,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Không thể tìm kiếm ảnh/video thay thế.",
+        videoOptions: [],
+        photoOptions: [],
       });
     }
   });

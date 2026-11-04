@@ -13,6 +13,7 @@ import {
   AlertCircle,
   RefreshCw,
   ArrowLeftRight,
+  Search,
 } from 'lucide-react';
 import { StoryScene, VaultItem } from '../types';
 import { formatSecLabel } from '../utils/frameExtractor';
@@ -36,6 +37,8 @@ interface TimelineStripProps {
     targetCurrentSceneOnly?: boolean
   ) => Promise<void>;
   isTrimmingRealVideos?: boolean;
+  onOpenSceneMediaSearch?: (sceneId: string) => void;
+  onQuickCycleSceneMedia?: (sceneId: string) => void;
 }
 
 const ACCEPTED_MEDIA_INPUT =
@@ -56,6 +59,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   onSmartBatchUploadFiles,
   onFetchAndInsertTrimmedActorVideos,
   isTrimmingRealVideos = false,
+  onOpenSceneMediaSearch,
+  onQuickCycleSceneMedia,
 }) => {
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
   const [swapSourceSceneId, setSwapSourceSceneId] = useState<string | null>(null);
@@ -503,12 +508,19 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                   </div>
                 ) : thumbUrl ? (
                   <div
-                    className={`relative w-11 h-11 rounded overflow-hidden border shrink-0 bg-black ${
+                    onClick={(e) => {
+                      if (isVisualScene && onOpenSceneMediaSearch) {
+                        e.stopPropagation();
+                        onOpenSceneMediaSearch(scene.id);
+                      }
+                    }}
+                    title="Bấm vào ảnh để tìm & chọn lại Ảnh hoặc Đoạn Video khác hợp lý hơn cho cảnh này"
+                    className={`relative w-11 h-11 rounded overflow-hidden border shrink-0 bg-black cursor-pointer group/thumb ${
                       isMissingRealPhoto
                         ? 'border-amber-500/70'
                         : scene.sceneType === 'video'
-                        ? 'border-sky-500/60'
-                        : 'border-emerald-500/60'
+                        ? 'border-sky-500/60 hover:border-amber-400'
+                        : 'border-emerald-500/60 hover:border-amber-400'
                     }`}
                   >
                     <img
@@ -517,6 +529,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
+                    {isVisualScene && onOpenSceneMediaSearch && (
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                        <Search className="w-4 h-4 text-amber-300" />
+                      </div>
+                    )}
                     <span
                       className={`absolute bottom-0 right-0 px-1 text-[8px] font-bold uppercase leading-tight ${
                         isMissingRealPhoto
@@ -538,7 +555,16 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     </span>
                   </div>
                 ) : hasVideoPreview ? (
-                  <div className="relative w-11 h-11 rounded overflow-hidden border border-sky-500/60 shrink-0 bg-black">
+                  <div
+                    onClick={(e) => {
+                      if (isVisualScene && onOpenSceneMediaSearch) {
+                        e.stopPropagation();
+                        onOpenSceneMediaSearch(scene.id);
+                      }
+                    }}
+                    title="Bấm để tìm & đổi đoạn Video hoặc Ảnh khác cho cảnh này"
+                    className="relative w-11 h-11 rounded overflow-hidden border border-sky-500/60 hover:border-amber-400 shrink-0 bg-black cursor-pointer"
+                  >
                     <video
                       src={`${scene.mediaUrl}#t=0.1`}
                       preload="metadata"
@@ -551,7 +577,15 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <div className="w-11 h-11 rounded bg-[#0B0F17] border border-dashed border-slate-700 flex flex-col items-center justify-center shrink-0 text-[9px] text-slate-400">
+                  <div
+                    onClick={(e) => {
+                      if (isVisualScene && onOpenSceneMediaSearch) {
+                        e.stopPropagation();
+                        onOpenSceneMediaSearch(scene.id);
+                      }
+                    }}
+                    className="w-11 h-11 rounded bg-[#0B0F17] border border-dashed border-slate-700 hover:border-amber-400 flex flex-col items-center justify-center shrink-0 text-[9px] text-slate-400 cursor-pointer"
+                  >
                     {scene.sceneType === 'quote' ? (
                       <Quote className="w-4 h-4 text-amber-400" />
                     ) : scene.sceneType === 'image' ? (
@@ -589,28 +623,41 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                   className="flex items-center gap-1 shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {isVisualScene && onOpenSceneMediaSearch && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenSceneMediaSearch(scene.id)}
+                      title={`Tìm kiếm & chọn lại Ảnh hoặc Đoạn Video Thật khác hợp lý hơn cho Cảnh #${String(idx + 1).padStart(2, '0')}`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border border-amber-500/50 transition-colors"
+                    >
+                      <Search className="w-2.5 h-2.5 shrink-0" />
+                      <span>Tìm Khác</span>
+                    </button>
+                  )}
+                  {isVisualScene && onQuickCycleSceneMedia && (
+                    <button
+                      type="button"
+                      onClick={() => onQuickCycleSceneMedia(scene.id)}
+                      title="Đổi nhanh 1-Click sang Ảnh hoặc Góc Cắt Video khác cho cảnh này"
+                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                    </button>
+                  )}
                   {onUploadFileForScene && scene.sceneType !== 'outro' && (
                     <label
-                      title="Chọn file Video (.mp4, .mov) hoặc Ảnh (.png, .jpg, .webp) bất kỳ từ máy tính — tự động nhận diện tên và định dạng"
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded font-sans font-semibold cursor-pointer transition-colors border ${
+                      title="Chọn file Video (.mp4, .mov) hoặc Ảnh (.png, .jpg, .webp) bất kỳ từ máy tính"
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-semibold cursor-pointer transition-colors border ${
                         isVideoSceneHoldingTempImage
                           ? 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border-sky-400/50'
                           : hasMedia
-                          ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-slate-600'
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
                           : 'bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border-amber-500/50'
                       }`}
                     >
                       <Upload className="w-2.5 h-2.5" />
                       <span>
-                        {isVideoSceneHoldingTempImage
-                          ? '+ Thay Video'
-                          : hasMedia
-                          ? scene.sceneType === 'video'
-                            ? 'Đổi Video/Ảnh'
-                            : 'Đổi Ảnh/Video'
-                          : scene.sceneType === 'video'
-                          ? '+ Chèn Video'
-                          : '+ Chèn Ảnh'}
+                        {hasMedia ? 'Tải File' : '+File'}
                       </span>
                       <input
                         type="file"
