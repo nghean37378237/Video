@@ -43,6 +43,8 @@ interface CanvasStageProps {
   isPlaying: boolean;
   onTogglePlay: (playing: boolean) => void;
   triggerExportCounter: number;
+  singleSceneStopTimeSec?: number | null;
+  onClearSingleSceneStop?: () => void;
   onEnsureVoiceoversBeforeExport?: (
     overrideVoice?: ProjectSettings['ttsVoice'],
     overrideLang?: 'vi' | 'en'
@@ -60,6 +62,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   isPlaying,
   onTogglePlay,
   triggerExportCounter,
+  singleSceneStopTimeSec = null,
+  onClearSingleSceneStop,
   onEnsureVoiceoversBeforeExport,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -333,12 +337,19 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
       if (activeVidEl) {
         activeVidEl.muted = true;
-        const vidDur = Math.max(1, activeVidEl.duration || 10);
-        const trimStart = Math.min(Math.max(0, scene.videoTrimStartSec || 0), Math.max(0, vidDur - 0.5));
+        const hasValidDur =
+          Number.isFinite(activeVidEl.duration) && activeVidEl.duration > 0.5;
+        const vidDur = hasValidDur
+          ? activeVidEl.duration
+          : Math.max(900, (scene.videoTrimEndSec || 30) + 60);
+        const trimStart = Math.min(
+          Math.max(0, scene.videoTrimStartSec || 0),
+          Math.max(0, vidDur - 0.5)
+        );
         const trimEnd =
           scene.videoTrimEndSec && scene.videoTrimEndSec > trimStart + 0.5
             ? Math.min(vidDur, scene.videoTrimEndSec)
-            : vidDur;
+            : Math.min(vidDur, trimStart + Math.max(3, info.sceneDurationSec));
         const clipWindowDur = Math.max(0.5, trimEnd - trimStart);
         const targetTime = trimStart + (localTimeSec % clipWindowDur);
         if (Math.abs(activeVidEl.currentTime - targetTime) > 0.35) {
@@ -354,14 +365,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       }
 
       // Pre-warm incoming scene's video so during cross-dissolve both videos play simultaneously at 60fps
-      if (nextVidEl && nextScene) {
+      if (nextVidEl && nextScene && (!singleSceneStopTimeSec || isExporting)) {
         nextVidEl.muted = true;
-        const vidDur = Math.max(1, nextVidEl.duration || 10);
-        const nextTrimStart = Math.min(Math.max(0, nextScene.videoTrimStartSec || 0), Math.max(0, vidDur - 0.5));
+        const hasValidNextDur =
+          Number.isFinite(nextVidEl.duration) && nextVidEl.duration > 0.5;
+        const vidDur = hasValidNextDur
+          ? nextVidEl.duration
+          : Math.max(900, (nextScene.videoTrimEndSec || 30) + 60);
+        const nextTrimStart = Math.min(
+          Math.max(0, nextScene.videoTrimStartSec || 0),
+          Math.max(0, vidDur - 0.5)
+        );
         const nextTrimEnd =
           nextScene.videoTrimEndSec && nextScene.videoTrimEndSec > nextTrimStart + 0.5
             ? Math.min(vidDur, nextScene.videoTrimEndSec)
-            : vidDur;
+            : Math.min(vidDur, nextTrimStart + Math.max(3, nextScene.durationSec || 5));
         const nextClipWindowDur = Math.max(0.5, nextTrimEnd - nextTrimStart);
         const transDur = Math.min(
           settings.transitionDurationSec ?? 0.75,
@@ -1076,6 +1094,25 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
         lastTickRef.current = now;
 
+        // If Single-Scene Preview Mode is active, stop automatically right at the end of the selected scene!
+        if (
+          !isExporting &&
+          singleSceneStopTimeSec !== null &&
+          singleSceneStopTimeSec > 0 &&
+          playheadRef.current >= singleSceneStopTimeSec - 0.04
+        ) {
+          const stoppedSceneInfo = getSceneAtTime(Math.max(0, singleSceneStopTimeSec - 0.2));
+          const resetToStart = stoppedSceneInfo.sceneStartSec;
+          playheadRef.current = resetToStart;
+          lastInternalTimeUpdateRef.current = resetToStart;
+          playAnchorMediaTimeRef.current = resetToStart;
+          playAnchorWallTimeRef.current = null;
+          onTimeUpdate(resetToStart);
+          onTogglePlay(false);
+          onClearSingleSceneStop?.();
+          return;
+        }
+
         if (playheadRef.current >= targetTotalDuration) {
           playheadRef.current = 0;
           lastInternalTimeUpdateRef.current = 0;
@@ -1084,6 +1121,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           exportStartWallTimeRef.current = null;
           onTimeUpdate(0);
           onTogglePlay(false);
+          onClearSingleSceneStop?.();
           if (isExporting && mediaRecorderRef.current?.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
@@ -1375,6 +1413,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     onSelectScene,
     onTimeUpdate,
     onTogglePlay,
+    singleSceneStopTimeSec,
+    onClearSingleSceneStop,
   ]);
 
   // Handle Full Video Export via MediaRecorder (with full Voiceover + Background Music mixed in & 1:1 Exact Duration Lock)
@@ -1746,16 +1786,50 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               <SkipBack className="w-4 h-4" />
             </button>
             <button
-              onClick={handleTogglePlayWithSavedVoice}
+              onClick={() => {
+                // Play ONLY the currently selected scene/video and stop at its end
+                const startOfCurrentScene = activeSceneInfo.sceneStartSec;
+                const endOfCurrentScene =
+                  activeSceneInfo.sceneStartSec + activeSceneInfo.sceneDurationSec;
+                playheadRef.current = startOfCurrentScene;
+                onTimeUpdate(startOfCurrentScene);
+                const evt = new CustomEvent('legendcut:play-single-scene', {
+                  detail: {
+                    sceneId: activeSceneInfo.scene?.id,
+                    startSec: startOfCurrentScene,
+                    stopSec: endOfCurrentScene,
+                  },
+                });
+                window.dispatchEvent(evt);
+              }}
+              title="Chỉ chạy riêng 1 đoạn video của Cảnh đang chọn (tự động dừng khi hết cảnh này, không chạy tràn sang các cảnh khác)"
+              className={`flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-md border transition-colors whitespace-nowrap shrink-0 ${
+                singleSceneStopTimeSec !== null && isPlaying
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/50'
+              }`}
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>
+                {singleSceneStopTimeSec !== null && isPlaying
+                  ? `Đang chạy riêng Cảnh #${String(activeSceneInfo.index + 1).padStart(2, '0')} (${Math.round(activeSceneInfo.sceneDurationSec)}s)`
+                  : `Phát Riêng Cảnh #${String(activeSceneInfo.index + 1).padStart(2, '0')} (${Math.round(activeSceneInfo.sceneDurationSec)}s)`}
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                onClearSingleSceneStop?.();
+                handleTogglePlayWithSavedVoice();
+              }}
               disabled={isSyncingVoiceBeforePlay}
-              className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-xs rounded-md transition-colors whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-xs rounded-md transition-colors whitespace-nowrap shrink-0"
             >
               {isSyncingVoiceBeforePlay ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Đang áp {VOICE_SHORT_LABELS[settings.ttsVoice]} đã lưu...
                 </>
-              ) : isPlaying ? (
+              ) : isPlaying && singleSceneStopTimeSec === null ? (
                 <>
                   <Pause className="w-4 h-4 fill-current" />
                   Tạm dừng
@@ -1763,7 +1837,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current" />
-                  Phát Video Ghép ({VOICE_SHORT_LABELS[settings.ttsVoice]})
+                  Phát Toàn Bộ ({scenes.length} cảnh)
                 </>
               )}
             </button>

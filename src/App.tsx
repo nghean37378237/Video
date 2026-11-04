@@ -83,6 +83,7 @@ export default function App() {
   const [activeSceneId, setActiveSceneId] = useState<string>(WILL_SAMPSON_SCENES[0].id);
   const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [singleSceneStopTimeSec, setSingleSceneStopTimeSec] = useState<number | null>(null);
   const [isExtractingFrames, setIsExtractingFrames] = useState<boolean>(false);
   const [isGeneratingStory, setIsGeneratingStory] = useState<boolean>(false);
   const [isParsingScript, setIsParsingScript] = useState<boolean>(false);
@@ -141,11 +142,28 @@ export default function App() {
         setSettings((prev) => ({ ...prev, transitionStyle: customEvt.detail }));
       }
     };
+    const playSingleHandler = (e: Event) => {
+      const customEvt = e as CustomEvent<{
+        sceneId?: string;
+        startSec: number;
+        stopSec: number;
+      }>;
+      if (customEvt.detail) {
+        if (customEvt.detail.sceneId) {
+          setActiveSceneId(customEvt.detail.sceneId);
+        }
+        setCurrentTimeSec(customEvt.detail.startSec);
+        setSingleSceneStopTimeSec(customEvt.detail.stopSec);
+        setIsPlaying(true);
+      }
+    };
     window.addEventListener('legendcut:audiomode', handler);
     window.addEventListener('legendcut:transition', transHandler);
+    window.addEventListener('legendcut:play-single-scene', playSingleHandler);
     return () => {
       window.removeEventListener('legendcut:audiomode', handler);
       window.removeEventListener('legendcut:transition', transHandler);
+      window.removeEventListener('legendcut:play-single-scene', playSingleHandler);
     };
   }, []);
 
@@ -477,8 +495,11 @@ export default function App() {
           const jumpSec = nextScenes
             .slice(0, firstIdx)
             .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+          const firstDur = Math.ceil(firstScene.durationSec || 5);
           setActiveSceneId(firstScene.id);
           setCurrentTimeSec(jumpSec);
+          // Only play the 1 cut video scene and stop at its end!
+          setSingleSceneStopTimeSec(jumpSec + firstDur);
           setIsPlaying(true);
         }
 
@@ -572,12 +593,15 @@ export default function App() {
       const jumpSec = nextScenes
         .slice(0, sIdx)
         .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+      const targetDur = Math.ceil(targetScene.durationSec || 5);
       setActiveSceneId(sceneId);
       setCurrentTimeSec(jumpSec);
+      // Lock playback to ONLY this 1 selected video scene so it never runs through all 16 scenes!
+      setSingleSceneStopTimeSec(jumpSec + targetDur);
       setIsPlaying(true);
 
       setStatusBanner(
-        `🎬 Đã đổi sang đoạn Video Thật "${videoOpt.title}" (cắt ${customTrimStartSec}s→${customTrimEndSec}s) cho Cảnh #${String(targetScene.order).padStart(2, '0')}!`
+        `🎬 Đã đổi sang đoạn Video Thật "${videoOpt.title}" (cắt ${customTrimStartSec}s→${customTrimEndSec}s) và chỉ chạy riêng Cảnh #${String(targetScene.order).padStart(2, '0')} (${targetDur}s)!`
       );
 
       captureRealVideoFrameThumbnail(finalVideoUrl, customTrimStartSec).then((frameDataUrl) => {
@@ -819,12 +843,15 @@ export default function App() {
         const jumpSec = nextScenes
           .slice(0, firstIdx)
           .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+        const firstDur = Math.ceil(firstScene.durationSec || 5);
         setActiveSceneId(firstScene.id);
         setCurrentTimeSec(jumpSec);
+        // Lock playback to ONLY the 1 cut video scene (auto-stops when this 1 cut video finishes)
+        setSingleSceneStopTimeSec(jumpSec + firstDur);
         setIsPlaying(true);
       }
       setStatusBanner(
-        `🎬 Đã cắt riêng từng đoạn thành công và chèn đúng vào ${assignedLabels.join(', ')} (đang phát ngay)!`
+        `🎬 Đã cắt riêng video đã chọn và chỉ phát riêng ${assignedLabels.join(', ')} (tự dừng khi hết đoạn cắt, không chạy tràn sang tất cả các cảnh)!`
       );
     }
   };
@@ -2934,6 +2961,8 @@ export default function App() {
             isPlaying={isPlaying}
             onTogglePlay={setIsPlaying}
             triggerExportCounter={triggerExportCounter}
+            singleSceneStopTimeSec={singleSceneStopTimeSec}
+            onClearSingleSceneStop={() => setSingleSceneStopTimeSec(null)}
             onEnsureVoiceoversBeforeExport={handleGenerateAllVoiceovers}
           />
         </div>

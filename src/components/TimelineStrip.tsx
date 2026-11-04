@@ -14,6 +14,7 @@ import {
   RefreshCw,
   ArrowLeftRight,
   Search,
+  Play,
 } from 'lucide-react';
 import { StoryScene, VaultItem } from '../types';
 import { formatSecLabel } from '../utils/frameExtractor';
@@ -657,6 +658,24 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                   className="flex items-center gap-1 shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const evt = new CustomEvent('legendcut:play-single-scene', {
+                        detail: {
+                          sceneId: scene.id,
+                          startSec,
+                          stopSec: endSec,
+                        },
+                      });
+                      window.dispatchEvent(evt);
+                    }}
+                    title={`Chỉ phát riêng Cảnh #${String(idx + 1).padStart(2, '0')} (${formatSecLabel(startSec)}–${formatSecLabel(endSec)}) và tự dừng khi hết cảnh này`}
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/50 transition-colors"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current shrink-0" />
+                    <span>Phát Riêng</span>
+                  </button>
                   {isVisualScene && onOpenSceneMediaSearch && (
                     <button
                       type="button"
