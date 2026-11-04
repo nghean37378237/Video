@@ -992,7 +992,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                           }`}
                         >
                           {idx === 0 ? '★ ' : ''}
-                          {item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
+                          {VOICE_SHORT_LABELS[item.ttsVoice] || item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
                           {item.bgMusicStyle === 'western-acoustic'
                             ? 'Guitar'
                             : item.bgMusicStyle === 'emotional-piano'
@@ -1021,8 +1021,8 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 {[
                   {
                     id: 'life-legends',
-                    label: '🤠 Chuẩn Gốc Life Legends',
-                    desc: 'Nam Trầm Charon + Guitar Mẫu Will Sampson',
+                    label: '⭐ Bản Đọc Chuẩn',
+                    desc: 'Bản Đọc Chuẩn (103.4Hz) + Guitar Acoustic Ấm',
                     voice: 'Charon' as const,
                     music: 'western-acoustic' as const,
                     vol: 0.25,
@@ -1143,7 +1143,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   className="col-span-3 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200"
                 >
                   <option value="Charon">
-                    Charon — Nam Trầm Ấm (Chuẩn Mẫu Will Sampson / Viễn Tây)
+                    ⭐ Bản Đọc Chuẩn — Giọng Nhân Bản Gốc (103.4Hz · 133 WPM)
                   </option>
                   <option value="Fenrir">
                     Fenrir — Nam Trầm Sâu Uy Nghiêm (Phim Tài Liệu Lịch Sử)
@@ -1214,7 +1214,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                     }}
                     className="px-2 py-1 text-[10px] font-semibold bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 text-amber-200 border border-amber-500/40 rounded transition-colors flex items-center justify-center gap-1"
                   >
-                    {isGeneratingSceneTTS ? '⏳ Đang nhân bản...' : '🔊 Nghe Bản Nhân Bản'}
+                    {isGeneratingSceneTTS ? '⏳ Đang phát...' : '🔊 Nghe ⭐ Bản Đọc Chuẩn'}
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-1.5 pt-0.5">
@@ -1375,7 +1375,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  Đổi Sang Giọng {settings.ttsVoice} ({activeVoiceLang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}) Cho Toàn Video
+                  Áp Dụng {VOICE_SHORT_LABELS[settings.ttsVoice]} ({activeVoiceLang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}) Cho Toàn Video
                 </>
               )}
             </button>
@@ -1389,12 +1389,12 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 {isGeneratingSceneTTS ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Đang đổi giọng cảnh #{activeScene.order}...
+                    Đang thu âm cảnh #{activeScene.order}...
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-3.5 h-3.5" />
-                    Thu &amp; Nghe Ngay Giọng {settings.ttsVoice} Cho Cảnh #{activeScene.order}
+                    Thu &amp; Nghe Ngay {VOICE_SHORT_LABELS[settings.ttsVoice]} Cho Cảnh #{activeScene.order}
                   </>
                 )}
               </button>

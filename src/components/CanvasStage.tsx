@@ -17,7 +17,7 @@ import { ProjectSettings, StoryScene, TransitionStyle, VaultItem } from '../type
 import { FIXED_OUTRO_LOGO_URL, REFERENCE_VIDEOS } from '../data/lorneGreenePreset';
 import { soundEngine } from '../utils/audioSynth';
 import { formatSecLabel } from '../utils/frameExtractor';
-import { BG_MUSIC_STYLE_LABELS } from '../utils/voiceConsistencyEngine';
+import { BG_MUSIC_STYLE_LABELS, VOICE_SHORT_LABELS } from '../utils/voiceConsistencyEngine';
 
 const SAMPLE_VIDEO_URLS = new Set(
   Object.values(REFERENCE_VIDEOS)
@@ -1693,7 +1693,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               {isSyncingVoiceBeforePlay ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Đang áp giọng {settings.ttsVoice} đã lưu...
+                  Đang áp {VOICE_SHORT_LABELS[settings.ttsVoice]} đã lưu...
                 </>
               ) : isPlaying ? (
                 <>
@@ -1703,7 +1703,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current" />
-                  Phát Video Ghép ({settings.ttsVoice})
+                  Phát Video Ghép ({VOICE_SHORT_LABELS[settings.ttsVoice]})
                 </>
               )}
             </button>
@@ -1731,7 +1731,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               }}
               className="px-2.5 py-1 text-[11px] font-semibold rounded bg-amber-500 text-slate-950 transition-colors whitespace-nowrap shrink-0"
             >
-              💾 Giọng {settings.ttsVoice} ({(settings.voiceLanguage || 'en').toUpperCase()}) +{' '}
+              💾 {VOICE_SHORT_LABELS[settings.ttsVoice]} ({(settings.voiceLanguage || 'en').toUpperCase()}) +{' '}
               {BG_MUSIC_STYLE_LABELS[settings.bgMusicStyle]}
             </button>
           </div>

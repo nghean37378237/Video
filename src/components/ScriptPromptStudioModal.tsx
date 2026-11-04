@@ -1727,7 +1727,7 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                         }}
                         className="w-full px-3 py-2 text-xs bg-[#0B0F17] border border-slate-700 rounded-lg text-slate-100"
                       >
-                        <option value="Charon">Charon — Nam Trầm Ấm (Chuẩn Mẫu Will Sampson)</option>
+                        <option value="Charon">⭐ Bản Đọc Chuẩn (Giọng Nhân Bản Gốc 103.4Hz)</option>
                         <option value="Fenrir">Fenrir — Nam Trầm Sâu Uy Nghiêm</option>
                         <option value="Puck">Puck — Nam Truyền Cảm Tự Nhiên</option>
                         <option value="Kore">Kore — Nữ Trầm Dịu Sâu Lắng</option>
@@ -1857,7 +1857,7 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
                   ) : (
                     <>
                       <Zap className="w-4 h-4 fill-current" />
-                      Dựng Tự Động A → Z (Giọng {settings?.ttsVoice || 'Charon'} + Nhạc Đã Lưu)
+                      Dựng Tự Động A → Z ({VOICE_SHORT_LABELS[settings?.ttsVoice || 'Charon']} + Nhạc Đã Lưu)
                     </>
                   )}
                 </button>

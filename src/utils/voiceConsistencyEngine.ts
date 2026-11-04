@@ -43,7 +43,7 @@ export const WILL_SAMPSON_SAMPLE_VOICE_URL = '/assets/aistudio/ws_scene_01.mp3';
 
 export const DEFAULT_WILL_SAMPSON_CLONE_DNA: VoiceCloneDNAProfile = {
   id: 'will-sampson-original-dna',
-  label: '🧬 Bản Nhân Bản Giọng Gốc Will Sampson (103.4Hz · 133 WPM)',
+  label: '⭐ Bản Đọc Chuẩn (Giọng Nhân Bản Gốc 103.4Hz · 133 WPM)',
   sourceFileName: 'November_is_Native_American_Heritage_Month_Will_Sampson.mp3',
   sourceSampleUrl: WILL_SAMPSON_SAMPLE_VOICE_URL,
   medianF0Hz: 103.4,
@@ -72,10 +72,14 @@ export function loadActiveVoiceCloneDNA(): VoiceCloneDNAProfile {
     if (!parsed || typeof parsed.medianF0Hz !== 'number') {
       return DEFAULT_WILL_SAMPSON_CLONE_DNA;
     }
-    return {
+    const merged: VoiceCloneDNAProfile = {
       ...DEFAULT_WILL_SAMPSON_CLONE_DNA,
       ...parsed,
     };
+    if (merged.id === 'will-sampson-original-dna') {
+      merged.label = DEFAULT_WILL_SAMPSON_CLONE_DNA.label;
+    }
+    return merged;
   } catch {
     return DEFAULT_WILL_SAMPSON_CLONE_DNA;
   }
@@ -221,8 +225,8 @@ export async function analyzeVoiceCloneDNAFromAudioFile(
 export const VOICE_PERSONA_PROFILES: Record<ProjectSettings['ttsVoice'], VoicePersonaProfile> = {
   Charon: {
     id: 'Charon',
-    label: 'Charon — Bản Nhân Bản Giọng Gốc Will Sampson (103.4Hz · 133 WPM)',
-    badge: 'Nhân Bản Will Sampson (99.4%)',
+    label: '⭐ Bản Đọc Chuẩn — Nhân Bản Giọng Gốc Will Sampson (103.4Hz · 133 WPM)',
+    badge: '⭐ Bản Đọc Chuẩn (99.4%)',
     gender: 'male',
     geminiAnchorPrompt:
       'CLONED VOICE DNA (Will Sampson Heritage Month Narrator): Deep, warm, intimate American documentary baritone with 103.4Hz fundamental frequency (90Hz-132Hz chest range) and calm, unhurried 133 WPM storytelling cadence (-7% rate). Speak with rich 920Hz chest body, crisp 3.1kHz studio presence, and natural reflective pauses.',
@@ -589,7 +593,7 @@ export const BG_MUSIC_STYLE_LABELS: Record<ProjectSettings['bgMusicStyle'], stri
 };
 
 export const VOICE_SHORT_LABELS: Record<ProjectSettings['ttsVoice'], string> = {
-  Charon: 'Charon (Nam Trầm Ấm)',
+  Charon: '⭐ Bản Đọc Chuẩn',
   Fenrir: 'Fenrir (Nam Uy Nghiêm)',
   Puck: 'Puck (Nam Tự Nhiên)',
   Kore: 'Kore (Nữ Trầm Dịu)',

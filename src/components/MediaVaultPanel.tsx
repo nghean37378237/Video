@@ -407,8 +407,8 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 {[
                   {
                     id: 'combo-legends',
-                    label: '🤠 Chuẩn Life Legends',
-                    sub: 'Charon + Guitar Ấm',
+                    label: '⭐ Bản Đọc Chuẩn',
+                    sub: 'Bản Đọc Chuẩn + Guitar Ấm',
                     voice: 'Charon' as const,
                     music: 'western-acoustic' as const,
                     vol: 0.25,
@@ -512,7 +512,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                     className="col-span-3 px-1.5 py-1.5 text-[11px] bg-[#0B0F17] border border-slate-700 rounded text-slate-100"
                   >
                     <option value="Charon">
-                      Charon — 🧬 Nhân Bản Giọng Gốc Will Sampson
+                      ⭐ Bản Đọc Chuẩn (Giọng Nhân Bản Gốc 103.4Hz)
                     </option>
                     <option value="Fenrir">Fenrir — Nam Trầm Sâu Uy Nghiêm</option>
                     <option value="Puck">Puck — Nam Truyền Cảm Tự Nhiên</option>
@@ -567,7 +567,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                     >
                       <Sparkles className="w-2.5 h-2.5 shrink-0" />
                       <span>
-                        {isPreviewingVoice ? 'Đang nhân bản...' : 'Nghe Bản Nhân Bản AI'}
+                        {isPreviewingVoice ? 'Đang phát...' : 'Nghe ⭐ Bản Đọc Chuẩn'}
                       </span>
                     </button>
                   </div>
@@ -606,9 +606,9 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                           handleSelectPreRunAudio({ ttsVoice: 'Charon' });
                         }}
                         className="px-1.5 py-1 text-[9px] bg-slate-800 hover:bg-slate-700 text-amber-300 rounded shrink-0"
-                        title="Khôi phục giọng gốc Will Sampson"
+                        title="Khôi phục về Bản Đọc Chuẩn"
                       >
-                        Về Mẫu Will Sampson
+                        Về Bản Đọc Chuẩn
                       </button>
                     )}
                   </div>
@@ -758,7 +758,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                             }`}
                           >
                             {idx === 0 ? '★ ' : ''}
-                            {item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
+                            {VOICE_SHORT_LABELS[item.ttsVoice] || item.ttsVoice} ({item.voiceLanguage.toUpperCase()}) +{' '}
                             {item.bgMusicStyle === 'western-acoustic'
                               ? 'Guitar'
                               : item.bgMusicStyle === 'emotional-piano'
@@ -833,7 +833,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ) : (
                 <>
                   <Zap className="w-4 h-4 fill-current" />
-                  Chạy Tự Động A → Z (Giọng {settings.ttsVoice} + Nhạc Đã Lưu)
+                  Chạy Tự Động A → Z ({VOICE_SHORT_LABELS[settings.ttsVoice]} + Nhạc Đã Lưu)
                 </>
               )}
             </button>

@@ -1206,7 +1206,7 @@ export default function App() {
 
     if (onStepProgress) {
       onStepProgress(
-        `Đang thu âm đồng nhất 100% toàn video với giọng ${voiceName} (${lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'})...`
+        `Đang thu âm đồng nhất 100% toàn video với ${VOICE_SHORT_LABELS[voiceName]} (${lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'})...`
       );
     }
 
@@ -1599,7 +1599,7 @@ export default function App() {
     try {
       // Step 1: Generate Storyboard & Prompts
       setAutoPilotStepText(
-        `Bước 1/4: Đang viết kịch bản ${sceneCount} cảnh (Đã khóa Giọng ${chosenVoice} + ${BG_MUSIC_STYLE_LABELS[chosenMusic]})...`
+        `Bước 1/4: Đang viết kịch bản ${sceneCount} cảnh (Đã khóa ${VOICE_SHORT_LABELS[chosenVoice]} + ${BG_MUSIC_STYLE_LABELS[chosenMusic]})...`
       );
       let rawScenesList: any[] | null = null;
       try {
@@ -1975,7 +1975,7 @@ export default function App() {
         voiceLanguage: targetVoiceLang,
       }));
       setStatusBanner(
-        `🎙️ Đã đổi sang Giọng Đọc ${chosenVoice} (${
+        `🎙️ Đã áp dụng ${VOICE_SHORT_LABELS[chosenVoice]} (${
           targetVoiceLang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'
         }) ĐỒNG NHẤT 100% từ đầu đến cuối video (chuẩn hóa âm lượng & chất giọng xuyên suốt)!`
       );
