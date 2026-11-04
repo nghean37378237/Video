@@ -261,7 +261,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
           const thumbUrl =
             vaultItem?.thumbnailUrl ||
             (vaultItem?.type === 'image' ? vaultItem.url : undefined) ||
-            (scene.mediaKind === 'image' ? scene.mediaUrl : undefined);
+            (scene.mediaKind === 'image' ? scene.mediaUrl : undefined) ||
+            (actualMediaKind === 'video' ? scene.characterRefPhotoUrl : undefined);
           const hasVideoPreview =
             !thumbUrl && actualMediaKind === 'video' && Boolean(scene.mediaUrl);
 
@@ -443,14 +444,22 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                   <div
                     title={`Đã gắn ${actualMediaKind === 'video' ? 'Video thật' : 'Ảnh thật chuẩn'}: ${attachedFileName}`}
                     className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate border ${
-                      actualMediaKind === 'video'
+                      actualMediaKind === 'video' && typeof scene.videoTrimStartSec === 'number'
+                        ? 'bg-emerald-950/80 text-emerald-200 border-emerald-400/60'
+                        : actualMediaKind === 'video'
                         ? 'bg-sky-950/70 text-sky-200 border-sky-500/40'
                         : 'bg-emerald-950/70 text-emerald-200 border-emerald-500/40'
                     }`}
                   >
                     <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-400" />
                     <span className="font-bold shrink-0">
-                      {actualMediaKind === 'video' ? '🎬 Video thật:' : '📸 Ảnh thật chuẩn:'}
+                      {actualMediaKind === 'video' &&
+                      typeof scene.videoTrimStartSec === 'number' &&
+                      typeof scene.videoTrimEndSec === 'number'
+                        ? `✂️ Đã cắt (${scene.videoTrimStartSec}s→${scene.videoTrimEndSec}s):`
+                        : actualMediaKind === 'video'
+                        ? '🎬 Video thật:'
+                        : '📸 Ảnh thật chuẩn:'}
                     </span>
                     <span className="truncate">{attachedFileName}</span>
                   </div>

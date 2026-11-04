@@ -27,6 +27,7 @@ import {
   ProjectSettings,
   SceneType,
   StoryScene,
+  VaultItem,
 } from '../types';
 import { getMediaDuration } from '../utils/frameExtractor';
 import {
@@ -61,9 +62,11 @@ import {
   PagePostLanguage,
   PageTitleStyle,
 } from '../utils/pagePostGenerator';
+import { VideoThumbnailStudio } from './VideoThumbnailStudio';
 
 interface SceneInspectorProps {
   scenes: StoryScene[];
+  vaultItems?: VaultItem[];
   activeScene: StoryScene | undefined;
   onUpdateScene: (sceneId: string, patch: Partial<StoryScene>) => void;
   onAddScene: (type: SceneType) => void;
@@ -91,6 +94,7 @@ interface SceneInspectorProps {
 
 export const SceneInspector: React.FC<SceneInspectorProps> = ({
   scenes,
+  vaultItems = [],
   activeScene,
   onUpdateScene,
   onAddScene,
@@ -108,7 +112,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   onFetchAndInsertTrimmedActorVideos,
   isTrimmingRealVideos = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'scene' | 'summary' | 'style'>('scene');
+  const [activeTab, setActiveTab] = useState<'scene' | 'summary' | 'thumbnail' | 'style'>('scene');
   const [isGeneratingSceneTTS, setIsGeneratingSceneTTS] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -343,39 +347,52 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
     <div className="flex flex-col h-full bg-[#111827] border-l border-slate-800/80">
       {/* Top Segmented Tabs */}
       <div className="p-2.5 border-b border-slate-800/80">
-        <div className="grid grid-cols-3 gap-1 p-1 bg-[#0B0F17] rounded-lg border border-slate-800">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-[#0B0F17] rounded-lg border border-slate-800">
           <button
             onClick={() => setActiveTab('scene')}
-            className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
+            className={`flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
               activeTab === 'scene'
                 ? 'bg-amber-500 text-slate-950'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Sliders className="w-3.5 h-3.5 shrink-0" />
+            <Sliders className="w-3 h-3 shrink-0" />
             <span>Cảnh #{activeScene?.order || 1}</span>
           </button>
           <button
+            onClick={() => setActiveTab('thumbnail')}
+            className={`flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
+              activeTab === 'thumbnail'
+                ? 'bg-amber-500 text-slate-950'
+                : 'text-amber-300 hover:text-amber-200 bg-amber-500/15 border border-amber-500/30'
+            }`}
+            title="Thiết kế & Tải Ảnh Thumbnail Bìa Video đẹp chuẩn đăng Page / YouTube / Reels"
+          >
+            <ImageIcon className="w-3 h-3 shrink-0" />
+            <span>Ảnh Thumb</span>
+          </button>
+          <button
             onClick={() => setActiveTab('summary')}
-            className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
+            className={`flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
               activeTab === 'summary'
                 ? 'bg-amber-500 text-slate-950'
                 : 'text-amber-300 hover:text-amber-200 bg-amber-500/10'
             }`}
+            title="Bài tóm tắt 200-300 từ + Tiêu đề + Ảnh Thumbnail đăng Page"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
-            <span>Tóm Tắt 200-300 Từ</span>
+            <FileSpreadsheet className="w-3 h-3 shrink-0" />
+            <span>Tóm Tắt Page</span>
           </button>
           <button
             onClick={() => setActiveTab('style')}
-            className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
+            className={`flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold rounded-md transition-colors whitespace-nowrap truncate ${
               activeTab === 'style'
                 ? 'bg-amber-500 text-slate-950'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <TypeIcon className="w-3.5 h-3.5 shrink-0" />
-            <span>Phụ Đề & Logo</span>
+            <TypeIcon className="w-3 h-3 shrink-0" />
+            <span>Phụ Đề</span>
           </button>
         </div>
       </div>
@@ -1612,6 +1629,15 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             )}
           </div>
 
+          {/* Embedded Quick Video Thumbnail Generator right inside Summary Tab */}
+          <VideoThumbnailStudio
+            scenes={scenes}
+            vaultItems={vaultItems}
+            settings={settings}
+            compactMode={true}
+            onOpenFullThumbTab={() => setActiveTab('thumbnail')}
+          />
+
           {/* Language & Title Style Controls */}
           <div className="p-3 rounded-lg bg-[#0B0F17] border border-slate-800 space-y-3">
             <div>
@@ -1812,6 +1838,16 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               />
             </div>
           </div>
+        </div>
+      ) : activeTab === 'thumbnail' ? (
+        /* Full Interactive Video Thumbnail Studio Tab */
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+          <VideoThumbnailStudio
+            scenes={scenes}
+            vaultItems={vaultItems}
+            settings={settings}
+            compactMode={false}
+          />
         </div>
       ) : (
         /* Global Subtitle, Music & Brand Crest Settings Tab */

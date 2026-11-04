@@ -52,7 +52,10 @@ import { MediaVaultPanel } from './components/MediaVaultPanel';
 import { SceneInspector } from './components/SceneInspector';
 import { TimelineStrip } from './components/TimelineStrip';
 import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
-import { fetchAndAutoTrimActorRealVideos } from './utils/realActorVideoTrimmer';
+import {
+  captureRealVideoFrameThumbnail,
+  fetchAndAutoTrimActorRealVideos,
+} from './utils/realActorVideoTrimmer';
 
 export default function App() {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
@@ -83,6 +86,7 @@ export default function App() {
   const [autoPilotStepText, setAutoPilotStepText] = useState<string>('');
   const [isFetchingArchival, setIsFetchingArchival] = useState<boolean>(false);
   const [isTrimmingRealVideos, setIsTrimmingRealVideos] = useState<boolean>(false);
+  const videoCutCycleRef = React.useRef<number>(0);
   const [triggerExportCounter, setTriggerExportCounter] = useState<number>(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [isPromptStudioOpen, setIsPromptStudioOpen] = useState<boolean>(false);
@@ -242,8 +246,11 @@ export default function App() {
       settings.projectTitle.split('—')[0].trim() ||
       'Will Sampson';
 
+    const currentCycle = targetCurrentSceneOnly ? videoCutCycleRef.current : videoCutCycleRef.current++;
     setIsTrimmingRealVideos(true);
-    setStatusBanner(`⏳ Đang tìm, tải và cắt tự động ${targetCurrentSceneOnly ? 1 : desiredCount} đoạn Video Thật của diễn viên "${rawTopic}"...`);
+    setStatusBanner(
+      `⏳ Đang tìm, tải và cắt tự động ${targetCurrentSceneOnly ? 1 : desiredCount} đoạn Video Thật của diễn viên "${rawTopic}"...`
+    );
 
     try {
       const countToFetch = targetCurrentSceneOnly ? 1 : Math.max(2, Math.min(4, desiredCount));
@@ -251,12 +258,13 @@ export default function App() {
         rawTopic,
         scenes,
         countToFetch,
-        (msg) => setStatusBanner(`⏳ ${msg}`)
+        (msg) => setStatusBanner(`⏳ ${msg}`),
+        currentCycle
       );
 
       const newVaultItems: VaultItem[] = trimmedCuts.map((cut, i) => ({
         id: cut.id,
-        name: `🎬 Video Thật Đã Cắt #${i + 1} (${cut.trimStartSec}s→${cut.trimEndSec}s): ${cut.title}`,
+        name: `✂️ Video Thật Đã Cắt #${i + 1} (${cut.trimStartSec}s→${cut.trimEndSec}s): ${cut.title}`,
         type: 'video',
         url: cut.videoUrl,
         thumbnailUrl: cut.thumbnailUrl,
@@ -274,9 +282,15 @@ export default function App() {
       // Choose target scenes to insert the trimmed real videos into, while keeping reference photos + Grok/Kling prompts for all other video scenes!
       const nextScenes = [...scenes];
       const assignedSceneNumbers: string[] = [];
+      const updatedSceneIndices: number[] = [];
       let grokKlingPromptScenesCount = 0;
 
-      if (targetCurrentSceneOnly && activeScene && activeScene.sceneType !== 'outro' && activeScene.sceneType !== 'quote') {
+      if (
+        targetCurrentSceneOnly &&
+        activeScene &&
+        activeScene.sceneType !== 'outro' &&
+        activeScene.sceneType !== 'quote'
+      ) {
         const sIdx = nextScenes.findIndex((s) => s.id === activeScene.id);
         if (sIdx >= 0) {
           const sc = nextScenes[sIdx];
@@ -296,6 +310,7 @@ export default function App() {
           if (trimmedCuts.length > 0 && newVaultItems.length > 0) {
             const cut = trimmedCuts[0];
             const vItem = newVaultItems[0];
+            const trimEnd = cut.trimStartSec + scDur;
             nextScenes[sIdx] = {
               ...sc,
               sceneType: 'video',
@@ -303,16 +318,20 @@ export default function App() {
               mediaUrl: vItem.url,
               mediaKind: 'video',
               videoTrimStartSec: cut.trimStartSec,
-              videoTrimEndSec: cut.trimStartSec + scDur,
+              videoTrimEndSec: trimEnd,
+              characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
               hasRealPhoto: true,
-              realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`,
+              realPhotoTitle: `✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s · ${cut.title}`,
               imagePrompt: klingPack.klingImagePrompt,
               videoMotionPrompt: klingPack.klingVideoPrompt,
               klingStandardPrompt: klingPack.combinedBlock,
               frameStyle: 'full-bleed',
               showBottomSubtitles: true,
             };
-            assignedSceneNumbers.push(`#${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`);
+            updatedSceneIndices.push(sIdx);
+            assignedSceneNumbers.push(
+              `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
+            );
           } else {
             // No real video found for this scene -> provide real reference photo + Grok / Kling AI prompt as requested!
             const refPhoto = verifiedPhotos[0]?.dataUrl || sc.characterRefPhotoUrl || sc.mediaUrl;
@@ -323,7 +342,10 @@ export default function App() {
               mediaKind: 'image',
               characterRefPhotoUrl: refPhoto,
               hasRealPhoto: Boolean(verifiedPhotos[0]?.dataUrl || sc.hasRealPhoto),
-              realPhotoTitle: verifiedPhotos[0]?.title || sc.realPhotoTitle || `${rawTopic} (Ảnh Gốc Tạo Video Grok / Kling)`,
+              realPhotoTitle:
+                verifiedPhotos[0]?.title ||
+                sc.realPhotoTitle ||
+                `${rawTopic} (Ảnh Gốc Tạo Video Grok / Kling)`,
               imagePrompt: klingPack.klingImagePrompt,
               videoMotionPrompt: klingPack.klingVideoPrompt,
               klingStandardPrompt: klingPack.combinedBlock,
@@ -334,28 +356,19 @@ export default function App() {
           }
         }
       } else {
-        // Pick up to `trimmedCuts.length` spread-out 'video' scenes (Opening #01, Mid-story, and Climax) for the real videos
+        // Pick `trimmedCuts.length` 'video' scenes starting with the first visible video scenes (#01, #02, #05) on click 1,
+        // and cycling through subsequent video scenes on repeat clicks so the user sees immediate changes right in front of them.
         const videoSceneIndices = nextScenes
           .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
           .filter((idx) => idx >= 0);
 
         const selectedTargetIndices: number[] = [];
-        if (trimmedCuts.length > 0) {
-          if (videoSceneIndices.length <= trimmedCuts.length) {
-            selectedTargetIndices.push(...videoSceneIndices);
-          } else {
-            for (let k = 0; k < trimmedCuts.length; k++) {
-              const pickPos = Math.min(
-                videoSceneIndices.length - 1,
-                Math.floor((k * videoSceneIndices.length) / trimmedCuts.length)
-              );
-              const targetIdx = videoSceneIndices[pickPos];
-              if (!selectedTargetIndices.includes(targetIdx)) {
-                selectedTargetIndices.push(targetIdx);
-              } else {
-                const fallbackIdx = videoSceneIndices.find((ci) => !selectedTargetIndices.includes(ci));
-                if (fallbackIdx !== undefined) selectedTargetIndices.push(fallbackIdx);
-              }
+        if (trimmedCuts.length > 0 && videoSceneIndices.length > 0) {
+          const startPos = (currentCycle * trimmedCuts.length) % videoSceneIndices.length;
+          for (let k = 0; k < Math.min(trimmedCuts.length, videoSceneIndices.length); k++) {
+            const targetIdx = videoSceneIndices[(startPos + k) % videoSceneIndices.length];
+            if (!selectedTargetIndices.includes(targetIdx)) {
+              selectedTargetIndices.push(targetIdx);
             }
           }
         }
@@ -376,11 +389,13 @@ export default function App() {
             mediaKind: 'video',
             videoTrimStartSec: cut.trimStartSec,
             videoTrimEndSec: trimEnd,
+            characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
             hasRealPhoto: true,
-            realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s)`,
+            realPhotoTitle: `✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s · ${cut.title}`,
             frameStyle: 'full-bleed',
             showBottomSubtitles: true,
           };
+          updatedSceneIndices.push(sceneIdx);
           assignedSceneNumbers.push(
             `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
           );
@@ -405,7 +420,8 @@ export default function App() {
             ratio: settings.aspectRatio,
           });
 
-          const fallbackPhoto = verifiedPhotos[photoFallbackIdx % Math.max(1, verifiedPhotos.length)];
+          const fallbackPhoto =
+            verifiedPhotos[photoFallbackIdx % Math.max(1, verifiedPhotos.length)];
           if (fallbackPhoto) photoFallbackIdx++;
           const effectivePhotoUrl =
             (sc.hasRealPhoto && sc.mediaUrl) ||
@@ -417,7 +433,8 @@ export default function App() {
             ...sc,
             mediaUrl: effectivePhotoUrl,
             mediaKind: 'image',
-            characterRefPhotoUrl: fallbackPhoto?.dataUrl || sc.characterRefPhotoUrl || effectivePhotoUrl,
+            characterRefPhotoUrl:
+              fallbackPhoto?.dataUrl || sc.characterRefPhotoUrl || effectivePhotoUrl,
             hasRealPhoto: Boolean(sc.hasRealPhoto || fallbackPhoto?.dataUrl),
             realPhotoTitle:
               sc.realPhotoTitle ||
@@ -435,11 +452,47 @@ export default function App() {
       }
 
       setScenes(nextScenes);
+
+      // Jump playhead to the first inserted real video scene and start playing so the user sees it immediately
+      if (updatedSceneIndices.length > 0) {
+        const firstIdx = updatedSceneIndices[0];
+        const firstScene = nextScenes[firstIdx];
+        if (firstScene) {
+          const jumpSec = nextScenes
+            .slice(0, firstIdx)
+            .reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0);
+          setActiveSceneId(firstScene.id);
+          setCurrentTimeSec(jumpSec);
+          setIsPlaying(true);
+        }
+
+        // Capture actual cropped movie frames at trimStartSec in background to update card thumbnails
+        updatedSceneIndices.forEach((sceneIdx, cutIdx) => {
+          const cut = trimmedCuts[cutIdx];
+          const vItem = newVaultItems[cutIdx];
+          const targetSceneId = nextScenes[sceneIdx]?.id;
+          if (!cut || !vItem || !targetSceneId) return;
+          captureRealVideoFrameThumbnail(cut.videoUrl, cut.trimStartSec).then((frameDataUrl) => {
+            if (!frameDataUrl) return;
+            setVaultItems((prev) =>
+              prev.map((item) =>
+                item.id === vItem.id ? { ...item, thumbnailUrl: frameDataUrl } : item
+              )
+            );
+            setScenes((prev) =>
+              prev.map((s) =>
+                s.id === targetSceneId ? { ...s, characterRefPhotoUrl: frameDataUrl } : s
+              )
+            );
+          });
+        });
+      }
+
       if (assignedSceneNumbers.length > 0) {
         setStatusBanner(
-          `🎬 Đã tự lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thật vào ${assignedSceneNumbers.join(', ')}${
+          `🎬 Đã tự lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thật vào ${assignedSceneNumbers.join(', ')} (đang phát ngay trên màn hình)${
             grokKlingPromptScenesCount > 0
-              ? ` — ${grokKlingPromptScenesCount} đoạn video còn lại đã cấp sẵn Ảnh Gốc & Prompt để bạn tạo video từ Grok hoặc Kling AI!`
+              ? ` — ${grokKlingPromptScenesCount} đoạn video còn lại giữ nguyên Ảnh Gốc & Prompt để bạn vẽ video từ Grok hoặc Kling AI!`
               : '!'
           }`
         );
@@ -2566,6 +2619,7 @@ export default function App() {
         <div className="col-span-4 lg:col-span-3 h-full min-h-0 overflow-hidden">
           <SceneInspector
             scenes={scenes}
+            vaultItems={vaultItems}
             activeScene={activeScene}
             onUpdateScene={handleUpdateScene}
             onAddScene={handleAddScene}

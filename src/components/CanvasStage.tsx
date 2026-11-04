@@ -169,7 +169,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     });
 
     scenes.forEach((sc) => {
+      if (sc.characterRefPhotoUrl) {
+        imageUrls.add(sc.characterRefPhotoUrl);
+      }
       const vaultItem = vaultItems.find((v) => v.id === sc.mediaId);
+      if (vaultItem?.thumbnailUrl) {
+        imageUrls.add(vaultItem.thumbnailUrl);
+      }
       const url = vaultItem?.url || sc.mediaUrl;
       const kind = vaultItem?.type || sc.mediaKind;
       if (!url) return;
@@ -197,6 +203,32 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         vid.muted = true;
         vid.loop = true;
         vid.preload = 'auto';
+        const matchingScene = scenes.find((s) => {
+          const vItem = vaultItems.find((v) => v.id === s.mediaId);
+          return (vItem?.url || s.mediaUrl) === url;
+        });
+        const initialTrimStart =
+          typeof matchingScene?.videoTrimStartSec === 'number' && matchingScene.videoTrimStartSec > 0
+            ? matchingScene.videoTrimStartSec
+            : url.includes('/api/archival/video-stream')
+            ? 18
+            : 0;
+        if (initialTrimStart > 0) {
+          vid.addEventListener(
+            'loadedmetadata',
+            () => {
+              const dur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : 9999;
+              if (dur > initialTrimStart + 2 && vid.currentTime < initialTrimStart) {
+                try {
+                  vid.currentTime = initialTrimStart;
+                } catch {
+                  // ignore seek error
+                }
+              }
+            },
+            { once: true }
+          );
+        }
         vid.src = url;
         vid.load();
         videoPoolRef.current.set(url, vid);
@@ -851,6 +883,26 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             extraBlurPx
           );
           drawn = true;
+        } else {
+          // While the HTTP 206 video stream is buffering its trimmed byte range, draw the scene's thumbnail or reference photo so there is zero black screen
+          const vaultItem = vaultItems.find((v) => v.id === scene.mediaId);
+          const fallbackThumbUrl = vaultItem?.thumbnailUrl || scene.characterRefPhotoUrl;
+          const fallbackImg = fallbackThumbUrl ? imageCacheRef.current.get(fallbackThumbUrl) : undefined;
+          if (fallbackImg && fallbackImg.complete && fallbackImg.naturalWidth > 0) {
+            drawMediaWithKenBurns(
+              ctx,
+              fallbackImg,
+              fallbackImg.naturalWidth,
+              fallbackImg.naturalHeight,
+              progress,
+              scene.motionEffect,
+              scene.colorFilter,
+              extraScale,
+              extraOffsetX,
+              extraBlurPx
+            );
+            drawn = true;
+          }
         }
       }
 
@@ -861,11 +913,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvasW, canvasH);
 
-        ctx.fillStyle = '#F59E0B';
+        ctx.fillStyle = mediaKind === 'video' && mediaUrl ? '#38BDF8' : '#F59E0B';
         ctx.font = `700 ${Math.round(canvasW * 0.032)}px "Plus Jakarta Sans", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(
-          scene.sceneType === 'video'
+          mediaKind === 'video' && mediaUrl
+            ? '🎬 ĐANG TẢI ĐOẠN CẮT VIDEO THẬT...'
+            : scene.sceneType === 'video'
             ? '🎥 ĐOẠN NÀY CẦN VIDEO (HOẶC VẼ ẢNH TRƯỚC)'
             : '🖼️ ĐOẠN NÀY CẦN ẢNH TĨNH FULL KHUNG',
           canvasW / 2,
@@ -874,7 +928,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
         ctx.fillStyle = '#94A3B8';
         ctx.font = `500 ${Math.round(canvasW * 0.024)}px "Plus Jakarta Sans", sans-serif`;
-        const hint = (scene.visualPrompt || scene.title).slice(0, 65);
+        const hint = (scene.realPhotoTitle || scene.visualPrompt || scene.title).slice(0, 65);
         ctx.fillText(hint, canvasW / 2, canvasH * 0.48);
       }
 
