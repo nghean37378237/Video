@@ -81,6 +81,12 @@ interface SceneInspectorProps {
   generatingImageSceneId?: string | null;
   onUploadFileForScene?: (sceneId: string, file: File) => void;
   onTriggerExport?: () => void;
+  onFetchAndInsertTrimmedActorVideos?: (
+    characterQuery?: string,
+    desiredCount?: number,
+    targetCurrentSceneOnly?: boolean
+  ) => Promise<void>;
+  isTrimmingRealVideos?: boolean;
 }
 
 export const SceneInspector: React.FC<SceneInspectorProps> = ({
@@ -99,6 +105,8 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   generatingImageSceneId,
   onUploadFileForScene,
   onTriggerExport,
+  onFetchAndInsertTrimmedActorVideos,
+  isTrimmingRealVideos = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'scene' | 'summary' | 'style'>('scene');
   const [isGeneratingSceneTTS, setIsGeneratingSceneTTS] = useState(false);
@@ -750,6 +758,50 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                         ✂️ {realGuide.clipInstructionVi}
                       </p>
                     </div>
+
+                    {onFetchAndInsertTrimmedActorVideos && (
+                      <div className="grid grid-cols-1 gap-1.5">
+                        <button
+                          type="button"
+                          disabled={isTrimmingRealVideos}
+                          onClick={() =>
+                            onFetchAndInsertTrimmedActorVideos(
+                              settings.projectTitle.split('—')[0].trim(),
+                              3,
+                              false
+                            )
+                          }
+                          className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded transition-colors"
+                        >
+                          {isTrimmingRealVideos ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Đang tự lấy, cắt &amp; chèn Video Thật...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Film className="w-3.5 h-3.5" />
+                              <span>⚡ Tự Lấy, Cắt &amp; Chèn 3 Video Thật Vào 3 Cảnh (1-Click)</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isTrimmingRealVideos}
+                          onClick={() =>
+                            onFetchAndInsertTrimmedActorVideos(
+                              settings.projectTitle.split('—')[0].trim(),
+                              1,
+                              true
+                            )
+                          }
+                          className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-200 border border-sky-500/40 rounded transition-colors"
+                        >
+                          ✂️ Lấy &amp; Cắt 1 Video Thật Chèn Riêng Vào Cảnh #{String(activeScene.order).padStart(2, '0')} Này
+                        </button>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-1.5">
                       <a

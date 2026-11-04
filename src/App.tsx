@@ -52,6 +52,7 @@ import { MediaVaultPanel } from './components/MediaVaultPanel';
 import { SceneInspector } from './components/SceneInspector';
 import { TimelineStrip } from './components/TimelineStrip';
 import { ScriptPromptStudioModal } from './components/ScriptPromptStudioModal';
+import { fetchAndAutoTrimActorRealVideos } from './utils/realActorVideoTrimmer';
 
 export default function App() {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
@@ -81,6 +82,7 @@ export default function App() {
   const [isRunningAutoPilot, setIsRunningAutoPilot] = useState<boolean>(false);
   const [autoPilotStepText, setAutoPilotStepText] = useState<string>('');
   const [isFetchingArchival, setIsFetchingArchival] = useState<boolean>(false);
+  const [isTrimmingRealVideos, setIsTrimmingRealVideos] = useState<boolean>(false);
   const [triggerExportCounter, setTriggerExportCounter] = useState<number>(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [isPromptStudioOpen, setIsPromptStudioOpen] = useState<boolean>(false);
@@ -223,6 +225,144 @@ export default function App() {
       }
     } finally {
       setIsFetchingArchival(false);
+    }
+  };
+
+  // 1-Click: Fetch 2-3 Real Actor Videos, Automatically Cut/Trim (trimStartSec -> trimEndSec), and Insert into Timeline Scenes!
+  const handleFetchAndInsertTrimmedActorVideos = async (
+    characterQuery?: string,
+    desiredCount = 3,
+    targetCurrentSceneOnly = false
+  ) => {
+    if (isTrimmingRealVideos) return;
+    const rawTopic =
+      characterQuery?.trim() ||
+      loadSavedAudioPreferences().storyTopic ||
+      getCharacterNameForPreset(settings.activePresetId) ||
+      settings.projectTitle.split('—')[0].trim() ||
+      'Will Sampson';
+
+    setIsTrimmingRealVideos(true);
+    setStatusBanner(`⏳ Đang tìm, tải và cắt tự động ${targetCurrentSceneOnly ? 1 : desiredCount} đoạn Video Thật của diễn viên "${rawTopic}"...`);
+
+    try {
+      const countToFetch = targetCurrentSceneOnly ? 1 : Math.max(2, Math.min(4, desiredCount));
+      const trimmedCuts = await fetchAndAutoTrimActorRealVideos(
+        rawTopic,
+        scenes,
+        countToFetch,
+        (msg) => setStatusBanner(`⏳ ${msg}`)
+      );
+
+      if (trimmedCuts.length === 0) {
+        setStatusBanner(`Không tìm thấy nguồn video cho "${rawTopic}". Bạn có thể tải file MP4 từ máy vào cảnh.`);
+        return;
+      }
+
+      const newVaultItems: VaultItem[] = trimmedCuts.map((cut, i) => ({
+        id: cut.id,
+        name: `🎬 Video Thật Đã Cắt #${i + 1} (${cut.trimStartSec}s→${cut.trimEndSec}s): ${cut.title}`,
+        type: 'video',
+        url: cut.videoUrl,
+        thumbnailUrl: cut.thumbnailUrl,
+        width: cut.width,
+        height: cut.height,
+        durationSec: cut.durationSec,
+        sourceTag: 'uploaded',
+        createdAt: cut.sourceLabel,
+      }));
+
+      setVaultItems((prev) => [...newVaultItems, ...prev]);
+
+      // Choose target scenes to insert the trimmed videos into (preserving 100% of script narration, subtitles & voiceover!)
+      const nextScenes = [...scenes];
+      const assignedSceneNumbers: string[] = [];
+
+      if (targetCurrentSceneOnly && activeScene && activeScene.sceneType !== 'outro' && activeScene.sceneType !== 'quote') {
+        const cut = trimmedCuts[0];
+        const vItem = newVaultItems[0];
+        const sIdx = nextScenes.findIndex((s) => s.id === activeScene.id);
+        if (sIdx >= 0) {
+          const scDur = Math.max(5, Math.round(nextScenes[sIdx].durationSec || 8));
+          nextScenes[sIdx] = {
+            ...nextScenes[sIdx],
+            sceneType: 'video',
+            mediaId: vItem.id,
+            mediaUrl: vItem.url,
+            mediaKind: 'video',
+            videoTrimStartSec: cut.trimStartSec,
+            videoTrimEndSec: cut.trimStartSec + scDur,
+            hasRealPhoto: true,
+            realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`,
+            frameStyle: 'full-bleed',
+            showBottomSubtitles: true,
+          };
+          assignedSceneNumbers.push(`#${String(nextScenes[sIdx].order).padStart(2, '0')} (${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`);
+        }
+      } else {
+        // Pick up to `trimmedCuts.length` spread-out visual scenes (preferring 'video' scenes: Opening #01, Mid-story, and Climax)
+        const videoSceneIndices = nextScenes
+          .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
+          .filter((idx) => idx >= 0);
+        const otherVisualIndices = nextScenes
+          .map((s, idx) => (s.sceneType === 'image' ? idx : -1))
+          .filter((idx) => idx >= 0);
+
+        const candidateIndices = [...videoSceneIndices, ...otherVisualIndices];
+        const selectedTargetIndices: number[] = [];
+
+        if (candidateIndices.length <= trimmedCuts.length) {
+          selectedTargetIndices.push(...candidateIndices);
+        } else {
+          // Distribute evenly across key beats (e.g. Scene #01, middle video scene, climax video scene)
+          for (let k = 0; k < trimmedCuts.length; k++) {
+            const pickPos = Math.min(
+              candidateIndices.length - 1,
+              Math.floor((k * candidateIndices.length) / trimmedCuts.length)
+            );
+            const targetIdx = candidateIndices[pickPos];
+            if (!selectedTargetIndices.includes(targetIdx)) {
+              selectedTargetIndices.push(targetIdx);
+            } else {
+              const fallbackIdx = candidateIndices.find((ci) => !selectedTargetIndices.includes(ci));
+              if (fallbackIdx !== undefined) selectedTargetIndices.push(fallbackIdx);
+            }
+          }
+        }
+
+        selectedTargetIndices.forEach((sceneIdx, cutIdx) => {
+          const cut = trimmedCuts[cutIdx];
+          const vItem = newVaultItems[cutIdx];
+          if (!cut || !vItem || sceneIdx < 0 || sceneIdx >= nextScenes.length) return;
+          const sc = nextScenes[sceneIdx];
+          const scDur = Math.max(5, Math.round(sc.durationSec || 8));
+          const trimEnd = cut.trimStartSec + scDur;
+
+          nextScenes[sceneIdx] = {
+            ...sc,
+            sceneType: 'video',
+            mediaId: vItem.id,
+            mediaUrl: vItem.url,
+            mediaKind: 'video',
+            videoTrimStartSec: cut.trimStartSec,
+            videoTrimEndSec: trimEnd,
+            hasRealPhoto: true,
+            realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s)`,
+            frameStyle: 'full-bleed',
+            showBottomSubtitles: true,
+          };
+          assignedSceneNumbers.push(
+            `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
+          );
+        });
+      }
+
+      setScenes(nextScenes);
+      setStatusBanner(
+        `🎬 Đã tự động lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thực Tế của "${rawTopic}" vào ${assignedSceneNumbers.join(', ')} (Giữ nguyên 100% lời đọc & phụ đề)!`
+      );
+    } finally {
+      setIsTrimmingRealVideos(false);
     }
   };
 
@@ -952,7 +1092,18 @@ export default function App() {
             mime.includes('mp4') ||
             mime.includes('ogv')
           ) {
-            if (info.url && info.thumburl) {
+            // Ban radar/ship/station junk and require full actor name match in browser fallback
+            const lowerTitle = cleanTitle.toLowerCase();
+            const topicWords = cleanTopic
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((w) => w.length >= 3);
+            const hasFullActorName =
+              topicWords.length > 0 && topicWords.every((w) => lowerTitle.includes(w));
+            const isJunk = /\b(uss|hms|radar|destroyer|ship|station|county|bridge|pronunciation|spoken)\b/i.test(
+              lowerTitle
+            );
+            if (info.url && info.thumburl && hasFullActorName && !isJunk) {
               allPhotos.push({
                 title: cleanTitle,
                 dataUrl: info.thumburl,
@@ -1115,19 +1266,25 @@ export default function App() {
           matchedPhotosCount++;
         }
 
+        const scDur = Math.max(5, Math.round(sc.durationSec || 8));
+        const trimStart = isRealVideo ? Number((matched as any).trimStartSec ?? 8) : 0;
+        const trimEnd = isRealVideo ? trimStart + scDur : undefined;
+
         const vaultItem: VaultItem = {
           id: `real-media-${Date.now()}-${idx}`,
           name: isRealVideo
-            ? `🎬 Video Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`
+            ? `🎬 Video Thật Cảnh #${String(sc.order).padStart(2, '0')} (✂️ ${trimStart}s→${trimEnd}s): ${matched.title}`
             : `📸 Ảnh Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`,
           type: isRealVideo ? 'video' : 'image',
           url: isRealVideo ? matched.videoUrl! : matched.dataUrl,
           thumbnailUrl: matched.dataUrl,
           width: matched.width,
           height: matched.height,
-          durationSec: Math.ceil(sc.durationSec || 7),
+          durationSec: scDur,
           sourceTag: 'uploaded',
-          createdAt: isRealVideo ? 'Video thật chuẩn nhân vật' : 'Ảnh thật chuẩn nhân vật',
+          createdAt: isRealVideo
+            ? `✂️ Video thật đã cắt ${trimStart}s→${trimEnd}s`
+            : 'Ảnh thật chuẩn nhân vật',
         };
         newVaultItems.push(vaultItem);
 
@@ -1136,8 +1293,12 @@ export default function App() {
           mediaId: vaultItem.id,
           mediaUrl: vaultItem.url,
           mediaKind: (isRealVideo ? 'video' : 'image') as 'video' | 'image',
+          videoTrimStartSec: isRealVideo ? trimStart : sc.videoTrimStartSec,
+          videoTrimEndSec: isRealVideo ? trimEnd : sc.videoTrimEndSec,
           hasRealPhoto: true,
-          realPhotoTitle: matched.title,
+          realPhotoTitle: isRealVideo
+            ? `${matched.title} (✂️ Cắt ${trimStart}s→${trimEnd}s)`
+            : matched.title,
           characterRefPhotoUrl: primaryCharacterPhotoUrl || matched.dataUrl,
           imagePrompt: klingPack.klingImagePrompt,
           videoMotionPrompt: klingPack.klingVideoPrompt,
@@ -2286,6 +2447,8 @@ export default function App() {
             autoPilotStepText={autoPilotStepText}
             onFetchArchivalPhotos={handleFetchArchivalPhotos}
             isFetchingArchival={isFetchingArchival}
+            onFetchAndInsertTrimmedActorVideos={handleFetchAndInsertTrimmedActorVideos}
+            isTrimmingRealVideos={isTrimmingRealVideos}
             activePresetId={settings.activePresetId}
             onSelectPreset={handleSelectPreset}
             onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
@@ -2329,6 +2492,8 @@ export default function App() {
             generatingImageSceneId={generatingImageSceneId}
             onUploadFileForScene={handleUploadFileForScene}
             onTriggerExport={() => setTriggerExportCounter((c) => c + 1)}
+            onFetchAndInsertTrimmedActorVideos={handleFetchAndInsertTrimmedActorVideos}
+            isTrimmingRealVideos={isTrimmingRealVideos}
           />
         </div>
       </div>
@@ -2350,6 +2515,8 @@ export default function App() {
         onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
         onUploadFileForScene={handleUploadFileForScene}
         onSmartBatchUploadFiles={handleSmartBatchUploadFiles}
+        onFetchAndInsertTrimmedActorVideos={handleFetchAndInsertTrimmedActorVideos}
+        isTrimmingRealVideos={isTrimmingRealVideos}
       />
 
       {/* Full Script Breakdown, Prompt Generator & Intermediary Proxy API Studio Modal */}

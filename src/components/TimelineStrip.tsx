@@ -30,6 +30,12 @@ interface TimelineStripProps {
   onOpenPromptStudio: () => void;
   onUploadFileForScene?: (sceneId: string, file: File) => void;
   onSmartBatchUploadFiles?: (files: FileList) => void;
+  onFetchAndInsertTrimmedActorVideos?: (
+    characterQuery?: string,
+    desiredCount?: number,
+    targetCurrentSceneOnly?: boolean
+  ) => Promise<void>;
+  isTrimmingRealVideos?: boolean;
 }
 
 const ACCEPTED_MEDIA_INPUT =
@@ -48,6 +54,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   onOpenPromptStudio,
   onUploadFileForScene,
   onSmartBatchUploadFiles,
+  onFetchAndInsertTrimmedActorVideos,
+  isTrimmingRealVideos = false,
 }) => {
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
   const [swapSourceSceneId, setSwapSourceSceneId] = useState<string | null>(null);
@@ -148,6 +156,23 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               <ArrowLeftRight className="w-3.5 h-3.5" />
               <span>
                 Đang chọn đảo Cảnh #{String(swapSourceIdx + 1).padStart(2, '0')} (Bấm cảnh đích hoặc Hủy)
+              </span>
+            </button>
+          )}
+
+          {onFetchAndInsertTrimmedActorVideos && (
+            <button
+              type="button"
+              disabled={isTrimmingRealVideos}
+              onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 3, false)}
+              title="Tự động tìm 3 đoạn video thực tế của diễn viên, cắt sẵn đoạn hay nhất và chèn thẳng vào 3 cảnh trên dòng thời gian"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+            >
+              <Film className="w-3.5 h-3.5 text-sky-400" />
+              <span>
+                {isTrimmingRealVideos
+                  ? '⏳ Đang lấy & cắt 3 Video Thật...'
+                  : '🎬 Tự Lấy, Cắt & Chèn 3 Video Thật'}
               </span>
             </button>
           )}

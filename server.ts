@@ -1427,7 +1427,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
   function doesTitleMatchSubjectIdentity(
     rawTitleOrUrl: string,
-    subjectTokens: string[]
+    subjectTokens: string[],
+    strictFullName = false
   ): boolean {
     if (subjectTokens.length === 0) return true;
     const normalized = rawTitleOrUrl
@@ -1436,18 +1437,25 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[_-]/g, " ");
 
+    // Ban military ships, radars, counties, streets, or infrastructure that share a surname
+    if (
+      /\b(uss|hms|radar|destroyer|battleship|submarine|frigate|cruiser|aircraft|airport|station|county|township|highway|bridge|freeway)\b/i.test(
+        normalized
+      )
+    ) {
+      return false;
+    }
+
     if (subjectTokens.length === 1) {
       return normalized.includes(subjectTokens[0]);
     }
 
-    // Require the primary surname (last token) OR both first and last name tokens to match
     const firstToken = subjectTokens[0];
     const lastToken = subjectTokens[subjectTokens.length - 1];
     if (normalized.includes(firstToken) && normalized.includes(lastToken)) {
       return true;
     }
-    // If surname is distinctive (>= 4 chars), accept surname match
-    if (lastToken.length >= 4 && normalized.includes(lastToken)) {
+    if (!strictFullName && lastToken.length >= 6 && normalized.includes(lastToken)) {
       return true;
     }
     return false;
@@ -1800,7 +1808,50 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     return resolved;
   }
 
-  // Helper: Search Wikimedia Commons for STRICTLY VERIFIED real archival video clips (.webm / .mp4 / .ogv) of the subject
+  const ACTOR_ICONIC_FILM_QUERIES: Record<string, string[]> = {
+    "will sampson": [
+      "Will Sampson",
+      "One Flew Over the Cuckoo's Nest trailer",
+      "The Outlaw Josey Wales trailer",
+    ],
+    "clint eastwood": [
+      "Clint Eastwood",
+      "A Fistful of Dollars trailer",
+      "The Good the Bad and the Ugly trailer",
+      "For a Few Dollars More trailer",
+    ],
+    "john wayne": [
+      "John Wayne",
+      "McLintock John Wayne",
+      "Stagecoach John Wayne",
+      "Angel and the Badman",
+    ],
+    "lorne greene": ["Lorne Greene", "Bonanza Lorne Greene", "Bonanza"],
+    "clayton moore": ["Clayton Moore", "The Lone Ranger Clayton Moore", "Lone Ranger"],
+    "yul brynner": [
+      "Yul Brynner",
+      "The Magnificent Seven trailer",
+      "The Ten Commandments trailer",
+    ],
+    "steve mcqueen": [
+      "Steve McQueen",
+      "Wanted Dead or Alive Steve McQueen",
+      "Bullitt trailer",
+    ],
+    "bruce lee": ["Bruce Lee", "Enter the Dragon trailer", "Fist of Fury trailer"],
+    "elvis presley": ["Elvis Presley", "Jailhouse Rock trailer", "Love Me Tender"],
+    "audrey hepburn": ["Audrey Hepburn", "Charade 1963", "Roman Holiday trailer"],
+    "marlon brando": ["Marlon Brando", "One-Eyed Jacks", "On the Waterfront trailer"],
+    "gary cooper": ["Gary Cooper", "Meet John Doe", "High Noon trailer"],
+    "james stewart": ["James Stewart", "Rope trailer", "Rear Window trailer"],
+    "cary grant": ["Cary Grant", "Charade 1963", "His Girl Friday"],
+    "humphrey bogart": ["Humphrey Bogart", "Casablanca trailer", "Beat the Devil"],
+    "charles bronson": ["Charles Bronson", "Once Upon a Time in the West trailer"],
+    "lee van cleef": ["Lee Van Cleef", "Death Rides a Horse", "For a Few Dollars More"],
+    "michael landon": ["Michael Landon", "Bonanza Michael Landon"],
+  };
+
+  // Helper: Search Wikimedia Commons + Internet Archive for STRICTLY VERIFIED real archival video clips (.webm / .mp4 / .ogv) of the actor & auto-trim them into 2-3 highlight cuts
   async function searchRealArchivalVideos(
     rawQuery: string,
     limit: number,
@@ -1815,6 +1866,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       width: number;
       height: number;
       year: number | null;
+      trimStartSec: number;
+      trimEndSec: number;
       mediaKind: "video";
     }[]
   > {
@@ -1831,9 +1884,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     const subjectTokens = extractSubjectIdentityTokens(subjectAnchor);
     if (subjectTokens.length === 0) return [];
     const subjectFullPhrase = subjectTokens.slice(0, 3).join(" ");
+    const lowerSubject = subjectFullPhrase.toLowerCase();
 
     const bannedVideoWords =
-      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken)\b/i;
+      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken|uss|hms|radar|destroyer|ship|aircraft|airport|station|county|highway|bridge)\b/i;
 
     const candidates: {
       title: string;
@@ -1842,89 +1896,234 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       width: number;
       height: number;
       year: number | null;
+      trimStartSec?: number;
+      trimEndSec?: number;
     }[] = [];
 
-    try {
-      const commonsVideoUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        `filetype:video ${subjectFullPhrase}`
-      )}&gsrnamespace=6&gsrlimit=${Math.min(
-        20,
-        limit * 4 + 4
-      )}&prop=imageinfo&iiprop=url|dimensions|mime|size&iiurlwidth=860&format=json`;
+    const searchPhrases = ACTOR_ICONIC_FILM_QUERIES[lowerSubject] || [subjectFullPhrase];
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-      const wikiRes = await fetch(commonsVideoUrl, {
-        headers: { "User-Agent": WIKI_USER_AGENT },
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+    // 1. Search Wikimedia Commons video files
+    for (const phrase of searchPhrases.slice(0, 2)) {
+      if (candidates.length >= limit) break;
+      try {
+        const commonsVideoUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+          `filetype:video ${phrase}`
+        )}&gsrnamespace=6&gsrlimit=${Math.min(
+          20,
+          limit * 4 + 4
+        )}&prop=imageinfo&iiprop=url|dimensions|mime|size&iiurlwidth=860&format=json`;
 
-      if (wikiRes.ok) {
-        const wikiData: any = await wikiRes.json();
-        const pages = wikiData?.query?.pages
-          ? Object.values(wikiData.query.pages)
-          : [];
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3200);
+        const wikiRes = await fetch(commonsVideoUrl, {
+          headers: { "User-Agent": WIKI_USER_AGENT },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-        for (const page of pages as any[]) {
-          if (candidates.length >= limit) break;
-          const info = page?.imageinfo?.[0];
-          const videoUrl: string | undefined = info?.url;
-          const thumbUrl: string | undefined = info?.thumburl;
-          const mime = String(info?.mime || "").toLowerCase();
-          const rawTitle = String(page?.title || "");
+        if (wikiRes.ok) {
+          const wikiData: any = await wikiRes.json();
+          const pages = wikiData?.query?.pages
+            ? Object.values(wikiData.query.pages)
+            : [];
 
-          const cleanTitle = rawTitle
-            .replace(/^File:/i, "")
-            .replace(/\.[^/.]+$/, "")
-            .replace(/_/g, " ");
-          const titleKey = normalizeTitleKey(cleanTitle);
+          for (const page of pages as any[]) {
+            if (candidates.length >= limit) break;
+            const info = page?.imageinfo?.[0];
+            const videoUrl: string | undefined = info?.url;
+            const thumbUrl: string | undefined = info?.thumburl;
+            const mime = String(info?.mime || "").toLowerCase();
+            const rawTitle = String(page?.title || "");
 
-          if (
-            !videoUrl ||
-            !thumbUrl ||
-            usedSourceUrls.has(videoUrl) ||
-            (titleKey && usedTitleKeys.has(titleKey)) ||
-            (!mime.includes("webm") &&
-              !mime.includes("mp4") &&
-              !mime.includes("ogg") &&
-              !videoUrl.endsWith(".webm") &&
-              !videoUrl.endsWith(".mp4") &&
-              !videoUrl.endsWith(".ogv")) ||
-            bannedVideoWords.test(rawTitle) ||
-            bannedVideoWords.test(cleanTitle)
-          ) {
-            continue;
+            const cleanTitle = rawTitle
+              .replace(/^File:/i, "")
+              .replace(/\.[^/.]+$/, "")
+              .replace(/_/g, " ");
+            const titleKey = normalizeTitleKey(cleanTitle);
+
+            if (
+              !videoUrl ||
+              !thumbUrl ||
+              usedSourceUrls.has(videoUrl) ||
+              (titleKey && usedTitleKeys.has(titleKey)) ||
+              (!mime.includes("webm") &&
+                !mime.includes("mp4") &&
+                !mime.includes("ogg") &&
+                !videoUrl.endsWith(".webm") &&
+                !videoUrl.endsWith(".mp4") &&
+                !videoUrl.endsWith(".ogv")) ||
+              bannedVideoWords.test(rawTitle) ||
+              bannedVideoWords.test(cleanTitle)
+            ) {
+              continue;
+            }
+
+            if ((info?.size || 0) > 65 * 1024 * 1024) continue;
+            if ((info?.width || 0) < 240 || (info?.height || 0) < 180) continue;
+
+            // Require strict full-name match OR iconic film phrase match
+            const matchesActor = doesTitleMatchSubjectIdentity(cleanTitle, subjectTokens, true);
+            const matchesFilmPhrase =
+              phrase.toLowerCase() !== lowerSubject &&
+              cleanTitle
+                .toLowerCase()
+                .includes(phrase.toLowerCase().replace(/\s+trailer$/i, "").trim());
+            if (!matchesActor && !matchesFilmPhrase) {
+              continue;
+            }
+
+            usedSourceUrls.add(videoUrl);
+            if (titleKey) usedTitleKeys.add(titleKey);
+            candidates.push({
+              title: cleanTitle.slice(0, 48),
+              videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(videoUrl)}`,
+              thumbUrl,
+              width: info.width || 720,
+              height: info.height || 540,
+              year: extractPhotoYear(cleanTitle),
+            });
           }
-
-          // Skip huge full-length movies (> 45MB) so clips load smoothly in the timeline
-          if ((info?.size || 0) > 45 * 1024 * 1024) continue;
-          if ((info?.width || 0) < 240 || (info?.height || 0) < 180) continue;
-
-          // Strictly verify that the video filename/title matches the character's identity
-          if (!doesTitleMatchSubjectIdentity(cleanTitle, subjectTokens)) {
-            continue;
-          }
-
-          usedSourceUrls.add(videoUrl);
-          if (titleKey) usedTitleKeys.add(titleKey);
-          candidates.push({
-            title: cleanTitle.slice(0, 44),
-            videoUrl,
-            thumbUrl,
-            width: info.width || 720,
-            height: info.height || 540,
-            year: extractPhotoYear(cleanTitle),
-          });
         }
+      } catch {
+        // Ignore timeout and continue to Internet Archive
       }
-    } catch {
-      // Ignore video search timeout
+    }
+
+    // 2. Search Internet Archive (archive.org) for real film clips, trailers, and television episodes of the actor
+    if (candidates.length < limit) {
+      try {
+        const iaQueries = [
+          `"${subjectFullPhrase}" AND mediatype:(movies)`,
+          ...(searchPhrases.length > 1
+            ? [`("${searchPhrases[1].replace(/\s+trailer$/i, "")}") AND mediatype:(movies)`]
+            : []),
+        ];
+
+        for (const iaQ of iaQueries) {
+          if (candidates.length >= limit) break;
+          const iaSearchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+            iaQ
+          )}&fl[]=identifier,title,year,description,creator&sort[]=downloads+desc&rows=6&page=1&output=json`;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3200);
+          const iaRes = await fetch(iaSearchUrl, {
+            headers: { "User-Agent": BROWSER_USER_AGENT },
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+
+          if (!iaRes.ok) continue;
+          const iaData: any = await iaRes.json();
+          const docs: any[] = iaData?.response?.docs || [];
+
+          for (const doc of docs.slice(0, 4)) {
+            if (candidates.length >= limit) break;
+            const identifier = String(doc?.identifier || "").trim();
+            const docTitle = String(doc?.title || identifier).trim();
+            const docDesc = String(doc?.description || "");
+            const docCreator = String(doc?.creator || "");
+            if (!identifier || bannedVideoWords.test(`${identifier} ${docTitle}`)) continue;
+
+            const combinedMeta = `${docTitle} ${docDesc} ${docCreator} ${identifier}`;
+            const matchesActor = doesTitleMatchSubjectIdentity(combinedMeta, subjectTokens, true);
+            const matchesKnownFilm = searchPhrases.some((p) =>
+              combinedMeta
+                .toLowerCase()
+                .includes(p.toLowerCase().replace(/\s+trailer$/i, "").trim())
+            );
+            if (!matchesActor && !matchesKnownFilm) continue;
+
+            try {
+              const metaCtrl = new AbortController();
+              const metaTimer = setTimeout(() => metaCtrl.abort(), 2600);
+              const metaRes = await fetch(
+                `https://archive.org/metadata/${encodeURIComponent(identifier)}/files`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: metaCtrl.signal,
+                }
+              );
+              clearTimeout(metaTimer);
+              if (!metaRes.ok) continue;
+              const metaJson: any = await metaRes.json();
+              const files: any[] = Array.isArray(metaJson?.result) ? metaJson.result : [];
+
+              // Prefer lightweight 512kb.mp4 or h.264 .mp4 under 90MB so browser seeking is instant
+              const mp4Files = files
+                .filter((f) => {
+                  const name = String(f?.name || "").toLowerCase();
+                  const size = Number(f?.size || 0);
+                  return (
+                    (name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".ogv")) &&
+                    size > 150_000 &&
+                    size < 95 * 1024 * 1024
+                  );
+                })
+                .sort((a, b) => {
+                  const aFast = String(a?.name || "").includes("512kb") ? 0 : 1;
+                  const bFast = String(b?.name || "").includes("512kb") ? 0 : 1;
+                  if (aFast !== bFast) return aFast - bFast;
+                  return Number(a?.size || 0) - Number(b?.size || 0);
+                });
+
+              if (mp4Files.length === 0) continue;
+              const chosenFile = mp4Files[0];
+              const rawMp4Url = `https://archive.org/download/${encodeURIComponent(
+                identifier
+              )}/${encodeURIComponent(chosenFile.name).replace(/%2F/g, "/")}`;
+              if (usedSourceUrls.has(rawMp4Url)) continue;
+              usedSourceUrls.add(rawMp4Url);
+
+              const thumbUrl = `https://archive.org/services/img/${encodeURIComponent(identifier)}`;
+              candidates.push({
+                title: `${docTitle.slice(0, 42)}`,
+                videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(rawMp4Url)}`,
+                thumbUrl,
+                width: Number(chosenFile.width) || 720,
+                height: Number(chosenFile.height) || 540,
+                year: extractPhotoYear(`${doc.year || ""} ${docTitle}`),
+              });
+            } catch {
+              // Continue next doc
+            }
+          }
+        }
+      } catch {
+        // Ignore IA search timeout
+      }
+    }
+
+    // 3. If 1 or 2 real archival reels/trailers were found and we want `limit` (e.g. 3) distinct trimmed scene cuts,
+    // automatically slice non-overlapping highlight windows from the found video(s)!
+    const cutWindows = [
+      { start: 8, end: 16, tag: "Cắt cảnh #1 (00:08–00:16)" },
+      { start: 22, end: 30, tag: "Cắt cảnh #2 (00:22–00:30)" },
+      { start: 38, end: 46, tag: "Cắt cảnh #3 (00:38–00:46)" },
+      { start: 54, end: 62, tag: "Cắt cảnh #4 (00:54–01:02)" },
+    ];
+
+    const expandedCandidates: typeof candidates = [];
+    if (candidates.length > 0) {
+      for (let i = 0; i < limit; i++) {
+        const base = candidates[i % candidates.length];
+        const win = cutWindows[i % cutWindows.length];
+        const isSlicedFromSameReel = i >= candidates.length;
+        expandedCandidates.push({
+          ...base,
+          title: isSlicedFromSameReel
+            ? `${base.title.slice(0, 32)} — ${win.tag}`
+            : `${base.title.slice(0, 34)} (${win.tag})`,
+          videoUrl: `${base.videoUrl}#cut=${i + 1}`,
+          trimStartSec: win.start,
+          trimEndSec: win.end,
+        });
+      }
     }
 
     const resolved = await Promise.all(
-      candidates.slice(0, limit).map(async (c) => {
+      expandedCandidates.slice(0, limit).map(async (c, idx) => {
         const dataUrl = await resolveImageToDataUrlOrDirect(c.thumbUrl);
+        const win = cutWindows[idx % cutWindows.length];
         return {
           title: c.title,
           videoUrl: c.videoUrl,
@@ -1932,6 +2131,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           width: c.width,
           height: c.height,
           year: c.year,
+          trimStartSec: c.trimStartSec ?? win.start,
+          trimEndSec: c.trimEndSec ?? win.end,
           mediaKind: "video" as const,
         };
       })
@@ -1939,6 +2140,119 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
     return resolved;
   }
+
+  // 2d. CORS & HTTP Range Video Stream Proxy for Internet Archive & Wikimedia Commons real video cuts
+  app.get("/api/archival/video-stream", async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || "").trim();
+      if (
+        !targetUrl ||
+        (!targetUrl.startsWith("https://archive.org/") &&
+          !targetUrl.includes(".archive.org/") &&
+          !targetUrl.includes("wikimedia.org/"))
+      ) {
+        res.status(400).send("Invalid archival video URL");
+        return;
+      }
+
+      const headers: Record<string, string> = {
+        "User-Agent": BROWSER_USER_AGENT,
+      };
+      if (req.headers.range) {
+        headers["Range"] = String(req.headers.range);
+      }
+
+      const upstream = await fetch(targetUrl, {
+        headers,
+        redirect: "follow",
+      });
+
+      res.status(upstream.status);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Accept-Ranges", "bytes");
+      const contentType = upstream.headers.get("content-type") || "video/mp4";
+      res.setHeader("Content-Type", contentType);
+      const contentLength = upstream.headers.get("content-length");
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+      const contentRange = upstream.headers.get("content-range");
+      if (contentRange) res.setHeader("Content-Range", contentRange);
+
+      if (!upstream.body) {
+        res.end();
+        return;
+      }
+      const reader = upstream.body.getReader();
+      req.on("close", () => {
+        reader.cancel().catch(() => {});
+      });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.writableEnded) {
+          res.write(Buffer.from(value));
+        } else {
+          break;
+        }
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).end();
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  });
+
+  // 2e. 1-Click Fetch & Auto-Trim 2-3 Real Actor Videos (+ Verified Actor Photos Backup)
+  app.post("/api/archival/fetch-and-trim-videos", async (req, res) => {
+    try {
+      const { query = "Will Sampson", count = 3, sceneDurations = [] } = req.body || {};
+      const cleanQuery = String(query || "Will Sampson").trim();
+      const desiredCount = Math.max(1, Math.min(6, Number(count) || 3));
+
+      const usedUrls = new Set<string>();
+      const usedTitles = new Set<string>();
+
+      const [videos, photos] = await Promise.all([
+        searchRealArchivalVideos(cleanQuery, desiredCount, usedUrls, cleanQuery, usedTitles),
+        searchRealArchivalPhotos(cleanQuery, desiredCount * 2 + 2, usedUrls, cleanQuery, usedTitles),
+      ]);
+
+      const cutOffsets = [8, 22, 38, 52, 68, 84];
+      const videoCuts = videos.map((v, idx) => {
+        const dur = Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
+          ? Math.round(Number(sceneDurations[idx]))
+          : 8;
+        const startSec = v.trimStartSec ?? cutOffsets[idx % cutOffsets.length];
+        const endSec = startSec + dur;
+        return {
+          title: v.title,
+          videoUrl: v.videoUrl,
+          dataUrl: v.dataUrl || photos[idx]?.dataUrl || "",
+          trimStartSec: startSec,
+          trimEndSec: endSec,
+          width: v.width,
+          height: v.height,
+          sourceLabel: `✂️ Đã cắt tự động ${startSec}s → ${endSec}s`,
+        };
+      });
+
+      res.json({
+        videoCuts,
+        verifiedPhotos: photos,
+        searchedQuery: cleanQuery,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Không thể tải và cắt video thực tế.",
+        videoCuts: [],
+        verifiedPhotos: [],
+      });
+    }
+  });
 
   // 3. Auto-Fetch Real Historical Archival Photos & Videos from Bing Web Images, Wikimedia Commons & Wikipedia
   app.post("/api/archival/fetch-photos", async (req, res) => {
@@ -2115,7 +2429,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           width: vid.width,
           height: vid.height,
           year: vid.year,
-        };
+          trimStartSec: (vid as any).trimStartSec ?? 8,
+          trimEndSec: (vid as any).trimEndSec ?? 16,
+        } as any;
         allPhotos.push({
           sceneId: sc.id,
           title: label,

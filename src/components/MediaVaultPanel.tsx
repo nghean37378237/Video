@@ -70,6 +70,12 @@ interface MediaVaultPanelProps {
   autoPilotStepText: string;
   onFetchArchivalPhotos: (characterQuery: string) => Promise<void>;
   isFetchingArchival: boolean;
+  onFetchAndInsertTrimmedActorVideos?: (
+    characterQuery?: string,
+    desiredCount?: number,
+    targetCurrentSceneOnly?: boolean
+  ) => Promise<void>;
+  isTrimmingRealVideos?: boolean;
   activePresetId: PresetId;
   onSelectPreset: (presetId: PresetId) => void;
   onOpenPromptStudio: () => void;
@@ -93,6 +99,8 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   autoPilotStepText,
   onFetchArchivalPhotos,
   isFetchingArchival,
+  onFetchAndInsertTrimmedActorVideos,
+  isTrimmingRealVideos = false,
   onOpenPromptStudio,
   settings,
   onUpdateSettings,
@@ -861,6 +869,28 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 Tự Tìm Ảnh Thật Vào Kho
               </button>
             </div>
+
+            {/* 1-Click Fetch, Cut & Insert 3 Real Actor Videos into Timeline */}
+            {onFetchAndInsertTrimmedActorVideos && (
+              <button
+                type="button"
+                onClick={() => onFetchAndInsertTrimmedActorVideos(storyTopic, 3, false)}
+                disabled={isTrimmingRealVideos || isRunningAutoPilot || !storyTopic.trim()}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-200 border border-sky-400/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              >
+                {isTrimmingRealVideos ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-300" />
+                    <span>Đang lấy, cắt &amp; chèn 3 Video Thật...</span>
+                  </>
+                ) : (
+                  <>
+                    <Film className="w-3.5 h-3.5 text-sky-300" />
+                    <span>🎬 Tự Lấy, Cắt &amp; Chèn 3 Video Thật Diễn Viên (1-Click)</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           {/* ChatGPT Pro & Kling AI Connection Card */}
