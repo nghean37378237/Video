@@ -30,14 +30,19 @@ import {
 } from '../utils/frameExtractor';
 import { soundEngine } from '../utils/audioSynth';
 import {
+  analyzeVoiceCloneDNAFromAudioFile,
   BG_MUSIC_STYLE_LABELS,
+  loadActiveVoiceCloneDNA,
   loadSavedAudioPreferences,
   masterAudioToConsistentStudioWav,
   playInstantVoicePreview,
+  resetToWillSampsonVoiceCloneDNA,
   saveAudioPreferences,
   SavedAudioPreferences,
   VOICE_PERSONA_PROFILES,
   VOICE_SHORT_LABELS,
+  VoiceCloneDNAProfile,
+  WILL_SAMPSON_SAMPLE_VOICE_URL,
 } from '../utils/voiceConsistencyEngine';
 
 interface MediaVaultPanelProps {
@@ -105,6 +110,10 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   );
   const [sceneCount, setSceneCount] = useState<number>(initialSaved.sceneCount || 8);
   const [savedPrefs, setSavedPrefs] = useState<SavedAudioPreferences>(initialSaved);
+  const [voiceCloneDna, setVoiceCloneDna] = useState<VoiceCloneDNAProfile>(() =>
+    loadActiveVoiceCloneDNA()
+  );
+  const [isAnalyzingVoiceDna, setIsAnalyzingVoiceDna] = useState<boolean>(false);
   const [isPreviewingVoice, setIsPreviewingVoice] = useState<boolean>(false);
   const [justSavedFlash, setJustSavedFlash] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -120,8 +129,18 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
         setTimeout(() => setJustSavedFlash(false), 1800);
       }
     };
+    const onDnaUpdated = (e: Event) => {
+      const custom = e as CustomEvent<VoiceCloneDNAProfile>;
+      if (custom.detail) {
+        setVoiceCloneDna(custom.detail);
+      }
+    };
     window.addEventListener('legendcut:audioprefs-saved', onSavedEvt);
-    return () => window.removeEventListener('legendcut:audioprefs-saved', onSavedEvt);
+    window.addEventListener('legendcut:voice-clone-dna-updated', onDnaUpdated);
+    return () => {
+      window.removeEventListener('legendcut:audioprefs-saved', onSavedEvt);
+      window.removeEventListener('legendcut:voice-clone-dna-updated', onDnaUpdated);
+    };
   }, []);
 
   const handleSelectPreRunAudio = (patch: {
@@ -170,9 +189,23 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
     try {
       const sampleText =
         langToPreview === 'vi'
-          ? `Trước khi cả thế giới biết đến cái tên ${storyTopic || 'huyền thoại'}, chỉ có ngọn lửa đam mê và thần thái không thể trộn lẫn.`
-          : `Before the world knew the name ${storyTopic || 'this legend'}, there was only a quiet fire and an unbreakable presence on screen.`;
+          ? `Tháng Mười Một là Tháng Di sản Người Bản địa Mỹ, và không có cách nào ý nghĩa hơn để mở đầu bằng việc tưởng nhớ huyền thoại ${storyTopic || 'Will Sampson'}.`
+          : `No acting lessons. No screen tests. No experience at all. Yet ${storyTopic || 'Will Sampson'} walked onto a movie set and delivered a performance the world would never forget.`;
       const persona = VOICE_PERSONA_PROFILES[voiceToPreview] || VOICE_PERSONA_PROFILES.Charon;
+      const activeDna = loadActiveVoiceCloneDNA();
+      const clonePitch =
+        voiceToPreview === 'Charon'
+          ? langToPreview === 'vi'
+            ? activeDna.ssmlPitchVi
+            : activeDna.ssmlPitchEn
+          : undefined;
+      const cloneRate =
+        voiceToPreview === 'Charon'
+          ? langToPreview === 'vi'
+            ? activeDna.ssmlRateVi
+            : activeDna.ssmlRateEn
+          : undefined;
+
       const res = await fetch('/api/tts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -181,6 +214,8 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
           voiceName: voiceToPreview,
           language: langToPreview,
           style: persona.geminiAnchorPrompt,
+          clonePitch,
+          cloneRate,
         }),
       });
       if (res.ok) {
@@ -476,12 +511,107 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                     }}
                     className="col-span-3 px-1.5 py-1.5 text-[11px] bg-[#0B0F17] border border-slate-700 rounded text-slate-100"
                   >
-                    <option value="Charon">Charon — Nam Trầm Ấm (Chuẩn Mẫu)</option>
+                    <option value="Charon">
+                      Charon — 🧬 Nhân Bản Giọng Gốc Will Sampson
+                    </option>
                     <option value="Fenrir">Fenrir — Nam Trầm Sâu Uy Nghiêm</option>
                     <option value="Puck">Puck — Nam Truyền Cảm Tự Nhiên</option>
                     <option value="Kore">Kore — Nữ Trầm Dịu Sâu Lắng</option>
                     <option value="Zephyr">Zephyr — Nữ Trong Trẻo Nghệ Thuật</option>
                   </select>
+                </div>
+
+                {/* Will Sampson Voice Clone DNA Box */}
+                <div className="mt-1.5 p-2 rounded-md bg-emerald-950/25 border border-emerald-500/35 space-y-1.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-bold text-emerald-300 truncate">
+                      {voiceCloneDna.label}
+                    </span>
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded shrink-0">
+                      Khớp {voiceCloneDna.similarityScore}% DNA
+                    </span>
+                  </div>
+
+                  <div className="text-[9px] text-slate-300 leading-snug">
+                    Đã trích xuất &amp; khóa thông số từ file mẫu:{' '}
+                    <span className="text-amber-300 font-semibold">
+                      F0={voiceCloneDna.medianF0Hz}Hz ({voiceCloneDna.p25F0Hz}–{voiceCloneDna.p75F0Hz}Hz) ·{' '}
+                      {voiceCloneDna.wpm} WPM ({storyLang === 'vi' ? voiceCloneDna.ssmlPitchVi : voiceCloneDna.ssmlPitchEn} /{' '}
+                      {storyLang === 'vi' ? voiceCloneDna.ssmlRateVi : voiceCloneDna.ssmlRateEn}) · EQ 5 Dải
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        playInstantVoicePreview(
+                          voiceCloneDna.sourceSampleUrl || WILL_SAMPSON_SAMPLE_VOICE_URL,
+                          0.95
+                        )
+                      }
+                      className="px-1.5 py-1 text-[9px] font-semibold bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Volume2 className="w-2.5 h-2.5 shrink-0" />
+                      <span>Nghe Mẫu Gốc</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isPreviewingVoice}
+                      onClick={() => {
+                        handleSelectPreRunAudio({ ttsVoice: 'Charon' });
+                        handlePreviewSelectedVoice('Charon', storyLang);
+                      }}
+                      className="px-1.5 py-1 text-[9px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 text-emerald-200 border border-emerald-500/40 rounded transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                      <span>
+                        {isPreviewingVoice ? 'Đang nhân bản...' : 'Nghe Bản Nhân Bản AI'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1 pt-0.5">
+                    <label className="flex-1 px-2 py-1 text-[9px] font-semibold bg-[#0B0F17] hover:bg-slate-800 text-sky-300 border border-slate-700 rounded cursor-pointer text-center transition-colors">
+                      {isAnalyzingVoiceDna
+                        ? '⏳ Đang phân tích F0 & EQ từ file...'
+                        : '🧬 +Tải File Audio Khác Để Nhân Bản Giọng (.mp3/.wav)'}
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setIsAnalyzingVoiceDna(true);
+                          try {
+                            const cloned = await analyzeVoiceCloneDNAFromAudioFile(file);
+                            setVoiceCloneDna(cloned);
+                            handleSelectPreRunAudio({ ttsVoice: 'Charon' });
+                            await handlePreviewSelectedVoice('Charon', storyLang);
+                          } finally {
+                            setIsAnalyzingVoiceDna(false);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {voiceCloneDna.id !== 'will-sampson-original-dna' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const def = resetToWillSampsonVoiceCloneDNA();
+                          setVoiceCloneDna(def);
+                          handleSelectPreRunAudio({ ttsVoice: 'Charon' });
+                        }}
+                        className="px-1.5 py-1 text-[9px] bg-slate-800 hover:bg-slate-700 text-amber-300 rounded shrink-0"
+                        title="Khôi phục giọng gốc Will Sampson"
+                      >
+                        Về Mẫu Will Sampson
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 

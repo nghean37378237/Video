@@ -40,15 +40,20 @@ import {
   VideoScriptStyle,
 } from '../utils/fullFrameHelper';
 import {
+  analyzeVoiceCloneDNAFromAudioFile,
   BG_MUSIC_STYLE_LABELS,
+  loadActiveVoiceCloneDNA,
   loadSavedAudioPreferences,
   masterAudioToConsistentStudioWav,
   playInstantVoicePreview,
+  resetToWillSampsonVoiceCloneDNA,
   resolveConsistentSceneText,
   saveAudioPreferences,
   SavedAudioPreferences,
   VOICE_PERSONA_PROFILES,
   VOICE_SHORT_LABELS,
+  VoiceCloneDNAProfile,
+  WILL_SAMPSON_SAMPLE_VOICE_URL,
 } from '../utils/voiceConsistencyEngine';
 import { soundEngine } from '../utils/audioSynth';
 import {
@@ -104,6 +109,10 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   const [savedAudioPrefs, setSavedAudioPrefs] = useState<SavedAudioPreferences>(() =>
     loadSavedAudioPreferences()
   );
+  const [voiceCloneDna, setVoiceCloneDna] = useState<VoiceCloneDNAProfile>(() =>
+    loadActiveVoiceCloneDNA()
+  );
+  const [isAnalyzingVoiceClone, setIsAnalyzingVoiceClone] = useState(false);
 
   // Page Post Summary (200-300 words) state
   const [postLang, setPostLang] = useState<PagePostLanguage>('vi');
@@ -153,8 +162,18 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
         setSavedAudioPrefs(custom.detail);
       }
     };
+    const onDnaUpdated = (e: Event) => {
+      const custom = e as CustomEvent<VoiceCloneDNAProfile>;
+      if (custom.detail) {
+        setVoiceCloneDna(custom.detail);
+      }
+    };
     window.addEventListener('legendcut:audioprefs-saved', onSaved);
-    return () => window.removeEventListener('legendcut:audioprefs-saved', onSaved);
+    window.addEventListener('legendcut:voice-clone-dna-updated', onDnaUpdated);
+    return () => {
+      window.removeEventListener('legendcut:audioprefs-saved', onSaved);
+      window.removeEventListener('legendcut:voice-clone-dna-updated', onDnaUpdated);
+    };
   }, []);
 
   const ratioSpec = getAspectRatioSpec(settings.aspectRatio);
@@ -233,6 +252,19 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
     const targetLang = overrideLang || activeVoiceLang;
     const persona = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
     const textToSpeak = resolveConsistentSceneText(activeScene, targetLang);
+    const activeDna = loadActiveVoiceCloneDNA();
+    const clonePitch =
+      voiceName === 'Charon'
+        ? targetLang === 'vi'
+          ? activeDna.ssmlPitchVi
+          : activeDna.ssmlPitchEn
+        : undefined;
+    const cloneRate =
+      voiceName === 'Charon'
+        ? targetLang === 'vi'
+          ? activeDna.ssmlRateVi
+          : activeDna.ssmlRateEn
+        : undefined;
 
     try {
       const response = await fetch('/api/tts/generate', {
@@ -243,6 +275,8 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
           voiceName,
           language: targetLang,
           style: persona.geminiAnchorPrompt,
+          clonePitch,
+          cloneRate,
         }),
       });
 
@@ -1128,6 +1162,102 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               <p className="text-[10px] text-emerald-300/90 leading-snug">
                 🎙️ {VOICE_PERSONA_PROFILES[settings.ttsVoice]?.label}
               </p>
+
+              {/* Voice Clone DNA Studio Box */}
+              <div className="mt-1.5 p-2 rounded-lg bg-amber-950/30 border border-amber-500/40 space-y-1.5">
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-[10px] font-bold text-amber-300 truncate">
+                    {voiceCloneDna.label}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-[9px] font-bold text-emerald-300 shrink-0">
+                    Khớp {voiceCloneDna.similarityScore}% DNA
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-[9px] text-slate-300 bg-slate-950/70 p-1 rounded border border-slate-800/80">
+                  <div>
+                    <span className="text-slate-500 block">Tần số F0:</span>
+                    <strong className="text-amber-300">{voiceCloneDna.medianF0Hz} Hz</strong>{' '}
+                    <span className="text-slate-400">
+                      ({voiceCloneDna.p25F0Hz}–{voiceCloneDna.p75F0Hz})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Nhịp đọc:</span>
+                    <strong className="text-emerald-300">{voiceCloneDna.wpm} WPM</strong>{' '}
+                    <span className="text-slate-400">({voiceCloneDna.ssmlRateEn})</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Âm sắc EQ:</span>
+                    <strong className="text-sky-300">5 Dải Studio</strong>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      playInstantVoicePreview(
+                        voiceCloneDna.sourceSampleUrl || WILL_SAMPSON_SAMPLE_VOICE_URL,
+                        settings.voiceoverVolume
+                      )
+                    }
+                    className="px-2 py-1 text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/30 rounded transition-colors flex items-center justify-center gap-1"
+                  >
+                    🔊 Nghe Mẫu Gốc
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isGeneratingSceneTTS}
+                    onClick={() => {
+                      onUpdateSettings({ ttsVoice: 'Charon', lockedTtsEngine: undefined });
+                      saveAudioPreferences({ ttsVoice: 'Charon', voiceLanguage: activeVoiceLang });
+                      handleGenerateSceneTTS('Charon', activeVoiceLang, true);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 text-amber-200 border border-amber-500/40 rounded transition-colors flex items-center justify-center gap-1"
+                  >
+                    {isGeneratingSceneTTS ? '⏳ Đang nhân bản...' : '🔊 Nghe Bản Nhân Bản'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                  <label className="cursor-pointer flex-1 text-center px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[9px] font-semibold transition-colors">
+                    {isAnalyzingVoiceClone
+                      ? '⏳ Đang trích xuất DNA...'
+                      : '+ Tải File Audio Khác Để Nhân Bản Giọng'}
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setIsAnalyzingVoiceClone(true);
+                        try {
+                          const dna = await analyzeVoiceCloneDNAFromAudioFile(file);
+                          setVoiceCloneDna(dna);
+                          onUpdateSettings({ ttsVoice: 'Charon', lockedTtsEngine: undefined });
+                          saveAudioPreferences({ ttsVoice: 'Charon' });
+                          handleGenerateSceneTTS('Charon', activeVoiceLang, true);
+                        } finally {
+                          setIsAnalyzingVoiceClone(false);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                  {voiceCloneDna.id !== 'will-sampson-original-dna' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const def = resetToWillSampsonVoiceCloneDNA();
+                        setVoiceCloneDna(def);
+                        handleGenerateSceneTTS('Charon', activeVoiceLang, true);
+                      }}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 text-[9px] font-semibold"
+                    >
+                      Khôi phục gốc
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Background Music Selector right inside Tab 1 for fast pairing */}

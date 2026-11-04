@@ -39,6 +39,7 @@ import {
 import {
   BG_MUSIC_STYLE_LABELS,
   detectProjectVoiceLanguage,
+  loadActiveVoiceCloneDNA,
   loadSavedAudioPreferences,
   masterAudioToConsistentStudioWav,
   resolveConsistentSceneText,
@@ -91,23 +92,26 @@ export default function App() {
   const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
 
   const handleUpdateSettings = useCallback((patch: Partial<ProjectSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      if (
-        patch.ttsVoice !== undefined ||
-        patch.voiceLanguage !== undefined ||
-        patch.bgMusicStyle !== undefined ||
-        patch.bgMusicVolume !== undefined
-      ) {
-        saveAudioPreferences({
-          ttsVoice: next.ttsVoice,
-          voiceLanguage: next.voiceLanguage || (next.subtitleLanguage === 'vi' ? 'vi' : 'en'),
-          bgMusicStyle: next.bgMusicStyle,
-          bgMusicVolume: next.bgMusicVolume,
-        });
-      }
-      return next;
-    });
+    setSettings((prev) => ({ ...prev, ...patch }));
+    if (
+      patch.ttsVoice !== undefined ||
+      patch.voiceLanguage !== undefined ||
+      patch.bgMusicStyle !== undefined ||
+      patch.bgMusicVolume !== undefined
+    ) {
+      saveAudioPreferences({
+        ttsVoice: patch.ttsVoice,
+        voiceLanguage:
+          patch.voiceLanguage ||
+          (patch.subtitleLanguage === 'vi'
+            ? 'vi'
+            : patch.subtitleLanguage === 'en'
+            ? 'en'
+            : undefined),
+        bgMusicStyle: patch.bgMusicStyle,
+        bgMusicVolume: patch.bgMusicVolume,
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -1178,6 +1182,17 @@ export default function App() {
     const updated = [...targetScenes];
     const voiceName = overrideVoice || settings.ttsVoice || 'Charon';
     const persona = VOICE_PERSONA_PROFILES[voiceName] || VOICE_PERSONA_PROFILES.Charon;
+    const activeDna = voiceName === 'Charon' ? loadActiveVoiceCloneDNA() : null;
+    const clonePitch = activeDna
+      ? lang === 'vi'
+        ? activeDna.ssmlPitchVi
+        : activeDna.ssmlPitchEn
+      : undefined;
+    const cloneRate = activeDna
+      ? lang === 'vi'
+        ? activeDna.ssmlRateVi
+        : activeDna.ssmlRateEn
+      : undefined;
 
     const batchItems = updated
       .filter((sc) => sc.sceneType !== 'outro')
@@ -1207,6 +1222,8 @@ export default function App() {
           voiceName,
           language: lang,
           style: persona.geminiAnchorPrompt,
+          clonePitch,
+          cloneRate,
         }),
       });
       if (batchRes.ok) {
@@ -1249,6 +1266,8 @@ export default function App() {
               language: lang,
               preferredEngine: lockedEngine === 'standard-locked' ? 'standard-locked' : undefined,
               style: persona.geminiAnchorPrompt,
+              clonePitch,
+              cloneRate,
             }),
           });
           if (singleRes.ok) {
