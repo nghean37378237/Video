@@ -247,17 +247,12 @@ export default function App() {
 
     try {
       const countToFetch = targetCurrentSceneOnly ? 1 : Math.max(2, Math.min(4, desiredCount));
-      const trimmedCuts = await fetchAndAutoTrimActorRealVideos(
+      const { videoCuts: trimmedCuts, verifiedPhotos } = await fetchAndAutoTrimActorRealVideos(
         rawTopic,
         scenes,
         countToFetch,
         (msg) => setStatusBanner(`⏳ ${msg}`)
       );
-
-      if (trimmedCuts.length === 0) {
-        setStatusBanner(`Không tìm thấy nguồn video cho "${rawTopic}". Bạn có thể tải file MP4 từ máy vào cảnh.`);
-        return;
-      }
 
       const newVaultItems: VaultItem[] = trimmedCuts.map((cut, i) => ({
         id: cut.id,
@@ -272,60 +267,95 @@ export default function App() {
         createdAt: cut.sourceLabel,
       }));
 
-      setVaultItems((prev) => [...newVaultItems, ...prev]);
+      if (newVaultItems.length > 0) {
+        setVaultItems((prev) => [...newVaultItems, ...prev]);
+      }
 
-      // Choose target scenes to insert the trimmed videos into (preserving 100% of script narration, subtitles & voiceover!)
+      // Choose target scenes to insert the trimmed real videos into, while keeping reference photos + Grok/Kling prompts for all other video scenes!
       const nextScenes = [...scenes];
       const assignedSceneNumbers: string[] = [];
+      let grokKlingPromptScenesCount = 0;
 
       if (targetCurrentSceneOnly && activeScene && activeScene.sceneType !== 'outro' && activeScene.sceneType !== 'quote') {
-        const cut = trimmedCuts[0];
-        const vItem = newVaultItems[0];
         const sIdx = nextScenes.findIndex((s) => s.id === activeScene.id);
         if (sIdx >= 0) {
-          const scDur = Math.max(5, Math.round(nextScenes[sIdx].durationSec || 8));
-          nextScenes[sIdx] = {
-            ...nextScenes[sIdx],
+          const sc = nextScenes[sIdx];
+          const scDur = Math.max(5, Math.round(sc.durationSec || 8));
+          const klingPack = buildStandardKlingDrawPrompt({
+            order: sc.order,
+            totalScenes: nextScenes.length,
+            characterName: rawTopic,
+            title: sc.title,
+            narrationText: sc.narrationText,
+            rawImagePrompt: sc.imagePrompt || sc.visualPrompt,
+            rawVideoPrompt: sc.videoMotionPrompt,
             sceneType: 'video',
-            mediaId: vItem.id,
-            mediaUrl: vItem.url,
-            mediaKind: 'video',
-            videoTrimStartSec: cut.trimStartSec,
-            videoTrimEndSec: cut.trimStartSec + scDur,
-            hasRealPhoto: true,
-            realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`,
-            frameStyle: 'full-bleed',
-            showBottomSubtitles: true,
-          };
-          assignedSceneNumbers.push(`#${String(nextScenes[sIdx].order).padStart(2, '0')} (${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`);
+            ratio: settings.aspectRatio,
+          });
+
+          if (trimmedCuts.length > 0 && newVaultItems.length > 0) {
+            const cut = trimmedCuts[0];
+            const vItem = newVaultItems[0];
+            nextScenes[sIdx] = {
+              ...sc,
+              sceneType: 'video',
+              mediaId: vItem.id,
+              mediaUrl: vItem.url,
+              mediaKind: 'video',
+              videoTrimStartSec: cut.trimStartSec,
+              videoTrimEndSec: cut.trimStartSec + scDur,
+              hasRealPhoto: true,
+              realPhotoTitle: `${cut.title} (✂️ Cắt ${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`,
+              imagePrompt: klingPack.klingImagePrompt,
+              videoMotionPrompt: klingPack.klingVideoPrompt,
+              klingStandardPrompt: klingPack.combinedBlock,
+              frameStyle: 'full-bleed',
+              showBottomSubtitles: true,
+            };
+            assignedSceneNumbers.push(`#${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${cut.trimStartSec + scDur}s)`);
+          } else {
+            // No real video found for this scene -> provide real reference photo + Grok / Kling AI prompt as requested!
+            const refPhoto = verifiedPhotos[0]?.dataUrl || sc.characterRefPhotoUrl || sc.mediaUrl;
+            nextScenes[sIdx] = {
+              ...sc,
+              sceneType: 'video',
+              mediaUrl: refPhoto,
+              mediaKind: 'image',
+              characterRefPhotoUrl: refPhoto,
+              hasRealPhoto: Boolean(verifiedPhotos[0]?.dataUrl || sc.hasRealPhoto),
+              realPhotoTitle: verifiedPhotos[0]?.title || sc.realPhotoTitle || `${rawTopic} (Ảnh Gốc Tạo Video Grok / Kling)`,
+              imagePrompt: klingPack.klingImagePrompt,
+              videoMotionPrompt: klingPack.klingVideoPrompt,
+              klingStandardPrompt: klingPack.combinedBlock,
+              frameStyle: 'full-bleed',
+              showBottomSubtitles: true,
+            };
+            grokKlingPromptScenesCount++;
+          }
         }
       } else {
-        // Pick up to `trimmedCuts.length` spread-out visual scenes (preferring 'video' scenes: Opening #01, Mid-story, and Climax)
+        // Pick up to `trimmedCuts.length` spread-out 'video' scenes (Opening #01, Mid-story, and Climax) for the real videos
         const videoSceneIndices = nextScenes
           .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
           .filter((idx) => idx >= 0);
-        const otherVisualIndices = nextScenes
-          .map((s, idx) => (s.sceneType === 'image' ? idx : -1))
-          .filter((idx) => idx >= 0);
 
-        const candidateIndices = [...videoSceneIndices, ...otherVisualIndices];
         const selectedTargetIndices: number[] = [];
-
-        if (candidateIndices.length <= trimmedCuts.length) {
-          selectedTargetIndices.push(...candidateIndices);
-        } else {
-          // Distribute evenly across key beats (e.g. Scene #01, middle video scene, climax video scene)
-          for (let k = 0; k < trimmedCuts.length; k++) {
-            const pickPos = Math.min(
-              candidateIndices.length - 1,
-              Math.floor((k * candidateIndices.length) / trimmedCuts.length)
-            );
-            const targetIdx = candidateIndices[pickPos];
-            if (!selectedTargetIndices.includes(targetIdx)) {
-              selectedTargetIndices.push(targetIdx);
-            } else {
-              const fallbackIdx = candidateIndices.find((ci) => !selectedTargetIndices.includes(ci));
-              if (fallbackIdx !== undefined) selectedTargetIndices.push(fallbackIdx);
+        if (trimmedCuts.length > 0) {
+          if (videoSceneIndices.length <= trimmedCuts.length) {
+            selectedTargetIndices.push(...videoSceneIndices);
+          } else {
+            for (let k = 0; k < trimmedCuts.length; k++) {
+              const pickPos = Math.min(
+                videoSceneIndices.length - 1,
+                Math.floor((k * videoSceneIndices.length) / trimmedCuts.length)
+              );
+              const targetIdx = videoSceneIndices[pickPos];
+              if (!selectedTargetIndices.includes(targetIdx)) {
+                selectedTargetIndices.push(targetIdx);
+              } else {
+                const fallbackIdx = videoSceneIndices.find((ci) => !selectedTargetIndices.includes(ci));
+                if (fallbackIdx !== undefined) selectedTargetIndices.push(fallbackIdx);
+              }
             }
           }
         }
@@ -355,12 +385,69 @@ export default function App() {
             `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
           );
         });
+
+        // For all remaining 'video' scenes that did NOT get a real video, ensure they keep their real reference photo + Grok / Kling AI prompt!
+        let photoFallbackIdx = 0;
+        for (const vIdx of videoSceneIndices) {
+          if (selectedTargetIndices.includes(vIdx)) continue;
+          const sc = nextScenes[vIdx];
+          if (sc.mediaKind === 'video') continue;
+
+          const klingPack = buildStandardKlingDrawPrompt({
+            order: sc.order,
+            totalScenes: nextScenes.length,
+            characterName: rawTopic,
+            title: sc.title,
+            narrationText: sc.narrationText,
+            rawImagePrompt: sc.imagePrompt || sc.visualPrompt,
+            rawVideoPrompt: sc.videoMotionPrompt,
+            sceneType: 'video',
+            ratio: settings.aspectRatio,
+          });
+
+          const fallbackPhoto = verifiedPhotos[photoFallbackIdx % Math.max(1, verifiedPhotos.length)];
+          if (fallbackPhoto) photoFallbackIdx++;
+          const effectivePhotoUrl =
+            (sc.hasRealPhoto && sc.mediaUrl) ||
+            fallbackPhoto?.dataUrl ||
+            sc.characterRefPhotoUrl ||
+            sc.mediaUrl;
+
+          nextScenes[vIdx] = {
+            ...sc,
+            mediaUrl: effectivePhotoUrl,
+            mediaKind: 'image',
+            characterRefPhotoUrl: fallbackPhoto?.dataUrl || sc.characterRefPhotoUrl || effectivePhotoUrl,
+            hasRealPhoto: Boolean(sc.hasRealPhoto || fallbackPhoto?.dataUrl),
+            realPhotoTitle:
+              sc.realPhotoTitle ||
+              (fallbackPhoto?.title
+                ? `${fallbackPhoto.title} (Ảnh Gốc Tạo Video Grok / Kling)`
+                : undefined),
+            imagePrompt: klingPack.klingImagePrompt,
+            videoMotionPrompt: klingPack.klingVideoPrompt,
+            klingStandardPrompt: klingPack.combinedBlock,
+            frameStyle: 'full-bleed',
+            showBottomSubtitles: true,
+          };
+          grokKlingPromptScenesCount++;
+        }
       }
 
       setScenes(nextScenes);
-      setStatusBanner(
-        `🎬 Đã tự động lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thực Tế của "${rawTopic}" vào ${assignedSceneNumbers.join(', ')} (Giữ nguyên 100% lời đọc & phụ đề)!`
-      );
+      if (assignedSceneNumbers.length > 0) {
+        setStatusBanner(
+          `🎬 Đã tự lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thật vào ${assignedSceneNumbers.join(', ')}${
+            grokKlingPromptScenesCount > 0
+              ? ` — ${grokKlingPromptScenesCount} đoạn video còn lại đã cấp sẵn Ảnh Gốc & Prompt để bạn tạo video từ Grok hoặc Kling AI!`
+              : '!'
+          }`
+        );
+      } else {
+        setStatusBanner(
+          `📸 Không tìm thấy file video công khai cho "${rawTopic}" — Đã giữ nguyên và cấp sẵn Ảnh Gốc + Bộ Prompt chuẩn để bạn vẽ video từ Grok hoặc Kling AI!`
+        );
+      }
     } finally {
       setIsTrimmingRealVideos(false);
     }

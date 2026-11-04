@@ -229,14 +229,20 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   };
 
   const handleDownloadFullFrame = async () => {
-    if (!activeScene?.mediaUrl || isDownloadingFullFrame) return;
+    const targetUrl =
+      (activeScene?.hasRealPhoto && activeScene?.mediaUrl) ||
+      activeScene?.characterRefPhotoUrl ||
+      activeScene?.mediaUrl;
+    if (!targetUrl || isDownloadingFullFrame || !activeScene) return;
     setIsDownloadingFullFrame(true);
     try {
       await downloadFullFrameImageForGrok(
-        activeScene.mediaUrl,
-        activeScene.mediaKind,
+        targetUrl,
+        activeScene.mediaKind === 'video' && targetUrl === activeScene.mediaUrl
+          ? 'video'
+          : 'image',
         settings.aspectRatio,
-        `Canh-${String(activeScene.order).padStart(2, '0')}-KlingAI`
+        `Canh-${String(activeScene.order).padStart(2, '0')}-Grok-Kling`
       );
     } finally {
       setIsDownloadingFullFrame(false);
@@ -450,25 +456,31 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
             </div>
           )}
 
-          {/* Ready-to-Copy Full-Frame Image & Video Prompts + Keyframe Image for this Segment */}
+          {/* Ready-to-Copy Full-Frame Image & Video Prompts (Grok / Kling AI) + Reference Keyframe Image for this Segment */}
           {(activeScene.sceneType === 'video' || activeScene.sceneType === 'image') && (
             <div className="p-3 rounded-lg bg-[#090D15] border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-bold text-amber-400">
                   {activeScene.sceneType === 'video'
-                    ? `🎥 ẢNH GỐC & PROMPT VIDEO FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×${ratioSpec.height}):`
+                    ? `🎥 ẢNH GỐC & PROMPT TẠO VIDEO (GROK / KLING AI — ${ratioSpec.ratio}):`
                     : `🖼️ ẢNH & PROMPT FULL KHUNG ${ratioSpec.ratio} (${ratioSpec.width}×${ratioSpec.height}):`}
                 </span>
               </div>
 
-              {/* Visual Full-Frame Reference Keyframe Preview */}
-              {activeScene.mediaUrl && (
+              {activeScene.sceneType === 'video' && activeScene.mediaKind !== 'video' && (
+                <div className="px-2.5 py-1.5 rounded bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-200 leading-snug">
+                  📸 <strong>Đoạn này chưa có Video thật:</strong> Đã gắn sẵn <strong>Ảnh Gốc Tham Chiếu</strong> &amp; <strong>Bộ Prompt chuẩn bên dưới</strong> để bạn tải ảnh và tạo video từ <strong>Grok</strong> hoặc <strong>Kling AI</strong>!
+                </div>
+              )}
+
+              {/* Visual Full-Frame Reference Keyframe Preview (Supports both mediaUrl and characterRefPhotoUrl) */}
+              {(activeScene.mediaUrl || activeScene.characterRefPhotoUrl) && (
                 <div className="flex items-center gap-2.5 p-2 rounded-lg bg-[#0B0F17] border border-slate-800">
                   <div
                     style={{ aspectRatio: ratioSpec.cssAspect }}
                     className="w-16 shrink-0 rounded overflow-hidden bg-black border border-slate-700 relative"
                   >
-                    {activeScene.mediaKind === 'video' ? (
+                    {activeScene.mediaKind === 'video' && activeScene.mediaUrl ? (
                       <video
                         src={activeScene.mediaUrl}
                         muted
@@ -477,7 +489,11 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                       />
                     ) : (
                       <img
-                        src={activeScene.mediaUrl}
+                        src={
+                          (activeScene.hasRealPhoto && activeScene.mediaUrl) ||
+                          activeScene.characterRefPhotoUrl ||
+                          activeScene.mediaUrl
+                        }
                         alt={activeScene.title}
                         className="w-full h-full object-cover object-top"
                       />
@@ -485,10 +501,12 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   </div>
                   <div className="flex-1 min-w-0 space-y-1">
                     <p className="text-[11px] font-semibold text-slate-200 truncate">
-                      Ảnh Gốc Full Khung {ratioSpec.ratio} ({ratioSpec.width}×{ratioSpec.height}px)
+                      {activeScene.mediaKind === 'video'
+                        ? `🎬 Video Thật Đã Gắn (${ratioSpec.ratio})`
+                        : `📸 Ảnh Gốc Tham Chiếu (${ratioSpec.width}×${ratioSpec.height}px)`}
                     </p>
                     <p className="text-[10px] text-slate-400 leading-snug">
-                      Bấm tải ảnh chuẩn kích thước này đưa vào <strong>Kling AI (Image-to-Video)</strong> để tạo chuyển động người nổi tiếng mượt mà, không bị chặn.
+                      Bấm tải ảnh chuẩn kích thước này đưa vào <strong>Grok</strong> hoặc <strong>Kling AI (Image-to-Video)</strong> kèm Prompt bên dưới để tạo video.
                     </p>
                   </div>
                 </div>
@@ -498,7 +516,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
               {onUploadFileForScene && (
                 <label className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md cursor-pointer transition-colors shadow-sm">
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Chèn / Thay Ảnh Hoặc Video Mới Vào Cảnh #{activeScene.order}</span>
+                  <span>Chèn / Thay Ảnh Hoặc Video Vừa Tạo Vào Cảnh #{activeScene.order}</span>
                   <input
                     type="file"
                     accept="video/*,image/*"
@@ -555,7 +573,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 )}
               </div>
 
-              {activeScene.mediaUrl && (
+              {(activeScene.mediaUrl || activeScene.characterRefPhotoUrl) && (
                 <button
                   onClick={handleDownloadFullFrame}
                   disabled={isDownloadingFullFrame}
@@ -564,15 +582,15 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   {isDownloadingFullFrame
                     ? 'Đang xuất ảnh chuẩn...'
-                    : `Tải Ảnh ${ratioSpec.width}×${ratioSpec.height}px Đưa Sang Kling AI Tạo Video`}
+                    : `Tải Ảnh Gốc ${ratioSpec.width}×${ratioSpec.height}px Đưa Sang Grok / Kling AI Tạo Video`}
                 </button>
               )}
 
-              {/* Image Generation Prompt Box (Full-Frame) */}
+              {/* Image Generation Prompt Box (Full-Frame for Grok / ChatGPT / Kling) */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium text-emerald-400">
-                    1. Prompt Ảnh Gốc Full Khung ({ratioSpec.ratio} - {ratioSpec.width}×{ratioSpec.height}px):
+                    1. Prompt Vẽ Ảnh Gốc (Grok / ChatGPT / Kling — {ratioSpec.ratio}):
                   </span>
                   <button
                     onClick={() =>
@@ -589,7 +607,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                     {copiedField === 'img' ? (
                       <>
                         <Check className="w-3 h-3 text-emerald-400" />
-                        Đã Copy Full {ratioSpec.ratio}
+                        Đã Copy Prompt Ảnh
                       </>
                     ) : (
                       <>
@@ -613,11 +631,11 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 />
               </div>
 
-              {/* Video Animation Prompt Box (3-Beat Scripted Full-Frame for KLING AI) */}
+              {/* Video Animation Prompt Box (3-Beat Scripted Full-Frame for GROK & KLING AI) */}
               <div className="space-y-1.5 pt-1.5 border-t border-slate-800/80">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-medium text-sky-400">
-                    2. Kịch Bản Video KLING AI 3 Nhịp (Chuẩn Người Nổi Tiếng):
+                    2. Prompt Tạo Video Chuyển Động (Grok / Kling AI):
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -637,19 +655,19 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                       {copiedField === 'vid' ? (
                         <>
                           <Check className="w-3 h-3 text-emerald-400" />
-                          Đã Copy Prompt Kling
+                          Đã Copy Prompt Grok/Kling
                         </>
                       ) : (
                         <>
                           <Copy className="w-3 h-3" />
-                          Copy Prompt Kling {ratioSpec.ratio}
+                          Copy Prompt Grok / Kling
                         </>
                       )}
                     </button>
 
                     <button
                       onClick={() => copyPrompt(KLING_NEGATIVE_PROMPT, 'neg-vid')}
-                      title="Copy Negative Prompt cho Kling AI để giữ nguyên khuôn mặt không bị biến dạng"
+                      title="Copy Negative Prompt cho Kling AI / Grok để giữ nguyên khuôn mặt không bị biến dạng"
                       className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors"
                     >
                       {copiedField === 'neg-vid' ? (
@@ -664,13 +682,13 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   </div>
                 </div>
 
-                {/* Quick 1-Click Scripted Motion Style Presets for Kling AI */}
+                {/* Quick 1-Click Scripted Motion Style Presets for Grok / Kling AI */}
                 <div className="flex flex-wrap items-center gap-1">
                   {(
                     [
-                      { id: 'narrative-hook', label: '🎬 Kling Tự sự & Nhép môi' },
-                      { id: 'cinematic-action', label: '🐎 Kling Hành động' },
-                      { id: 'emotional-closeup', label: '🌅 Kling Nội tâm' },
+                      { id: 'narrative-hook', label: '🎬 Tự sự & Nhép môi (Grok/Kling)' },
+                      { id: 'cinematic-action', label: '🐎 Hành động điện ảnh' },
+                      { id: 'emotional-closeup', label: '🌅 Cận cảnh nội tâm' },
                     ] as { id: VideoScriptStyle; label: string }[]
                   ).map((preset) => (
                     <button
@@ -706,11 +724,11 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                   onChange={(e) =>
                     onUpdateScene(activeScene.id, { videoMotionPrompt: e.target.value })
                   }
-                  placeholder={`Kịch bản 3 nhịp [0-2s] -> [2-4s] -> [4-6s] cho Kling AI Image-to-Video Full Khung ${ratioSpec.ratio}...`}
+                  placeholder={`Kịch bản 3 nhịp [0-2s] -> [2-4s] -> [4-6s] cho Grok / Kling AI Image-to-Video Full Khung ${ratioSpec.ratio}...`}
                   className="w-full p-2 text-[11px] font-mono bg-[#0B0F17] border border-slate-800 rounded text-slate-300 leading-relaxed focus:outline-none focus:border-amber-500"
                 />
                 <p className="text-[10px] text-slate-400 leading-snug">
-                  💡 <strong>Chuẩn Kling AI Người Nổi Tiếng:</strong> Tải <em>Ảnh Gốc Full Khung</em> ở trên thả vào mục <strong>Image to Video</strong> của Kling AI + Dán Prompt này (đã tự động ẩn tên nhạy cảm &amp; khóa giữ nguyên 100% khuôn mặt từ ảnh gốc).
+                  💡 <strong>Cách tạo Video bằng Grok hoặc Kling AI:</strong> Tải <em>Ảnh Gốc Tham Chiếu</em> ở trên đưa vào <strong>Grok</strong> hoặc mục <strong>Image to Video</strong> của <strong>Kling AI</strong> + Dán Prompt này để tạo video chuyển động chuẩn khuôn mặt nhân vật.
                 </p>
               </div>
 

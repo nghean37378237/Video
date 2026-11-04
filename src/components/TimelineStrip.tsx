@@ -411,7 +411,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                 </span>
               </div>
 
-              {/* Status Pill: Clearly states whether Verified Real Photo/Video is attached OR if it needs Kling AI drawing */}
+              {/* Status Pill: Clearly states whether Verified Real Photo/Video is attached OR if it provides Image + Prompt for Grok / Kling AI */}
               <div className="mt-1">
                 {isMissingRealPhoto ? (
                   <button
@@ -420,22 +420,22 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       e.stopPropagation();
                       onOpenPromptStudio();
                     }}
-                    title={`Đoạn #${idx + 1} chưa có ảnh/video thật riêng trên mạng. Bấm để lấy Ảnh Mẫu Nhân Vật & Prompt Chuẩn Kling AI để vẽ và reg video!`}
+                    title={`Đoạn #${idx + 1} chưa có video thật. Đã cấp sẵn Ảnh Mẫu Nhân Vật & Prompt chuẩn để bạn vẽ video từ Grok hoặc Kling AI!`}
                     className="w-full px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 truncate bg-amber-950/80 hover:bg-amber-900/80 text-amber-200 border border-amber-400/60 transition-colors"
                   >
                     <AlertCircle className="w-3 h-3 shrink-0 text-amber-400" />
                     <span className="truncate">
-                      🎨 Lấy Ảnh Mẫu + Prompt Vẽ & Reg Video
+                      🎨 Ảnh Mẫu + Prompt Vẽ Video (Grok/Kling)
                     </span>
                   </button>
                 ) : isVideoSceneHoldingTempImage ? (
                   <div
-                    title={`Đoạn #${idx + 1} là ĐOẠN VIDEO. Đã có Ảnh thật chuẩn (${attachedFileName}) làm ảnh gốc Start Frame để reg video Kling AI.`}
+                    title={`Đoạn #${idx + 1} chưa có video thật — Đã gắn sẵn Ảnh thật (${attachedFileName}) + Prompt chuẩn để bạn tạo video từ Grok hoặc Kling AI.`}
                     className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate bg-sky-950/80 text-sky-200 border border-sky-400/50"
                   >
                     <Film className="w-3 h-3 shrink-0 text-sky-400" />
                     <span className="font-bold text-amber-300 shrink-0">
-                      📸 Ảnh thật làm gốc Reg Video:
+                      📸 Ảnh gốc + Prompt Grok/Kling:
                     </span>
                     <span className="truncate">{attachedFileName}</span>
                   </div>
