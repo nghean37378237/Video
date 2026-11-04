@@ -7,6 +7,8 @@ export interface TrimmedActorVideoCut {
   thumbnailUrl: string;
   trimStartSec: number;
   trimEndSec: number;
+  originalStartSec?: number;
+  originalEndSec?: number;
   durationSec: number;
   width: number;
   height: number;
@@ -36,7 +38,7 @@ const CLIENT_FALLBACK_ACTOR_REELS: Record<
     {
       title: "Will Sampson (Chief Bromden) — One Flew Over the Cuckoo's Nest (1975) [Cảnh Thật #1]",
       mp4Url:
-        'https://archive.org/download/one-flew-over-the-cuckoos-nest_202108/One.Flew.Over.The.Cuckoos.Nest.mp4',
+        'https://archive.org/download/one-flew-over-the-cuckoos-nest_202108/One-flew-over-the-cuckoos-nest.mp4',
       thumbUrl: 'https://archive.org/services/img/one-flew-over-the-cuckoos-nest_202108',
       trimStartSec: 18,
       trimEndSec: 27,
@@ -45,7 +47,7 @@ const CLIENT_FALLBACK_ACTOR_REELS: Record<
     },
     {
       title: 'Will Sampson (Ten Bears) — The Outlaw Josey Wales (1976) [Cảnh Thật #2]',
-      mp4Url: 'https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales.mp4',
+      mp4Url: 'https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4',
       thumbUrl: 'https://archive.org/services/img/the-outlaw-josey-wales',
       trimStartSec: 120,
       trimEndSec: 129,
@@ -54,7 +56,7 @@ const CLIENT_FALLBACK_ACTOR_REELS: Record<
     },
     {
       title: 'Will Sampson (Crazy Horse) — The White Buffalo (1977) [Cảnh Thật #3]',
-      mp4Url: 'https://archive.org/download/white-buffalo-1977/White%20Buffalo%20%281977%29.mp4',
+      mp4Url: 'https://archive.org/download/white-buffalo-1977/White%20Buffalo%20(1977).mp4',
       thumbUrl: 'https://archive.org/services/img/white-buffalo-1977',
       trimStartSec: 95,
       trimEndSec: 108,
@@ -64,7 +66,7 @@ const CLIENT_FALLBACK_ACTOR_REELS: Record<
     {
       title: "Will Sampson (Chief Bromden) — One Flew Over the Cuckoo's Nest (1975) [Cảnh Thật #4]",
       mp4Url:
-        'https://archive.org/download/one-flew-over-the-cuckoos-nest_202107/One.Flew.Over.The.Cuckoos.Nest.mp4',
+        'https://archive.org/download/one-flew-over-the-cuckoos-nest_202107/One%20Flew%20Over%20the%20Cuckoo%27s%20Nest.ia.mp4',
       thumbUrl: 'https://archive.org/services/img/one-flew-over-the-cuckoos-nest_202107',
       trimStartSec: 44,
       trimEndSec: 54,
@@ -117,7 +119,7 @@ export function captureRealVideoFrameThumbnail(
       'loadedmetadata',
       () => {
         const dur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : seekSec + 10;
-        const targetTime = Math.min(Math.max(1, seekSec), Math.max(1, dur - 1));
+        const targetTime = Math.min(Math.max(0.5, seekSec), Math.max(0.5, dur - 0.5));
         try {
           vid.currentTime = targetTime;
         } catch {
@@ -182,7 +184,7 @@ export async function fetchAndAutoTrimActorRealVideos(
   verifiedPhotos: VerifiedActorPhotoFallback[];
 }> {
   const cleanName = characterName.trim() || 'Will Sampson';
-  onProgress?.(`Đang tìm & cắt tự động ${desiredCount} đoạn Video Thật của "${cleanName}"...`);
+  onProgress?.(`Đang tìm & cắt riêng ${desiredCount} đoạn Video Thật của "${cleanName}"...`);
 
   const targetDurations = targetScenes
     .filter((s) => s.sceneType === 'video' || s.sceneType === 'image')
@@ -195,6 +197,8 @@ export async function fetchAndAutoTrimActorRealVideos(
     dataUrl: string;
     trimStartSec: number;
     trimEndSec: number;
+    originalStartSec?: number;
+    originalEndSec?: number;
     width: number;
     height: number;
     sourceLabel?: string;
@@ -242,9 +246,11 @@ export async function fetchAndAutoTrimActorRealVideos(
             dataUrl: r.thumbUrl,
             trimStartSec: startSec,
             trimEndSec: endSec,
+            originalStartSec: startSec,
+            originalEndSec: endSec,
             width: r.width,
             height: r.height,
-            sourceLabel: `✂️ Đã cắt tự động ${startSec}s → ${endSec}s (Bỏ chữ đầu video)`,
+            sourceLabel: `✂️ Đã cắt riêng ${startSec}s → ${endSec}s`,
           });
         }
         break;
@@ -268,6 +274,8 @@ export async function fetchAndAutoTrimActorRealVideos(
       typeof c.trimEndSec === 'number' && c.trimEndSec > trimStart + 2
         ? c.trimEndSec
         : trimStart + (targetDurations[i] || 8);
+    const origStart = typeof c.originalStartSec === 'number' ? c.originalStartSec : trimStart;
+    const origEnd = typeof c.originalEndSec === 'number' ? c.originalEndSec : trimEnd;
 
     videoCuts.push({
       id: `real-cut-${Date.now()}-${i}`,
@@ -278,10 +286,12 @@ export async function fetchAndAutoTrimActorRealVideos(
       thumbnailUrl: c.dataUrl,
       trimStartSec: trimStart,
       trimEndSec: trimEnd,
-      durationSec: Math.max(6, trimEnd - trimStart),
+      originalStartSec: origStart,
+      originalEndSec: origEnd,
+      durationSec: Math.max(5, trimEnd - trimStart),
       width: c.width || 720,
       height: c.height || 404,
-      sourceLabel: c.sourceLabel || `✂️ Đã cắt ${trimStart}s → ${trimEnd}s`,
+      sourceLabel: c.sourceLabel || `✂️ Đã cắt riêng ${origStart}s → ${origEnd}s`,
     });
   }
 

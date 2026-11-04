@@ -171,29 +171,42 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
             <button
               type="button"
               onClick={onOpenYouTubePicker}
-              title="Mở kho tìm kiếm YouTube, tích chọn 1–3 video bạn thích và hệ thống tự động cắt chèn vào Timeline"
+              title="Mở kho tìm kiếm YouTube, chọn riêng từng đoạn thời gian (Start → End) và gán vào đúng Cảnh bạn muốn"
               className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-red-600/25 hover:bg-red-600/40 text-red-200 border border-red-500/60 font-sans font-bold transition-colors whitespace-nowrap shrink-0"
             >
               <Film className="w-3.5 h-3.5 text-red-400" />
-              <span>🔴 Chọn &amp; Cắt Video YouTube</span>
+              <span>🔴 Chọn &amp; Cắt Riêng Từng Đoạn YouTube</span>
             </button>
           )}
 
           {onFetchAndInsertTrimmedActorVideos && (
-            <button
-              type="button"
-              disabled={isTrimmingRealVideos}
-              onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 3, false)}
-              title="Tự động tìm 3 đoạn video thực tế của diễn viên, cắt sẵn đoạn hay nhất và chèn thẳng vào 3 cảnh trên dòng thời gian"
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
-            >
-              <Film className="w-3.5 h-3.5 text-sky-400" />
-              <span>
-                {isTrimmingRealVideos
-                  ? '⏳ Đang lấy & cắt 3 Video Thật...'
-                  : '🎬 Tự Lấy, Cắt & Chèn 3 Video Thật'}
-              </span>
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={isTrimmingRealVideos}
+                onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 1, true)}
+                title="Chỉ cắt & thay video thật cho đúng 1 Đoạn (Cảnh) bạn đang chọn trên Timeline (không đụng tới các đoạn khác)"
+                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-50 text-violet-200 border border-violet-400/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+              >
+                <Film className="w-3.5 h-3.5 text-violet-300" />
+                <span>✂️ Tự Cắt Cho Đoạn Đang Chọn</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isTrimmingRealVideos}
+                onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 3, false)}
+                title="Tự động tìm 3 đoạn video thực tế khác nhau của diễn viên, cắt riêng từng đoạn và chèn vào 3 cảnh trên dòng thời gian"
+                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+              >
+                <Film className="w-3.5 h-3.5 text-sky-400" />
+                <span>
+                  {isTrimmingRealVideos
+                    ? '⏳ Đang cắt riêng từng đoạn...'
+                    : '🎬 Tự Lấy & Cắt Riêng 3 Đoạn Video'}
+                </span>
+              </button>
+            </>
           )}
 
           {onBatchSwapVideoImageMedia && (
@@ -471,16 +484,23 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     }`}
                   >
                     <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-400" />
-                    <span className="font-bold shrink-0">
-                      {actualMediaKind === 'video' &&
-                      typeof scene.videoTrimStartSec === 'number' &&
-                      typeof scene.videoTrimEndSec === 'number'
-                        ? `✂️ Đã cắt (${scene.videoTrimStartSec}s→${scene.videoTrimEndSec}s):`
-                        : actualMediaKind === 'video'
-                        ? '🎬 Video thật:'
-                        : '📸 Ảnh thật chuẩn:'}
-                    </span>
-                    <span className="truncate">{attachedFileName}</span>
+                    {attachedFileName?.startsWith('✂️') ? (
+                      <span className="font-bold truncate">{attachedFileName}</span>
+                    ) : (
+                      <>
+                        <span className="font-bold shrink-0">
+                          {actualMediaKind === 'video' &&
+                          typeof scene.videoTrimStartSec === 'number' &&
+                          typeof scene.videoTrimEndSec === 'number' &&
+                          scene.videoTrimStartSec > 0
+                            ? `✂️ Đã cắt (${scene.videoTrimStartSec}s→${scene.videoTrimEndSec}s):`
+                            : actualMediaKind === 'video'
+                            ? '🎬 Video thật:'
+                            : '📸 Ảnh thật chuẩn:'}
+                        </span>
+                        <span className="truncate">{attachedFileName}</span>
+                      </>
+                    )}
                   </div>
                 ) : scene.sceneType === 'outro' ? (
                   <div className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate bg-amber-950/60 text-amber-200 border border-amber-500/40">

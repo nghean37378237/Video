@@ -2471,27 +2471,128 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       ]);
 
       const combinedPhotos = [...primaryPhotos, ...filmPhotos];
+      const lowerChar = cleanQuery.toLowerCase();
+      const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
+        (k) => lowerChar.includes(k) || k.includes(lowerChar)
+      );
+      const curatedReels = matchedCuratedKey
+        ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
+        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+
       const cutOffsets = [18, 44, 95, 120, 160, 210];
-      const videoCuts = videos.map((v, idx) => {
-        const dur =
-          Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
-            ? Math.round(Number(sceneDurations[idx]))
-            : 8;
-        const startSec = v.trimStartSec ?? cutOffsets[idx % cutOffsets.length];
-        const endSec = startSec + dur;
-        const distinctPhoto =
-          combinedPhotos[(idx + Number(cycleOffset || 0)) % Math.max(1, combinedPhotos.length)];
-        return {
-          title: v.title,
-          videoUrl: v.videoUrl,
-          dataUrl: v.dataUrl || distinctPhoto?.dataUrl || "",
-          trimStartSec: startSec,
-          trimEndSec: endSec,
-          width: v.width,
-          height: v.height,
-          sourceLabel: `✂️ Đã cắt tự động ${startSec}s → ${endSec}s`,
-        };
-      });
+      const shiftSec = (Math.max(0, Number(cycleOffset) || 0) % 4) * 14;
+
+      const videoCuts = await Promise.all(
+        videos.map(async (v, idx) => {
+          const dur =
+            Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
+              ? Math.round(Number(sceneDurations[idx]))
+              : 8;
+          const startSec = (v.trimStartSec ?? cutOffsets[idx % cutOffsets.length]) + shiftSec;
+          const endSec = startSec + dur;
+          const distinctPhoto =
+            combinedPhotos[(idx + Number(cycleOffset || 0)) % Math.max(1, combinedPhotos.length)];
+
+          const reel = curatedReels[(idx + Number(cycleOffset || 0)) % curatedReels.length];
+          const rawMp4Source = reel?.rawMp4Url || "";
+          const fileId = `arch_cut_${Date.now()}_${idx}_${startSec}s_${endSec}s`;
+          const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+          const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+
+          let cutSucceeded = false;
+          if (rawMp4Source) {
+            try {
+              await execFileAsync(
+                "ffmpeg",
+                [
+                  "-y",
+                  "-ss",
+                  String(startSec),
+                  "-i",
+                  rawMp4Source,
+                  "-t",
+                  String(dur),
+                  "-vf",
+                  "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+                  "-c:v",
+                  "libx264",
+                  "-preset",
+                  "ultrafast",
+                  "-crf",
+                  "25",
+                  "-pix_fmt",
+                  "yuv420p",
+                  "-movflags",
+                  "+faststart",
+                  "-an",
+                  outMp4Path,
+                ],
+                { timeout: 11000 }
+              );
+              if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
+                cutSucceeded = true;
+                await execFileAsync(
+                  "ffmpeg",
+                  [
+                    "-y",
+                    "-ss",
+                    String(Math.min(2, Math.max(0.5, dur * 0.3))),
+                    "-i",
+                    outMp4Path,
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "3",
+                    outJpgPath,
+                  ],
+                  { timeout: 3500 }
+                ).catch(() => {});
+              }
+            } catch {
+              // fallback to range stream if ffmpeg times out
+            }
+          }
+
+          let frameThumb = v.dataUrl || distinctPhoto?.dataUrl || "";
+          if (fs.existsSync(outJpgPath)) {
+            const jpgBuf = fs.readFileSync(outJpgPath);
+            frameThumb = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
+            try {
+              fs.unlinkSync(outJpgPath);
+            } catch {
+              // ignore
+            }
+          }
+
+          if (cutSucceeded) {
+            return {
+              title: v.title,
+              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}`,
+              dataUrl: frameThumb,
+              trimStartSec: 0,
+              trimEndSec: dur,
+              originalStartSec: startSec,
+              originalEndSec: endSec,
+              width: 640,
+              height: 360,
+              sourceLabel: `✂️ Đã cắt riêng đoạn ${startSec}s → ${endSec}s`,
+            };
+          }
+
+          return {
+            title: v.title,
+            videoUrl: v.videoUrl,
+            dataUrl: frameThumb,
+            trimStartSec: startSec,
+            trimEndSec: endSec,
+            originalStartSec: startSec,
+            originalEndSec: endSec,
+            width: v.width,
+            height: v.height,
+            sourceLabel: `✂️ Đã cắt riêng đoạn ${startSec}s → ${endSec}s`,
+          };
+        })
+      );
 
       res.json({
         videoCuts,
@@ -2884,7 +2985,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         })(),
       ]);
 
-      // Pair YouTube search results with cuttable Dailymotion / Internet Archive film streams
+      // Pair each YouTube video with a distinct film stream matching its own title keywords
       const lowerChar = cleanChar.toLowerCase();
       const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
         (k) => lowerChar.includes(k) || k.includes(lowerChar)
@@ -2893,19 +2994,46 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
 
-      const cutStartPresets = [18, 32, 48, 65, 85, 110, 140];
+      const cutStartPresets = [18, 34, 52, 72, 95, 118, 145];
+      const usedDmInSearch = new Set<string>();
+
       const videos = ytResults.map((yt, idx) => {
-        const pairedDm = dmResults[idx % Math.max(1, dmResults.length)];
-        const pairedReel = curatedReels[idx % curatedReels.length];
+        const lowerTitle = yt.title.toLowerCase();
+        // Match specific film reel based on this YouTube video's own title first
+        let matchedReel = curatedReels.find(
+          (r) =>
+            (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
+            (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
+            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
+            (lowerTitle.includes("bonanza") && r.title.toLowerCase().includes("bonanza")) ||
+            (lowerTitle.includes("lone ranger") && r.title.toLowerCase().includes("lone ranger")) ||
+            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven"))
+        );
+        if (!matchedReel) {
+          matchedReel = curatedReels[idx % curatedReels.length];
+        }
+
+        // Pick a unique Dailymotion ID for this card if available (never reuse the same dmId across cards)
+        let pairedDmId = "";
+        for (const dm of dmResults) {
+          if (!usedDmInSearch.has(dm.dmId)) {
+            usedDmInSearch.add(dm.dmId);
+            pairedDmId = dm.dmId;
+            break;
+          }
+        }
+
         const suggestedStart = Math.min(
           Math.max(15, yt.durationSec - 15),
-          cutStartPresets[idx % cutStartPresets.length]
+          matchedReel?.trimStartSec
+            ? matchedReel.trimStartSec + (idx >= curatedReels.length ? idx * 14 : 0)
+            : cutStartPresets[idx % cutStartPresets.length]
         );
         return {
           id: `yt-${yt.youtubeId}-${idx}`,
           youtubeId: yt.youtubeId,
-          dmId: pairedDm?.dmId || "",
-          archiveMp4Url: pairedReel?.rawMp4Url || "",
+          dmId: pairedDmId,
+          archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: yt.title,
           channel: yt.channel,
           durationSec: yt.durationSec,
@@ -2929,12 +3057,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }
   });
 
-  // 2i. Cut Selected YouTube / Film Videos with FFmpeg and Return Ready-to-Play MP4 Cuts + Frame Thumbnails
+  // 2i. Cut Each Selected Video Segment Independently with FFmpeg and Return Separate MP4 Cuts + Unique Frame Thumbnails
   app.post("/api/youtube/cut-clips", async (req, res) => {
     try {
       const { clips = [], characterName = "Will Sampson" } = req.body || {};
       if (!Array.isArray(clips) || clips.length === 0) {
-        res.status(400).json({ error: "Vui lòng chọn ít nhất 1 video để cắt." });
+        res.status(400).json({ error: "Vui lòng chọn ít nhất 1 đoạn video để cắt." });
         return;
       }
 
@@ -2949,141 +3077,215 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
 
-      const results = await Promise.all(
-        clips.slice(0, 6).map(async (clip: any, idx: number) => {
-          const trimStartSec = Math.max(5, Math.round(Number(clip?.trimStartSec) || 18));
-          const durationSec = Math.max(
-            5,
-            Math.min(18, Math.round(Number(clip?.durationSec) || 9))
-          );
-          const trimEndSec = trimStartSec + durationSec;
-          const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
+      const usedStreamSources = new Set<string>();
 
-          // 1. Resolve stream URL (Dailymotion HLS -> or search Dailymotion by clip title -> or verified Archive MP4)
-          let streamUrl: string | null = null;
-          if (clip?.dmId) {
-            streamUrl = await resolveDailymotionStreamUrl(String(clip.dmId));
-          }
-          if (!streamUrl && title) {
-            try {
-              const dmSearch = await fetch(
-                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                  title.slice(0, 45)
-                )}&limit=2&fields=id,duration`,
-                {
-                  headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3000),
-                }
-              );
-              if (dmSearch.ok) {
-                const dmData: any = await dmSearch.json();
-                const firstId = dmData?.list?.[0]?.id;
-                if (firstId) {
-                  streamUrl = await resolveDailymotionStreamUrl(String(firstId));
+      const results: any[] = [];
+      for (let idx = 0; idx < Math.min(8, clips.length); idx++) {
+        const clip = clips[idx];
+        const trimStartSec = Math.max(1, Math.round(Number(clip?.trimStartSec) || 18));
+        const rawEndSec = Number(clip?.trimEndSec);
+        const durationSec =
+          rawEndSec && rawEndSec > trimStartSec + 1
+            ? Math.max(3, Math.min(25, Math.round(rawEndSec - trimStartSec)))
+            : Math.max(3, Math.min(25, Math.round(Number(clip?.durationSec) || 9)));
+        const trimEndSec = trimStartSec + durationSec;
+        const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
+        const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
+
+        // 1. Search Dailymotion specifically for this individual clip's title so different selected videos never share the same stream
+        let streamUrl: string | null = null;
+        if (title) {
+          try {
+            const cleanSearchTitle = title
+              .replace(/[^\p{L}\p{N}\s']/gu, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 50);
+            const dmSearch = await fetch(
+              `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                cleanSearchTitle
+              )}&limit=5&fields=id,title,duration`,
+              {
+                headers: { "User-Agent": BROWSER_USER_AGENT },
+                signal: AbortSignal.timeout(3200),
+              }
+            );
+            if (dmSearch.ok) {
+              const dmData: any = await dmSearch.json();
+              const list = Array.isArray(dmData?.list) ? dmData.list : [];
+              for (const item of list) {
+                if (!item?.id || (item.duration || 0) < trimEndSec + 2) continue;
+                const candidateId = String(item.id);
+                if (!usedStreamSources.has(`dm:${candidateId}`)) {
+                  const resolved = await resolveDailymotionStreamUrl(candidateId);
+                  if (resolved) {
+                    usedStreamSources.add(`dm:${candidateId}`);
+                    streamUrl = resolved;
+                    break;
+                  }
                 }
               }
-            } catch {
-              // fallback below
             }
+          } catch {
+            // fallback below
           }
+        }
 
-          const fallbackReel = curatedReels[idx % curatedReels.length];
-          const archiveMp4 = String(clip?.archiveMp4Url || fallbackReel.rawMp4Url);
+        if (!streamUrl && clip?.dmId && !usedStreamSources.has(`dm:${clip.dmId}`)) {
+          const resolved = await resolveDailymotionStreamUrl(String(clip.dmId));
+          if (resolved) {
+            usedStreamSources.add(`dm:${clip.dmId}`);
+            streamUrl = resolved;
+          }
+        }
 
-          const fileId = `yt_cut_${Date.now()}_${idx}`;
-          const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
-          const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+        // Pick a matching or distinct Archive MP4 fallback reel for this clip
+        const lowerTitle = title.toLowerCase();
+        let chosenReel = curatedReels.find(
+          (r) =>
+            (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
+            (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
+            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo"))
+        );
+        if (!chosenReel || usedStreamSources.has(`ia:${chosenReel.rawMp4Url}`)) {
+          chosenReel =
+            curatedReels.find((r) => !usedStreamSources.has(`ia:${r.rawMp4Url}`)) ||
+            curatedReels[idx % curatedReels.length];
+        }
+        const archiveMp4 = String(clip?.archiveMp4Url || chosenReel.rawMp4Url);
+        usedStreamSources.add(`ia:${archiveMp4}`);
 
-          let cutSucceeded = false;
-          const sourceToCut = streamUrl || archiveMp4;
+        const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s`;
+        const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+        const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
 
-          try {
+        let cutSucceeded = false;
+        const sourceToCut = streamUrl || archiveMp4;
+
+        try {
+          await execFileAsync(
+            "ffmpeg",
+            [
+              "-y",
+              "-ss",
+              String(trimStartSec),
+              "-i",
+              sourceToCut,
+              "-t",
+              String(durationSec),
+              "-vf",
+              "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+              "-c:v",
+              "libx264",
+              "-preset",
+              "ultrafast",
+              "-crf",
+              "25",
+              "-pix_fmt",
+              "yuv420p",
+              "-movflags",
+              "+faststart",
+              "-an",
+              outMp4Path,
+            ],
+            { timeout: 14000 }
+          );
+
+          if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
+            cutSucceeded = true;
+            // Extract frame thumbnail from the middle of this specific cut segment
+            const thumbSeek = Math.min(2.5, Math.max(0.6, Number((durationSec * 0.35).toFixed(1))));
             await execFileAsync(
               "ffmpeg",
               [
                 "-y",
                 "-ss",
-                String(trimStartSec),
+                String(thumbSeek),
                 "-i",
-                sourceToCut,
-                "-t",
-                String(durationSec),
-                "-vf",
-                "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "25",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                "-an",
                 outMp4Path,
+                "-frames:v",
+                "1",
+                "-q:v",
+                "3",
+                outJpgPath,
               ],
-              { timeout: 14000 }
-            );
-
-            if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 15000) {
-              cutSucceeded = true;
-              // Extract frame thumbnail at 0.8s into the cut video
+              { timeout: 4000 }
+            ).catch(() => {});
+          }
+        } catch {
+          // If cutting from streamUrl timed out, try archiveMp4 if different
+          if (streamUrl && archiveMp4) {
+            try {
               await execFileAsync(
                 "ffmpeg",
                 [
                   "-y",
                   "-ss",
-                  "0.8",
+                  String(trimStartSec),
                   "-i",
+                  archiveMp4,
+                  "-t",
+                  String(durationSec),
+                  "-vf",
+                  "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+                  "-c:v",
+                  "libx264",
+                  "-preset",
+                  "ultrafast",
+                  "-crf",
+                  "25",
+                  "-pix_fmt",
+                  "yuv420p",
+                  "-movflags",
+                  "+faststart",
+                  "-an",
                   outMp4Path,
-                  "-frames:v",
-                  "1",
-                  "-q:v",
-                  "3",
-                  outJpgPath,
                 ],
-                { timeout: 4000 }
-              ).catch(() => {});
-            }
-          } catch {
-            // If cutting from streamUrl timed out, fallback to streaming proxy
-          }
-
-          let thumbnailUrl = String(clip?.thumbnailUrl || "");
-          if (fs.existsSync(outJpgPath)) {
-            const jpgBuf = fs.readFileSync(outJpgPath);
-            thumbnailUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
-            try {
-              fs.unlinkSync(outJpgPath);
+                { timeout: 12000 }
+              );
+              if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
+                cutSucceeded = true;
+              }
             } catch {
-              // ignore
+              // fallback below
             }
-          } else if (thumbnailUrl.startsWith("http")) {
-            thumbnailUrl = await resolveImageToDataUrlOrDirect(thumbnailUrl);
           }
+        }
 
-          if (cutSucceeded) {
-            return {
-              id: `yt-cut-${Date.now()}-${idx}`,
-              title,
-              // Physical MP4 file already trimmed from 0s -> durationSec!
-              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}`,
-              thumbnailUrl,
-              trimStartSec: 0,
-              trimEndSec: durationSec,
-              originalStartSec: trimStartSec,
-              originalEndSec: trimEndSec,
-              durationSec,
-              width: 640,
-              height: 360,
-              sourceLabel: `✂️ Đã cắt YouTube (${trimStartSec}s → ${trimEndSec}s)`,
-            };
+        let thumbnailUrl = String(clip?.thumbnailUrl || "");
+        if (fs.existsSync(outJpgPath)) {
+          const jpgBuf = fs.readFileSync(outJpgPath);
+          thumbnailUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
+          try {
+            fs.unlinkSync(outJpgPath);
+          } catch {
+            // ignore
           }
+        } else if (thumbnailUrl.startsWith("http")) {
+          thumbnailUrl = await resolveImageToDataUrlOrDirect(thumbnailUrl);
+        }
 
-          // Instant HTTP 206 Range stream fallback
-          return {
+        if (cutSucceeded) {
+          results.push({
             id: `yt-cut-${Date.now()}-${idx}`,
+            targetSceneId,
+            title,
+            // Independent MP4 file physically cut for this exact segment [trimStartSec -> trimEndSec]
+            videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
+            thumbnailUrl,
+            trimStartSec: 0,
+            trimEndSec: durationSec,
+            originalStartSec: trimStartSec,
+            originalEndSec: trimEndSec,
+            durationSec,
+            width: 640,
+            height: 360,
+            sourceLabel: `✂️ Đã cắt riêng đoạn ${trimStartSec}s → ${trimEndSec}s`,
+          });
+        } else {
+          results.push({
+            id: `yt-cut-${Date.now()}-${idx}`,
+            targetSceneId,
             title,
             videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(archiveMp4)}#cut=${idx + 1}&t=${trimStartSec},${trimEndSec}`,
             thumbnailUrl,
@@ -3094,17 +3296,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             durationSec,
             width: 640,
             height: 360,
-            sourceLabel: `✂️ Đã cắt (${trimStartSec}s → ${trimEndSec}s)`,
-          };
-        })
-      );
+            sourceLabel: `✂️ Đã cắt riêng đoạn ${trimStartSec}s → ${trimEndSec}s`,
+          });
+        }
+      }
 
       res.json({
         cuts: results,
       });
     } catch (error: any) {
       res.status(500).json({
-        error: error?.message || "Không thể cắt video đã chọn.",
+        error: error?.message || "Không thể cắt đoạn video đã chọn.",
         cuts: [],
       });
     }
@@ -3277,21 +3479,26 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const sc = videoTargetScenes[vIdx];
         const vid = sortedVideos[vIdx];
         const label = vid.year ? `${vid.title} (${vid.year})` : vid.title;
+        // Give each video scene a distinct thumbnail so they never look identical on the Timeline
+        const distinctThumb =
+          vid.dataUrl ||
+          uniqueVerifiedPool[Math.max(0, uniqueVerifiedPool.length - 1 - vIdx)]?.dataUrl ||
+          "";
         matchedBySceneId[sc.id] = {
           title: label,
-          dataUrl: vid.dataUrl,
+          dataUrl: distinctThumb,
           videoUrl: vid.videoUrl,
           mediaKind: "video",
           width: vid.width,
           height: vid.height,
           year: vid.year,
-          trimStartSec: (vid as any).trimStartSec ?? 14,
-          trimEndSec: (vid as any).trimEndSec ?? 22,
+          trimStartSec: (vid as any).trimStartSec ?? 18 + vIdx * 26,
+          trimEndSec: (vid as any).trimEndSec ?? 27 + vIdx * 26,
         } as any;
         allPhotos.push({
           sceneId: sc.id,
           title: label,
-          dataUrl: vid.dataUrl,
+          dataUrl: distinctThumb,
           videoUrl: vid.videoUrl,
           mediaKind: "video",
           width: vid.width,

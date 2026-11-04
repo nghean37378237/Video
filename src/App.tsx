@@ -270,18 +270,22 @@ export default function App() {
         currentCycle
       );
 
-      const newVaultItems: VaultItem[] = trimmedCuts.map((cut, i) => ({
-        id: cut.id,
-        name: `✂️ Video Thật Đã Cắt #${i + 1} (${cut.trimStartSec}s→${cut.trimEndSec}s): ${cut.title}`,
-        type: 'video',
-        url: cut.videoUrl,
-        thumbnailUrl: cut.thumbnailUrl,
-        width: cut.width,
-        height: cut.height,
-        durationSec: cut.durationSec,
-        sourceTag: 'uploaded',
-        createdAt: cut.sourceLabel,
-      }));
+      const newVaultItems: VaultItem[] = trimmedCuts.map((cut, i) => {
+        const origStart = cut.originalStartSec ?? cut.trimStartSec;
+        const origEnd = cut.originalEndSec ?? cut.trimEndSec;
+        return {
+          id: cut.id,
+          name: `✂️ Video Thật Đã Cắt #${i + 1} (${origStart}s→${origEnd}s): ${cut.title}`,
+          type: 'video',
+          url: cut.videoUrl,
+          thumbnailUrl: cut.thumbnailUrl,
+          width: cut.width,
+          height: cut.height,
+          durationSec: cut.durationSec,
+          sourceTag: 'uploaded',
+          createdAt: cut.sourceLabel,
+        };
+      });
 
       if (newVaultItems.length > 0) {
         setVaultItems((prev) => [...newVaultItems, ...prev]);
@@ -319,6 +323,8 @@ export default function App() {
             const cut = trimmedCuts[0];
             const vItem = newVaultItems[0];
             const trimEnd = cut.trimStartSec + scDur;
+            const origStart = cut.originalStartSec ?? cut.trimStartSec;
+            const origEnd = cut.originalEndSec ?? origStart + scDur;
             nextScenes[sIdx] = {
               ...sc,
               sceneType: 'video',
@@ -329,7 +335,7 @@ export default function App() {
               videoTrimEndSec: trimEnd,
               characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
               hasRealPhoto: true,
-              realPhotoTitle: `✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s · ${cut.title}`,
+              realPhotoTitle: `✂️ Cắt riêng ${origStart}s→${origEnd}s · ${cut.title}`,
               imagePrompt: klingPack.klingImagePrompt,
               videoMotionPrompt: klingPack.klingVideoPrompt,
               klingStandardPrompt: klingPack.combinedBlock,
@@ -338,7 +344,7 @@ export default function App() {
             };
             updatedSceneIndices.push(sIdx);
             assignedSceneNumbers.push(
-              `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
+              `Cảnh #${String(sc.order).padStart(2, '0')} (${origStart}s→${origEnd}s)`
             );
           } else {
             // No real video found for this scene -> provide real reference photo + Grok / Kling AI prompt as requested!
@@ -388,6 +394,8 @@ export default function App() {
           const sc = nextScenes[sceneIdx];
           const scDur = Math.max(5, Math.round(sc.durationSec || 8));
           const trimEnd = cut.trimStartSec + scDur;
+          const origStart = cut.originalStartSec ?? cut.trimStartSec;
+          const origEnd = cut.originalEndSec ?? origStart + scDur;
 
           nextScenes[sceneIdx] = {
             ...sc,
@@ -399,13 +407,13 @@ export default function App() {
             videoTrimEndSec: trimEnd,
             characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
             hasRealPhoto: true,
-            realPhotoTitle: `✂️ Cắt ${cut.trimStartSec}s→${trimEnd}s · ${cut.title}`,
+            realPhotoTitle: `✂️ Cắt riêng ${origStart}s→${origEnd}s · ${cut.title}`,
             frameStyle: 'full-bleed',
             showBottomSubtitles: true,
           };
           updatedSceneIndices.push(sceneIdx);
           assignedSceneNumbers.push(
-            `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.trimStartSec}s→${trimEnd}s)`
+            `Cảnh #${String(sc.order).padStart(2, '0')} (${origStart}s→${origEnd}s)`
           );
         });
 
@@ -729,7 +737,7 @@ export default function App() {
     }
   };
 
-  // Handler when Admin selects 1 or multiple YouTube videos and cuts them via FFmpeg
+  // Handler when Admin selects 1 or multiple YouTube video segments and cuts each independently via FFmpeg
   const handleInsertCutYouTubeClips = (
     cuts: CutYouTubeResultItem[],
     targetSceneId?: string | null
@@ -755,70 +763,52 @@ export default function App() {
     const assignedLabels: string[] = [];
     const updatedIndices: number[] = [];
 
-    if (targetSceneId && targetSceneId !== '__YOUTUBE_BATCH__' && cuts.length === 1) {
-      const sIdx = nextScenes.findIndex((s) => s.id === targetSceneId);
-      if (sIdx >= 0) {
-        const sc = nextScenes[sIdx];
-        const cut = cuts[0];
-        const vItem = newVaultItems[0];
-        nextScenes[sIdx] = {
-          ...sc,
-          sceneType: 'video',
-          mediaId: vItem.id,
-          mediaUrl: vItem.url,
-          mediaKind: 'video',
-          videoTrimStartSec: cut.trimStartSec,
-          videoTrimEndSec: cut.trimEndSec,
-          characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
-          hasRealPhoto: true,
-          realPhotoTitle: `✂️ Cắt YouTube ${cut.originalStartSec}s→${cut.originalEndSec}s · ${cut.title}`,
-          frameStyle: 'full-bleed',
-          showBottomSubtitles: true,
-        };
-        updatedIndices.push(sIdx);
-        assignedLabels.push(
-          `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.originalStartSec}s→${cut.originalEndSec}s)`
-        );
+    const videoSceneIndices = nextScenes
+      .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
+      .filter((idx) => idx >= 0);
+
+    cuts.forEach((cut, cutIdx) => {
+      const vItem = newVaultItems[cutIdx];
+      if (!vItem) return;
+
+      // 1. Always prioritize the exact per-segment targetSceneId chosen by the user!
+      const explicitSceneId =
+        cut.targetSceneId ||
+        (cuts.length === 1 && targetSceneId && targetSceneId !== '__YOUTUBE_BATCH__'
+          ? targetSceneId
+          : cuts.length === 1
+          ? activeSceneId
+          : undefined);
+
+      let sceneIdx = explicitSceneId
+        ? nextScenes.findIndex((s) => s.id === explicitSceneId)
+        : -1;
+
+      if (sceneIdx < 0 && videoSceneIndices.length > 0) {
+        sceneIdx = videoSceneIndices[cutIdx % videoSceneIndices.length];
       }
-    } else {
-      const videoSceneIndices = nextScenes
-        .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
-        .filter((idx) => idx >= 0);
+      if (sceneIdx < 0 || sceneIdx >= nextScenes.length) return;
 
-      let startOffset = 0;
-      if (targetSceneId && targetSceneId !== '__YOUTUBE_BATCH__') {
-        const pos = videoSceneIndices.findIndex((idx) => nextScenes[idx]?.id === targetSceneId);
-        if (pos >= 0) startOffset = pos;
-      }
-
-      cuts.forEach((cut, cutIdx) => {
-        const vItem = newVaultItems[cutIdx];
-        if (!vItem || videoSceneIndices.length === 0) return;
-        const sceneIdx =
-          videoSceneIndices[(startOffset + cutIdx) % videoSceneIndices.length];
-        const sc = nextScenes[sceneIdx];
-        if (!sc) return;
-
-        nextScenes[sceneIdx] = {
-          ...sc,
-          sceneType: 'video',
-          mediaId: vItem.id,
-          mediaUrl: vItem.url,
-          mediaKind: 'video',
-          videoTrimStartSec: cut.trimStartSec,
-          videoTrimEndSec: cut.trimEndSec,
-          characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
-          hasRealPhoto: true,
-          realPhotoTitle: `✂️ Cắt YouTube ${cut.originalStartSec}s→${cut.originalEndSec}s · ${cut.title}`,
-          frameStyle: 'full-bleed',
-          showBottomSubtitles: true,
-        };
-        updatedIndices.push(sceneIdx);
-        assignedLabels.push(
-          `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.originalStartSec}s→${cut.originalEndSec}s)`
-        );
-      });
-    }
+      const sc = nextScenes[sceneIdx];
+      nextScenes[sceneIdx] = {
+        ...sc,
+        sceneType: 'video',
+        mediaId: vItem.id,
+        mediaUrl: vItem.url,
+        mediaKind: 'video',
+        videoTrimStartSec: cut.trimStartSec,
+        videoTrimEndSec: cut.trimEndSec,
+        characterRefPhotoUrl: cut.thumbnailUrl || sc.characterRefPhotoUrl,
+        hasRealPhoto: true,
+        realPhotoTitle: `✂️ Cắt riêng (${cut.originalStartSec}s→${cut.originalEndSec}s) · ${cut.title}`,
+        frameStyle: 'full-bleed',
+        showBottomSubtitles: true,
+      };
+      updatedIndices.push(sceneIdx);
+      assignedLabels.push(
+        `Cảnh #${String(sc.order).padStart(2, '0')} (${cut.originalStartSec}s→${cut.originalEndSec}s)`
+      );
+    });
 
     setScenes(nextScenes);
 
@@ -834,7 +824,7 @@ export default function App() {
         setIsPlaying(true);
       }
       setStatusBanner(
-        `🎬 Đã cắt thành công ${assignedLabels.length} đoạn video từ YouTube và chèn vào ${assignedLabels.join(', ')} (đang phát ngay)!`
+        `🎬 Đã cắt riêng từng đoạn thành công và chèn đúng vào ${assignedLabels.join(', ')} (đang phát ngay)!`
       );
     }
   };
@@ -1773,7 +1763,7 @@ export default function App() {
           realPhotoTitle: isRealVideo
             ? `${matched.title} (✂️ Cắt ${trimStart}s→${trimEnd}s)`
             : matched.title,
-          characterRefPhotoUrl: primaryCharacterPhotoUrl || matched.dataUrl,
+          characterRefPhotoUrl: matched.dataUrl || primaryCharacterPhotoUrl,
           imagePrompt: klingPack.klingImagePrompt,
           videoMotionPrompt: klingPack.klingVideoPrompt,
           klingStandardPrompt: klingPack.combinedBlock,
@@ -3005,6 +2995,8 @@ export default function App() {
             ? scenes.find((s) => s.id === searchingMediaSceneId) || null
             : null
         }
+        allScenes={scenes}
+        activeSceneId={activeSceneId}
         initialTab="youtube"
         totalScenes={scenes.length}
         characterName={

@@ -59,6 +59,7 @@ export interface YouTubeSearchVideoItem {
 
 export interface CutYouTubeResultItem {
   id: string;
+  targetSceneId?: string;
   title: string;
   videoUrl: string;
   thumbnailUrl: string;
@@ -72,9 +73,19 @@ export interface CutYouTubeResultItem {
   sourceLabel: string;
 }
 
+export interface QueuedYouTubeSegment {
+  queueId: string;
+  video: YouTubeSearchVideoItem;
+  targetSceneId: string;
+  trimStartSec: number;
+  trimEndSec: number;
+}
+
 interface SceneMediaSearchModalProps {
   isOpen: boolean;
   scene: StoryScene | null;
+  allScenes?: StoryScene[];
+  activeSceneId?: string;
   initialTab?: 'youtube' | 'all' | 'video' | 'image';
   totalScenes: number;
   characterName: string;
@@ -102,6 +113,8 @@ interface SceneMediaSearchModalProps {
 export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   isOpen,
   scene,
+  allScenes = [],
+  activeSceneId,
   initialTab = 'youtube',
   characterName,
   vaultItems,
@@ -115,12 +128,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [filterTab, setFilterTab] = useState<'youtube' | 'all' | 'video' | 'image'>(initialTab);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isCuttingYouTube, setIsCuttingYouTube] = useState<boolean>(false);
+  const [cuttingCardId, setCuttingCardId] = useState<string | null>(null);
   const [cycleOffset, setCycleOffset] = useState<number>(0);
 
-  // YouTube search results & multi-select state
+  // YouTube search results & per-card segment controls
   const [youtubeVideos, setYoutubeVideos] = useState<YouTubeSearchVideoItem[]>([]);
-  const [selectedYtIds, setSelectedYtIds] = useState<string[]>([]);
+  const [queuedSegments, setQueuedSegments] = useState<QueuedYouTubeSegment[]>([]);
   const [ytTrimStarts, setYtTrimStarts] = useState<Record<string, number>>({});
+  const [ytTrimEnds, setYtTrimEnds] = useState<Record<string, number>>({});
+  const [ytTargetSceneIds, setYtTargetSceneIds] = useState<Record<string, string>>({});
   const [previewingYtId, setPreviewingYtId] = useState<string | null>(null);
 
   // Archival video & photo results
@@ -130,6 +146,29 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
   const sceneDur = Math.max(5, Math.round(scene?.durationSec || 9));
+
+  // Eligible visual scenes on the Timeline that can receive a cut video
+  const selectableScenes = React.useMemo(() => {
+    const list = allScenes.filter((s) => s.sceneType !== 'outro' && s.sceneType !== 'quote');
+    if (list.length > 0) return list;
+    return scene ? [scene] : [];
+  }, [allScenes, scene]);
+
+  const videoScenesOnly = React.useMemo(() => {
+    const vList = selectableScenes.filter((s) => s.sceneType === 'video');
+    return vList.length > 0 ? vList : selectableScenes;
+  }, [selectableScenes]);
+
+  const getSceneDurationById = (sId: string): number => {
+    const found = allScenes.find((s) => s.id === sId) || (scene?.id === sId ? scene : undefined);
+    return Math.max(5, Math.round(found?.durationSec || 9));
+  };
+
+  const getSceneBadgeById = (sId: string): string => {
+    const found = allScenes.find((s) => s.id === sId) || (scene?.id === sId ? scene : undefined);
+    if (!found) return 'Đoạn Đang Chọn';
+    return `Đoạn #${String(found.order).padStart(2, '0')} (${Math.round(found.durationSec || 8)}s)`;
+  };
 
   const suggestedQueries = React.useMemo(() => {
     const list: string[] = [cleanCharName];
@@ -209,17 +248,26 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           ? ytData.videos
           : [];
         setYoutubeVideos(ytList);
-        const nextYtTrims: Record<string, number> = {};
-        ytList.forEach((v) => {
-          nextYtTrims[v.id] = v.suggestedTrimStartSec || 18;
+        const nextStarts: Record<string, number> = {};
+        const nextEnds: Record<string, number> = {};
+        const nextTargetScenes: Record<string, string> = {};
+
+        ytList.forEach((v, idx) => {
+          const defaultTargetScene =
+            scene?.id ||
+            videoScenesOnly[idx % Math.max(1, videoScenesOnly.length)]?.id ||
+            activeSceneId ||
+            selectableScenes[0]?.id ||
+            '';
+          const targetDur = getSceneDurationById(defaultTargetScene);
+          const sSec = v.suggestedTrimStartSec || 18;
+          nextStarts[v.id] = sSec;
+          nextEnds[v.id] = sSec + targetDur;
+          nextTargetScenes[v.id] = defaultTargetScene;
         });
-        setYtTrimStarts(nextYtTrims);
-        // Pre-select first 3 YouTube videos if opened in batch mode, or first 1 if opened for a single scene
-        if (ytList.length > 0) {
-          setSelectedYtIds(
-            scene ? [ytList[0].id] : ytList.slice(0, 3).map((v) => v.id)
-          );
-        }
+        setYtTrimStarts(nextStarts);
+        setYtTrimEnds(nextEnds);
+        setYtTargetSceneIds(nextTargetScenes);
       }
 
       if (archRes.ok) {
@@ -262,6 +310,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setSearchQuery(defaultQuery);
       setFilterTab(initialTab);
       setCycleOffset(0);
+      setQueuedSegments([]);
       executeSearch(defaultQuery, 0);
     }
   }, [isOpen, scene?.id, initialTab]);
@@ -270,30 +319,94 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
   const sceneNumLabel = scene ? `#${String(scene.order).padStart(2, '0')}` : null;
 
-  const toggleSelectYouTubeVideo = (id: string) => {
-    setSelectedYtIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  // Toggle or add a specific [video + startSec->endSec + targetSceneId] segment into the cut queue
+  const handleToggleQueueSegment = (yt: YouTubeSearchVideoItem) => {
+    const startSec = ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
+    const defaultTargetSceneId =
+      ytTargetSceneIds[yt.id] ||
+      scene?.id ||
+      activeSceneId ||
+      selectableScenes[0]?.id ||
+      '';
+    const targetDur = getSceneDurationById(defaultTargetSceneId);
+    const endSec = ytTrimEnds[yt.id] ?? startSec + targetDur;
+
+    const existingIdx = queuedSegments.findIndex(
+      (q) =>
+        q.video.id === yt.id &&
+        q.trimStartSec === startSec &&
+        q.trimEndSec === endSec &&
+        q.targetSceneId === defaultTargetSceneId
     );
+
+    if (existingIdx >= 0) {
+      setQueuedSegments((prev) => prev.filter((_, i) => i !== existingIdx));
+    } else {
+      setQueuedSegments((prev) => [
+        ...prev,
+        {
+          queueId: `q-${yt.id}-${startSec}-${endSec}-${defaultTargetSceneId}-${Date.now()}`,
+          video: yt,
+          targetSceneId: defaultTargetSceneId,
+          trimStartSec: startSec,
+          trimEndSec: Math.max(startSec + 3, endSec),
+        },
+      ]);
+    }
   };
 
+  const handleRemoveQueuedSegment = (queueId: string) => {
+    setQueuedSegments((prev) => prev.filter((q) => q.queueId !== queueId));
+  };
+
+  // Cut either a SINGLE card's segment OR the explicitly queued segments (each into its own targetSceneId!)
   const handleCutAndInsertYouTubeVideos = async (specificVideo?: YouTubeSearchVideoItem) => {
     if (isCuttingYouTube || !onInsertCutYouTubeClips) return;
-    const targetVideos = specificVideo
-      ? [specificVideo]
-      : youtubeVideos.filter((v) => selectedYtIds.includes(v.id));
-    if (targetVideos.length === 0) return;
+
+    let segmentsToCut: QueuedYouTubeSegment[] = [];
+    if (specificVideo) {
+      const startSec = ytTrimStarts[specificVideo.id] ?? specificVideo.suggestedTrimStartSec ?? 18;
+      const chosenSceneId =
+        ytTargetSceneIds[specificVideo.id] ||
+        scene?.id ||
+        activeSceneId ||
+        selectableScenes[0]?.id ||
+        '';
+      const targetDur = getSceneDurationById(chosenSceneId);
+      const endSec = Math.max(
+        startSec + 3,
+        ytTrimEnds[specificVideo.id] ?? startSec + targetDur
+      );
+      segmentsToCut = [
+        {
+          queueId: `single-${specificVideo.id}`,
+          video: specificVideo,
+          targetSceneId: chosenSceneId,
+          trimStartSec: startSec,
+          trimEndSec: endSec,
+        },
+      ];
+      setCuttingCardId(specificVideo.id);
+    } else {
+      segmentsToCut = queuedSegments;
+      setCuttingCardId('__QUEUE__');
+    }
+
+    if (segmentsToCut.length === 0) return;
 
     setIsCuttingYouTube(true);
     try {
-      const clipsPayload = targetVideos.map((v) => ({
-        id: v.id,
-        title: v.title,
-        youtubeId: v.youtubeId,
-        dmId: v.dmId,
-        archiveMp4Url: v.archiveMp4Url,
-        thumbnailUrl: v.thumbnailUrl,
-        trimStartSec: ytTrimStarts[v.id] ?? v.suggestedTrimStartSec ?? 18,
-        durationSec: scene ? sceneDur : 9,
+      const clipsPayload = segmentsToCut.map((seg) => ({
+        id: seg.video.id,
+        targetSceneId: seg.targetSceneId,
+        title: seg.video.title,
+        youtubeId: seg.video.youtubeId,
+        dmId: seg.video.dmId,
+        archiveMp4Url: seg.video.archiveMp4Url,
+        thumbnailUrl: seg.video.thumbnailUrl,
+        trimStartSec: seg.trimStartSec,
+        trimEndSec: seg.trimEndSec,
+        durationSec: Math.max(3, seg.trimEndSec - seg.trimStartSec),
       }));
 
       const res = await fetch('/api/youtube/cut-clips', {
@@ -309,13 +422,14 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         if (Array.isArray(data?.cuts) && data.cuts.length > 0) {
           onInsertCutYouTubeClips(
             data.cuts,
-            specificVideo && scene ? scene.id : scene ? scene.id : null
+            segmentsToCut.length === 1 ? segmentsToCut[0].targetSceneId : null
           );
           onClose();
         }
       }
     } finally {
       setIsCuttingYouTube(false);
+      setCuttingCardId(null);
     }
   };
 
@@ -345,50 +459,50 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             <div className="flex items-center gap-2">
               {sceneNumLabel ? (
                 <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-500 text-slate-950">
-                  Cảnh {sceneNumLabel} · {sceneDur}s
+                  Đang chọn Cảnh {sceneNumLabel} · {sceneDur}s
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white flex items-center gap-1">
                   <Youtube className="w-3.5 h-3.5" />
-                  <span>Kho Cắt Video YouTube</span>
+                  <span>Kho Cắt Video Theo Từng Đoạn</span>
                 </span>
               )}
               <h2 className="text-sm font-bold text-slate-100 truncate">
                 {scene
-                  ? `Chọn Video YouTube / Ảnh Thật Để Cắt & Chèn Vào Cảnh ${sceneNumLabel}: ${scene.title}`
-                  : `Chọn 1–3 Video Từ YouTube Để Tự Động Cắt & Chèn Thẳng Vào Timeline`}
+                  ? `Cắt Riêng Đoạn Video YouTube / Chọn Ảnh Thật Cho Cảnh ${sceneNumLabel}: ${scene.title}`
+                  : `Chọn & Cắt Riêng Từng Đoạn Video (Từ Giây → Đến Giây) Cho Từng Phân Cảnh Trên Timeline`}
               </h2>
             </div>
             {scene ? (
               <p className="text-xs text-slate-400 mt-1 truncate">
-                Nội dung lời đọc: <span className="text-amber-200/90 italic">"{scene.narrationText}"</span>
+                Lời đọc Cảnh {sceneNumLabel}:{' '}
+                <span className="text-amber-200/90 italic">"{scene.narrationText}"</span>
               </p>
             ) : (
               <p className="text-xs text-slate-400 mt-1">
-                Tìm hoặc dán link YouTube bất kỳ → Tích chọn 1 vài video bạn ưng ý → Chỉnh giây muốn cắt → Bấm <strong className="text-amber-300">Cắt &amp; Chèn Vào Timeline</strong> là xong!
+                Trên mỗi video bên dưới: Chọn <strong className="text-sky-300">Đoạn (Cảnh) muốn chèn</strong> + chỉnh <strong className="text-amber-300">Từ giây → Đến giây</strong> → Bấm <strong className="text-amber-300">✂️ Cắt Riêng Đoạn Này</strong> (hoặc thêm nhiều đoạn vào danh sách để cắt riêng từng đoạn).
               </p>
             )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {selectedYtIds.length > 0 && onInsertCutYouTubeClips && (
+            {queuedSegments.length > 0 && onInsertCutYouTubeClips && (
               <button
                 type="button"
                 disabled={isCuttingYouTube}
                 onClick={() => handleCutAndInsertYouTubeVideos()}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 shadow-lg transition-colors"
               >
-                {isCuttingYouTube ? (
+                {isCuttingYouTube && cuttingCardId === '__QUEUE__' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang cắt {selectedYtIds.length} video bằng FFmpeg...</span>
+                    <span>Đang cắt riêng {queuedSegments.length} đoạn đã chọn...</span>
                   </>
                 ) : (
                   <>
                     <Scissors className="w-4 h-4" />
                     <span>
-                      ✂️ Cắt &amp; Chèn Ngay {selectedYtIds.length} Video Đã Chọn{' '}
-                      {sceneNumLabel ? `Vào Cảnh ${sceneNumLabel}` : 'Vào Timeline'}
+                      ✂️ Cắt Riêng &amp; Chèn {queuedSegments.length} Đoạn Đã Chọn Vào Đúng Cảnh
                     </span>
                   </>
                 )}
@@ -424,6 +538,48 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Queued Segments Bar (Shows each individual segment [Video + Start->End + Target Scene] so user sees they are cut separately) */}
+        {queuedSegments.length > 0 && (
+          <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-bold text-amber-300 mr-1">
+                ✂️ Các đoạn đã chọn để cắt riêng ({queuedSegments.length}):
+              </span>
+              {queuedSegments.map((seg, idx) => (
+                <div
+                  key={seg.queueId}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#111827] border border-amber-500/50 text-[11px]"
+                >
+                  <span className="font-mono font-bold text-amber-400">
+                    #{idx + 1} [{getSceneBadgeById(seg.targetSceneId)}]
+                  </span>
+                  <span className="text-slate-200 max-w-[160px] truncate" title={seg.video.title}>
+                    {seg.video.title}
+                  </span>
+                  <span className="font-mono font-bold text-emerald-300">
+                    ({seg.trimStartSec}s → {seg.trimEndSec}s)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveQueuedSegment(seg.queueId)}
+                    className="text-slate-400 hover:text-red-400 ml-0.5"
+                    title="Bỏ đoạn này"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setQueuedSegments([])}
+              className="text-[11px] text-slate-400 hover:text-red-300 underline shrink-0"
+            >
+              Xóa danh sách chọn
+            </button>
+          </div>
+        )}
 
         {/* Search Bar + Suggested Keyword Chips */}
         <div className="px-5 py-3 bg-[#0E1420] border-b border-slate-800/80 space-y-2.5">
@@ -551,18 +707,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             </div>
           ) : (
             <>
-              {/* SECTION A: YouTube Video Picker & Auto-Cutter */}
+              {/* SECTION A: YouTube Per-Segment Picker & Auto-Cutter */}
               {(filterTab === 'youtube' || filterTab === 'all') && (
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-xs font-bold text-red-300 flex items-center gap-1.5">
                       <Youtube className="w-4 h-4 text-red-500" />
                       <span>
-                        Chọn 1 Hoặc Nhiều Video Từ YouTube Để Hệ Thống Tự Cắt &amp; Chèn Vào Video ({youtubeVideos.length} kết quả)
+                        Chọn Đoạn Thời Gian (Từ Giây → Đến Giây) &amp; Cảnh Đích Để Cắt Riêng Từng Đoạn ({youtubeVideos.length} video)
                       </span>
                     </h3>
                     <span className="text-[11px] text-slate-400">
-                      Đã tích chọn: <strong className="text-amber-300">{selectedYtIds.length} video</strong> · Độ dài mỗi đoạn cắt: <strong className="text-emerald-300">{scene ? sceneDur : 9} giây</strong>
+                      Mỗi đoạn bạn chọn sẽ được FFmpeg <strong className="text-emerald-300">cắt thành file .MP4 độc lập</strong> và gắn đúng vào <strong className="text-amber-300">Cảnh (Đoạn) bạn chỉ định</strong>
                     </span>
                   </div>
 
@@ -573,23 +729,42 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                       {youtubeVideos.map((yt) => {
-                        const isChecked = selectedYtIds.includes(yt.id);
                         const startSec = ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
-                        const cutDur = scene ? sceneDur : 9;
-                        const endSec = startSec + cutDur;
+                        const chosenSceneId =
+                          ytTargetSceneIds[yt.id] ||
+                          scene?.id ||
+                          activeSceneId ||
+                          selectableScenes[0]?.id ||
+                          '';
+                        const targetDur = getSceneDurationById(chosenSceneId);
+                        const endSec = Math.max(
+                          startSec + 3,
+                          ytTrimEnds[yt.id] ?? startSec + targetDur
+                        );
+                        const cutDur = Math.max(3, endSec - startSec);
                         const isPreviewing = previewingYtId === yt.id;
+                        const isThisSegmentQueued = queuedSegments.some(
+                          (q) =>
+                            q.video.id === yt.id &&
+                            q.trimStartSec === startSec &&
+                            q.trimEndSec === endSec &&
+                            q.targetSceneId === chosenSceneId
+                        );
+                        const queuedCountForThisVideo = queuedSegments.filter(
+                          (q) => q.video.id === yt.id
+                        ).length;
 
                         return (
                           <div
                             key={yt.id}
                             className={`rounded-lg bg-[#111827] border p-3 flex flex-col justify-between gap-2.5 transition-all ${
-                              isChecked
+                              isThisSegmentQueued || queuedCountForThisVideo > 0
                                 ? 'border-amber-400 ring-2 ring-amber-400/40 bg-[#161F33]'
                                 : 'border-slate-800 hover:border-slate-600'
                             }`}
                           >
                             <div className="space-y-2">
-                              {/* Video Preview Box (Thumbnail OR Embedded YouTube Player at startSec) */}
+                              {/* Video Preview Box (Thumbnail OR Embedded YouTube Player at startSec -> endSec) */}
                               <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
                                 {isPreviewing ? (
                                   <iframe
@@ -611,42 +786,48 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       type="button"
                                       onClick={() => setPreviewingYtId(yt.id)}
                                       className="absolute inset-0 bg-black/45 hover:bg-black/25 flex items-center justify-center transition-colors group"
-                                      title="Bấm để xem trước đoạn video YouTube này ngay tại giây muốn cắt"
+                                      title="Bấm để xem trước đúng đoạn từ giây Start đến giây End trên YouTube"
                                     >
                                       <div className="px-3 py-1.5 rounded-full bg-red-600 group-hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
                                         <Play className="w-3.5 h-3.5 fill-current" />
-                                        <span>Xem Thử ({startSec}s→{endSec}s)</span>
+                                        <span>Xem Thử Đoạn ({startSec}s→{endSec}s)</span>
                                       </div>
                                     </button>
                                   </>
                                 )}
 
-                                {/* Top-Left Checkbox Badge */}
+                                {/* Top-Left Queue Segment Button */}
                                 <button
                                   type="button"
-                                  onClick={() => toggleSelectYouTubeVideo(yt.id)}
+                                  onClick={() => handleToggleQueueSegment(yt)}
                                   className={`absolute top-2 left-2 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow ${
-                                    isChecked
+                                    isThisSegmentQueued
                                       ? 'bg-amber-500 text-slate-950'
-                                      : 'bg-black/80 text-slate-200 hover:bg-black'
+                                      : 'bg-black/85 text-slate-100 hover:bg-amber-500 hover:text-slate-950'
                                   }`}
+                                  title="Thêm đoạn (Start→End) này vào danh sách cắt riêng"
                                 >
-                                  {isChecked ? (
+                                  {isThisSegmentQueued ? (
                                     <>
                                       <CheckSquare className="w-3.5 h-3.5" />
-                                      <span>Đã Chọn</span>
+                                      <span>Đã Chọn Đoạn ({startSec}s→{endSec}s)</span>
                                     </>
                                   ) : (
                                     <>
                                       <Square className="w-3.5 h-3.5" />
-                                      <span>Tích Chọn</span>
+                                      <span>
+                                        + Chọn Đoạn Này
+                                        {queuedCountForThisVideo > 0
+                                          ? ` (Đã có ${queuedCountForThisVideo})`
+                                          : ''}
+                                      </span>
                                     </>
                                   )}
                                 </button>
 
                                 {/* Bottom-Right Total Duration Badge */}
                                 <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/85 text-white">
-                                  {yt.durationLabel}
+                                  Tổng: {yt.durationLabel}
                                 </span>
                               </div>
 
@@ -662,48 +843,106 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                 </p>
                               </div>
 
-                              {/* Trim Start Second Control */}
-                              <div className="flex items-center justify-between gap-2 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
-                                <span className="text-slate-300 flex items-center gap-1">
+                              {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Trên Timeline) */}
+                              {selectableScenes.length > 0 && (
+                                <div className="flex items-center justify-between gap-2 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                  <span className="text-sky-300 font-semibold shrink-0">
+                                    Chèn vào:
+                                  </span>
+                                  <select
+                                    value={chosenSceneId}
+                                    onChange={(e) => {
+                                      const nextSceneId = e.target.value;
+                                      const nextDur = getSceneDurationById(nextSceneId);
+                                      setYtTargetSceneIds((prev) => ({
+                                        ...prev,
+                                        [yt.id]: nextSceneId,
+                                      }));
+                                      setYtTrimEnds((prev) => ({
+                                        ...prev,
+                                        [yt.id]: startSec + nextDur,
+                                      }));
+                                    }}
+                                    className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-bold text-amber-300 truncate focus:outline-none focus:border-amber-400"
+                                  >
+                                    {selectableScenes.map((sc) => (
+                                      <option key={sc.id} value={sc.id}>
+                                        Cảnh #{String(sc.order).padStart(2, '0')} (
+                                        {Math.round(sc.durationSec || 8)}s) — {sc.title}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+
+                              {/* Independent Start -> End Second Controls */}
+                              <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                <span className="text-slate-300 flex items-center gap-1 shrink-0">
                                   <Scissors className="w-3 h-3 text-amber-400" />
-                                  <span>Cắt từ giây:</span>
+                                  <span>Đoạn cắt:</span>
                                 </span>
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number"
-                                    min={5}
-                                    max={Math.max(30, yt.durationSec - 6)}
-                                    step={5}
+                                    min={0}
+                                    max={Math.max(30, yt.durationSec - 4)}
+                                    step={2}
                                     value={startSec}
                                     onChange={(e) => {
-                                      const val = Math.max(0, parseInt(e.target.value || '15', 10));
+                                      const val = Math.max(0, parseInt(e.target.value || '0', 10));
                                       setYtTrimStarts((prev) => ({ ...prev, [yt.id]: val }));
+                                      setYtTrimEnds((prev) => ({
+                                        ...prev,
+                                        [yt.id]: val + cutDur,
+                                      }));
                                     }}
-                                    className="w-16 px-1.5 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
+                                    className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
+                                    title="Giây bắt đầu cắt (Start)"
                                   />
-                                  <span className="text-slate-400 font-mono">→ {endSec}s</span>
+                                  <span className="text-slate-400 font-mono">s →</span>
+                                  <input
+                                    type="number"
+                                    min={startSec + 3}
+                                    max={Math.max(startSec + 25, yt.durationSec)}
+                                    step={1}
+                                    value={endSec}
+                                    onChange={(e) => {
+                                      const val = Math.max(
+                                        startSec + 3,
+                                        parseInt(e.target.value || String(startSec + 8), 10)
+                                      );
+                                      setYtTrimEnds((prev) => ({ ...prev, [yt.id]: val }));
+                                    }}
+                                    className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-emerald-300"
+                                    title="Giây kết thúc cắt (End)"
+                                  />
+                                  <span className="text-slate-400 font-mono">
+                                    s ({cutDur}s)
+                                  </span>
                                 </div>
                               </div>
                             </div>
 
-                            {/* 1-Click Cut & Insert This Single Video */}
+                            {/* 1-Click Cut ONLY This Selected Segment Into Chosen Scene */}
                             <button
                               type="button"
                               disabled={isCuttingYouTube}
                               onClick={() => handleCutAndInsertYouTubeVideos(yt)}
                               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 transition-colors"
                             >
-                              {isCuttingYouTube ? (
+                              {isCuttingYouTube && cuttingCardId === yt.id ? (
                                 <>
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Đang cắt đoạn {startSec}s→{endSec}s...</span>
+                                  <span>
+                                    Đang cắt riêng {startSec}s→{endSec}s...
+                                  </span>
                                 </>
                               ) : (
                                 <>
                                   <Scissors className="w-3.5 h-3.5" />
                                   <span>
-                                    ✂️ Cắt Đoạn {startSec}s→{endSec}s &amp; Chèn{' '}
-                                    {sceneNumLabel ? `Vào Cảnh ${sceneNumLabel}` : 'Ngay'}
+                                    ✂️ Cắt Riêng ({startSec}s→{endSec}s) Vào{' '}
+                                    {getSceneBadgeById(chosenSceneId).split(' (')[0]}
                                   </span>
                                 </>
                               )}
