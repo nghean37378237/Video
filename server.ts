@@ -1537,24 +1537,26 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       year: number | null;
     }[] = [];
 
-    // Only ban non-portrait junk (collages, plaques, graves, maps, autographs, merchandise) — do NOT ban magazine/cinema/television/award portraits!
+    // Strictly ban any image with overlaid text: posters, magazine/book/DVD covers, lobby cards, title cards, newspapers, quotes, autographs, plaques, watermarks
     const bannedTitleWords =
-      /\b(collage|montage|grid|logo|icon|map|signature|autograph|signed|flag|coat_of_arms|diagram|chart|stamp|plaque|grave|tombstone|memorial|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy)\b/i;
+      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy)\b/i;
 
     const watermarkedStockDomains =
-      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com)\b/i;
+      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com)\b/i;
 
     for (const q of candidateQueries) {
       if (candidates.length >= limit) break;
 
-      // 1. Search Bing Web Images FIRST (finds dozens of real portraits, movie stills & TV photos across the entire web)
+      // 1. Search Bing Web Images FIRST with explicit negative filters (-poster -cover -magazine -quote -text -autograph) for clean text-free photography
       try {
-        const bingQuery = q.toLowerCase().includes("photo") || q.toLowerCase().includes("portrait")
-          ? q
-          : `${q} actor portrait photo`;
+        const basePhotoQuery =
+          q.toLowerCase().includes("photo") || q.toLowerCase().includes("portrait")
+            ? q
+            : `${q} actor film still portrait photo`;
+        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text`;
         const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
           bingQuery
-        )}&first=0&count=${Math.min(45, limit * 3 + 12)}&adlt=moderate`;
+        )}&first=0&count=${Math.min(45, limit * 3 + 15)}&adlt=moderate`;
 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3200);
@@ -1571,14 +1573,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const html = await bingRes.text();
           const matches = [...html.matchAll(/m="([^"]+)"/g)];
 
-          // Separate clean non-Getty images first, and keep Getty only as secondary backup if needed
           const parsedItems: Array<{
             title: string;
             murl: string;
             turl: string;
             purl: string;
             idKey: string;
-            isGetty: boolean;
+            cleanScore: number;
           }> = [];
 
           for (const m of matches) {
@@ -1596,44 +1597,44 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
               const idMatch = turl.match(/id=([^&]+)/);
               const idKey = idMatch ? idMatch[1] : normalizeTitleKey(murl || title);
+              const combinedText = `${title} ${murl} ${purl}`;
 
               if (
                 !idKey ||
                 usedSourceUrls.has(idKey) ||
                 usedSourceUrls.has(murl) ||
                 usedSourceUrls.has(turl) ||
-                watermarkedStockDomains.test(murl) ||
-                bannedTitleWords.test(title) ||
-                bannedTitleWords.test(murl)
+                watermarkedStockDomains.test(combinedText) ||
+                bannedTitleWords.test(combinedText)
               ) {
                 continue;
               }
 
               // Strictly verify that the web photo belongs to the character
-              if (
-                !doesTitleMatchSubjectIdentity(
-                  `${title} ${murl} ${purl}`,
-                  subjectTokens
-                )
-              ) {
+              if (!doesTitleMatchSubjectIdentity(combinedText, subjectTokens)) {
                 continue;
               }
 
+              // Score higher for clean still photography / candid portraits without text
+              const isCleanStill =
+                /\b(still|portrait|headshot|photograph|candid|scene|cropped|publicity)\b/i.test(
+                  combinedText
+                );
               parsedItems.push({
                 title: title || `${subjectAnchor} Portrait`,
                 murl,
                 turl: turl ? `${turl}&w=720` : murl,
                 purl,
                 idKey,
-                isGetty: /gettyimages/i.test(murl),
+                cleanScore: isCleanStill ? 2 : 1,
               });
             } catch {
               // Ignore malformed item
             }
           }
 
-          // Prioritize clean non-watermarked sources over Getty Images
-          parsedItems.sort((a, b) => Number(a.isGetty) - Number(b.isGetty));
+          // Prioritize clean photographic stills and portraits
+          parsedItems.sort((a, b) => b.cleanScore - a.cleanScore);
 
           for (const item of parsedItems) {
             if (candidates.length >= limit) break;
@@ -1647,8 +1648,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
             candidates.push({
               title: item.title.replace(/\s*\|\s*.*$/, "").slice(0, 48),
-              // Use Bing's fast 720px CDN for Getty or slow hosts; for clean hosts try murl first with turl fallback
-              thumbUrl: item.isGetty ? item.turl : item.murl || item.turl,
+              thumbUrl: item.murl || item.turl,
               fallbackThumbUrl: item.turl,
               width: 720,
               height: 900,
@@ -1662,7 +1662,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       if (candidates.length >= limit) break;
 
-      // 2. Search Wikipedia PageImages API for verified biography/film portraits
+      // 2. Search Wikipedia PageImages API for verified biography/film portraits (excluding posters/covers)
       try {
         const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
           q
@@ -1721,10 +1721,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       if (candidates.length >= limit) break;
 
-      // 3. Search Wikimedia Commons bitmap photographs
+      // 3. Search Wikimedia Commons bitmap photographs (excluding posters, lobby cards, covers, newspapers, plaques)
       try {
         const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-          `filetype:bitmap ${q}`
+          `filetype:bitmap ${q} -poster -cover -newspaper -plaque -autograph`
         )}&gsrnamespace=6&gsrlimit=${Math.min(
           45,
           limit * 4 + 10
@@ -1765,7 +1765,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             if ((info?.width || 0) < 220 || (info?.height || 0) < 220) continue;
 
             const aspect = (info?.width || 1) / Math.max(1, info?.height || 1);
-            if (aspect > 2.4 || aspect < 0.35) continue;
+            // Exclude tall narrow newspaper columns or ultra-wide banners
+            if (aspect > 2.2 || aspect < 0.45) continue;
 
             if (!doesTitleMatchSubjectIdentity(cleanTitle, subjectTokens)) {
               continue;
@@ -1851,7 +1852,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     "michael landon": ["Michael Landon", "Bonanza Michael Landon"],
   };
 
-  // Helper: Search Wikimedia Commons + Internet Archive for STRICTLY VERIFIED real archival video clips (.webm / .mp4 / .ogv) of the actor & auto-trim them into 2-3 highlight cuts
+  // Helper: Search Wikimedia Commons + Internet Archive for STRICTLY VERIFIED real archival video clips (.webm / .mp4 / .ogv) of the actor & auto-trim them into 2-3 clean text-free highlight cuts
   async function searchRealArchivalVideos(
     rawQuery: string,
     limit: number,
@@ -1886,8 +1887,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     const subjectFullPhrase = subjectTokens.slice(0, 3).join(" ");
     const lowerSubject = subjectFullPhrase.toLowerCase();
 
+    // Ban any text-heavy video, title card, credits sequence, subtitled clip, slideshow, or unrelated military/ship video
     const bannedVideoWords =
-      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken|uss|hms|radar|destroyer|ship|aircraft|airport|station|county|highway|bridge)\b/i;
+      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken|uss|hms|radar|destroyer|ship|aircraft|airport|station|county|highway|bridge|title_card|title\s+card|intertitle|credits|opening_titles|subtitled|subtitles|caption|captioned|watermark|slideshow|lyric|lyrics|karaoke|text|poster|promo_banner)\b/i;
 
     const candidates: {
       title: string;
@@ -1907,7 +1909,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (candidates.length >= limit) break;
       try {
         const commonsVideoUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-          `filetype:video ${phrase}`
+          `filetype:video ${phrase} -subtitled -credits -logo`
         )}&gsrnamespace=6&gsrlimit=${Math.min(
           20,
           limit * 4 + 4
@@ -2048,13 +2050,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               const metaJson: any = await metaRes.json();
               const files: any[] = Array.isArray(metaJson?.result) ? metaJson.result : [];
 
-              // Prefer lightweight 512kb.mp4 or h.264 .mp4 under 90MB so browser seeking is instant
+              // Prefer lightweight 512kb.mp4 or h.264 .mp4 under 90MB and exclude any subtitled/credits/title files
               const mp4Files = files
                 .filter((f) => {
                   const name = String(f?.name || "").toLowerCase();
                   const size = Number(f?.size || 0);
                   return (
                     (name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".ogv")) &&
+                    !bannedVideoWords.test(name) &&
                     size > 150_000 &&
                     size < 95 * 1024 * 1024
                   );
@@ -2093,13 +2096,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       }
     }
 
-    // 3. If 1 or 2 real archival reels/trailers were found and we want `limit` (e.g. 3) distinct trimmed scene cuts,
-    // automatically slice non-overlapping highlight windows from the found video(s)!
+    // 3. Slice non-overlapping clean live-action acting windows starting at 14s+ (skipping 00:00–00:13 opening MPAA rating & studio logo cards, and avoiding end title cards)
     const cutWindows = [
-      { start: 8, end: 16, tag: "Cắt cảnh #1 (00:08–00:16)" },
-      { start: 22, end: 30, tag: "Cắt cảnh #2 (00:22–00:30)" },
-      { start: 38, end: 46, tag: "Cắt cảnh #3 (00:38–00:46)" },
-      { start: 54, end: 62, tag: "Cắt cảnh #4 (00:54–01:02)" },
+      { start: 14, end: 22, tag: "Cắt cảnh #1 (00:14–00:22)" },
+      { start: 28, end: 36, tag: "Cắt cảnh #2 (00:28–00:36)" },
+      { start: 44, end: 52, tag: "Cắt cảnh #3 (00:44–00:52)" },
+      { start: 60, end: 68, tag: "Cắt cảnh #4 (01:00–01:08)" },
     ];
 
     const expandedCandidates: typeof candidates = [];
@@ -2221,7 +2223,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         searchRealArchivalPhotos(cleanQuery, desiredCount * 2 + 2, usedUrls, cleanQuery, usedTitles),
       ]);
 
-      const cutOffsets = [8, 22, 38, 52, 68, 84];
+      // Skip 00:00-00:13 so opening MPAA rating & studio title cards are never included in the cut
+      const cutOffsets = [14, 28, 44, 60, 74, 88];
       const videoCuts = videos.map((v, idx) => {
         const dur = Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
           ? Math.round(Number(sceneDurations[idx]))
@@ -2236,7 +2239,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           trimEndSec: endSec,
           width: v.width,
           height: v.height,
-          sourceLabel: `✂️ Đã cắt tự động ${startSec}s → ${endSec}s`,
+          sourceLabel: `✂️ Đã cắt tự động ${startSec}s → ${endSec}s (Không dính chữ mở đầu)`,
         };
       });
 
@@ -2356,10 +2359,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       if (cleanTopic) {
         const eraQueries = [
-          `${cleanTopic} young early career vintage portrait`,
-          `${cleanTopic} classic iconic role film still photo`,
-          `${cleanTopic} 1960s 1970s actor portrait photo`,
-          `${cleanTopic} later years portrait photo`,
+          `${cleanTopic} young early career candid portrait photo`,
+          `${cleanTopic} classic movie scene film still photograph`,
+          `${cleanTopic} 1970s actor portrait headshot photograph`,
+          `${cleanTopic} behind the scenes portrait photograph`,
         ];
 
         const [foundVideos, ...eraPhotoLists] = await Promise.all([
@@ -2429,8 +2432,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           width: vid.width,
           height: vid.height,
           year: vid.year,
-          trimStartSec: (vid as any).trimStartSec ?? 8,
-          trimEndSec: (vid as any).trimEndSec ?? 16,
+          trimStartSec: (vid as any).trimStartSec ?? 14,
+          trimEndSec: (vid as any).trimEndSec ?? 22,
         } as any;
         allPhotos.push({
           sceneId: sc.id,

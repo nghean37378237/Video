@@ -1073,12 +1073,15 @@ export default function App() {
 
     try {
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        cleanTopic
+        `${cleanTopic} -poster -cover -newspaper -plaque -autograph`
       )}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=1080&format=json&origin=*`;
       const res = await fetch(commonsUrl);
       if (res.ok) {
         const json = await res.json();
         const pages = Object.values(json?.query?.pages || {}) as any[];
+        const textOverlayOrJunkRegex =
+          /\b(uss|hms|radar|destroyer|ship|station|county|bridge|pronunciation|spoken|poster|posters|affiche|plakat|locandina|lobby|cover|magazine|newspaper|clipping|article|headline|book|dvd|vhs|quote|quotes|caption|subtitled|watermark|autograph|signed|signature|text|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|certificate|document|letter|page|script|stamp|ticket|logo|collage|montage)\b/i;
+
         for (const page of pages) {
           const info = page?.imageinfo?.[0];
           if (!info) continue;
@@ -1087,23 +1090,21 @@ export default function App() {
             .replace(/^File:/i, '')
             .replace(/\.[a-z0-9]+$/i, '')
             .replace(/[_-]+/g, ' ');
+          const lowerTitle = cleanTitle.toLowerCase();
+          if (textOverlayOrJunkRegex.test(lowerTitle)) continue;
+
           if (
             mime.includes('webm') ||
             mime.includes('mp4') ||
             mime.includes('ogv')
           ) {
-            // Ban radar/ship/station junk and require full actor name match in browser fallback
-            const lowerTitle = cleanTitle.toLowerCase();
             const topicWords = cleanTopic
               .toLowerCase()
               .split(/\s+/)
               .filter((w) => w.length >= 3);
             const hasFullActorName =
               topicWords.length > 0 && topicWords.every((w) => lowerTitle.includes(w));
-            const isJunk = /\b(uss|hms|radar|destroyer|ship|station|county|bridge|pronunciation|spoken)\b/i.test(
-              lowerTitle
-            );
-            if (info.url && info.thumburl && hasFullActorName && !isJunk) {
+            if (info.url && info.thumburl && hasFullActorName) {
               allPhotos.push({
                 title: cleanTitle,
                 dataUrl: info.thumburl,
@@ -1267,7 +1268,7 @@ export default function App() {
         }
 
         const scDur = Math.max(5, Math.round(sc.durationSec || 8));
-        const trimStart = isRealVideo ? Number((matched as any).trimStartSec ?? 8) : 0;
+        const trimStart = isRealVideo ? Number((matched as any).trimStartSec ?? 14) : 0;
         const trimEnd = isRealVideo ? trimStart + scDur : undefined;
 
         const vaultItem: VaultItem = {

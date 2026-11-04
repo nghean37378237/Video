@@ -96,14 +96,20 @@ async function synthesizeRealPhotoMotionCutWebm(
         tx = (0.5 - smoothP) * W * 0.06;
       }
 
-      const scaleCover = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-      const drawW = img.naturalWidth * scaleCover * scale;
-      const drawH = img.naturalHeight * scaleCover * scale;
+      // Automatically crop out outer border margins (4% sides/top, 9% bottom) where vintage studio publicity captions, copyright lines, or watermarks sit
+      const sx = img.naturalWidth * 0.04;
+      const sy = img.naturalHeight * 0.04;
+      const sw = Math.max(10, img.naturalWidth * 0.92);
+      const sh = Math.max(10, img.naturalHeight * 0.87);
+
+      const scaleCover = Math.max(W / sw, H / sh);
+      const drawW = sw * scaleCover * scale;
+      const drawH = sh * scaleCover * scale;
       const drawX = (W - drawW) / 2 + tx;
       const verticalBias = drawH > H ? 0.14 : 0.5;
       const drawY = (H - drawH) * verticalBias + ty;
 
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      ctx.drawImage(img, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
       ctx.restore();
     };
 
@@ -190,7 +196,7 @@ export async function fetchAndAutoTrimActorRealVideos(
   onProgress?: (msg: string) => void
 ): Promise<TrimmedActorVideoCut[]> {
   const cleanName = characterName.trim() || 'Will Sampson';
-  onProgress?.(`Đang tìm & tải ${desiredCount} nguồn video thật của "${cleanName}"...`);
+  onProgress?.(`Đang tìm & tải ${desiredCount} nguồn video thật không dính chữ của "${cleanName}"...`);
 
   let apiCuts: Array<{
     title: string;
@@ -236,10 +242,11 @@ export async function fetchAndAutoTrimActorRealVideos(
   }
 
   const results: TrimmedActorVideoCut[] = [];
+  // Skip 00:00–00:13 opening MPAA rating & studio title cards
   const defaultCutWindows = [
-    { start: 6, end: 15 },
-    { start: 20, end: 29 },
-    { start: 36, end: 45 },
+    { start: 14, end: 22 },
+    { start: 28, end: 36 },
+    { start: 44, end: 52 },
   ];
 
   for (let i = 0; i < apiCuts.length && results.length < desiredCount; i++) {
@@ -266,9 +273,11 @@ export async function fetchAndAutoTrimActorRealVideos(
     });
   }
 
-  // If fewer than desiredCount raw videos were available on public archives, synthesize real .webm 35mm motion cuts from verified real photos of the actor
+  // If fewer than desiredCount raw videos were available on public archives, synthesize real .webm 35mm motion cuts from verified text-free photos of the actor
   if (results.length < desiredCount) {
-    // Also gather any verified real photos already present in targetScenes
+    const textOverlayRegex =
+      /\b(poster|cover|magazine|newspaper|clipping|quote|autograph|signed|lobby|title|plaque|grave|banner|ad|advertisement)\b/i;
+
     const sceneRealPhotos = targetScenes
       .filter((s) => s.hasRealPhoto && s.mediaKind === 'image' && s.mediaUrl)
       .map((s) => ({
@@ -278,7 +287,9 @@ export async function fetchAndAutoTrimActorRealVideos(
         height: 960,
       }));
 
-    const photoPool = [...fallbackPhotos, ...sceneRealPhotos].filter((p) => Boolean(p.dataUrl));
+    const photoPool = [...fallbackPhotos, ...sceneRealPhotos].filter(
+      (p) => Boolean(p.dataUrl) && !textOverlayRegex.test(p.title || '')
+    );
 
     let photoIdx = 0;
     while (results.length < desiredCount && photoPool.length > 0) {

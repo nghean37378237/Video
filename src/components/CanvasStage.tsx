@@ -496,15 +496,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     scale *= extraScale;
     translateX += extraOffsetX;
 
+    // Safe clean-frame crop: trim outer 3.5% sides/top and 8.5% bottom margin to eliminate studio publicity caption strips, copyright lines, or corner watermarks on archival media
+    const sx = sourceW * 0.035;
+    const sy = sourceH * 0.035;
+    const sw = Math.max(10, sourceW * 0.93);
+    const sh = Math.max(10, sourceH * 0.88);
+
     // Fill 100% of the canvas edge-to-edge and protect portrait heads/eyes with 0.14 vertical bias
-    const scaleCover = Math.max(canvasW / sourceW, canvasH / sourceH);
-    const drawW = sourceW * scaleCover * scale;
-    const drawH = sourceH * scaleCover * scale;
+    const scaleCover = Math.max(canvasW / sw, canvasH / sh);
+    const drawW = sw * scaleCover * scale;
+    const drawH = sh * scaleCover * scale;
     const drawX = (canvasW - drawW) / 2 + translateX;
     const verticalBias = drawH > canvasH ? 0.14 : 0.5;
     const drawY = (canvasH - drawH) * verticalBias + translateY;
 
-    ctx.drawImage(source, drawX, drawY, drawW, drawH);
+    ctx.drawImage(source, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
 
     // Subtle 35mm cinema lens vignette so all frames feel unified like a theatrical documentary
     ctx.filter = 'none';
