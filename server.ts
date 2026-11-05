@@ -4608,13 +4608,30 @@ async function startServer() {
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
-    const vitePkg = "vite";
-    const { createServer: createViteServer } = await import(vitePkg);
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+    let viteMiddleware: any = null;
+    const viteReadyPromise = (async () => {
+      const vitePkg = "vite";
+      const { createServer: createViteServer } = await import(vitePkg);
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: false,
+          watch: null,
+        },
+        appType: "spa",
+      });
+      viteMiddleware = vite.middlewares;
+      return viteMiddleware;
+    })();
+
+    app.use(async (req, res, next) => {
+      try {
+        const mw = viteMiddleware || (await viteReadyPromise);
+        return mw(req, res, next);
+      } catch (err) {
+        return next(err);
+      }
     });
-    app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
