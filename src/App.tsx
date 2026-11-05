@@ -388,21 +388,27 @@ export default function App() {
           }
         }
       } else {
-        // Pick `trimmedCuts.length` 'video' scenes starting with the first visible video scenes (#01, #02, #05) on click 1,
-        // and cycling through subsequent video scenes on repeat clicks so the user sees immediate changes right in front of them.
+        // Pick `trimmedCuts.length` 'video' scenes at RANDOM positions anywhere across the Timeline (not fixed at #01, #02 at the beginning!)
         const videoSceneIndices = nextScenes
           .map((s, idx) => (s.sceneType === 'video' ? idx : -1))
           .filter((idx) => idx >= 0);
 
         const selectedTargetIndices: number[] = [];
         if (trimmedCuts.length > 0 && videoSceneIndices.length > 0) {
-          const startPos = (currentCycle * trimmedCuts.length) % videoSceneIndices.length;
-          for (let k = 0; k < Math.min(trimmedCuts.length, videoSceneIndices.length); k++) {
-            const targetIdx = videoSceneIndices[(startPos + k) % videoSceneIndices.length];
-            if (!selectedTargetIndices.includes(targetIdx)) {
-              selectedTargetIndices.push(targetIdx);
-            }
+          // Prefer scenes not already holding a video on the previous click, and avoid always picking index 0 (Scene #01)
+          const nonFirstPool =
+            videoSceneIndices.length > trimmedCuts.length + 1
+              ? videoSceneIndices.filter((idx, pos) => pos > 0 || Math.random() < 0.25)
+              : [...videoSceneIndices];
+          const shuffledPool = [...(nonFirstPool.length >= trimmedCuts.length ? nonFirstPool : videoSceneIndices)];
+          for (let i = shuffledPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledPool[i], shuffledPool[j]] = [shuffledPool[j], shuffledPool[i]];
           }
+          for (let k = 0; k < Math.min(trimmedCuts.length, shuffledPool.length); k++) {
+            selectedTargetIndices.push(shuffledPool[k]);
+          }
+          selectedTargetIndices.sort((a, b) => a - b);
         }
 
         selectedTargetIndices.forEach((sceneIdx, cutIdx) => {
@@ -435,12 +441,11 @@ export default function App() {
           );
         });
 
-        // For all remaining 'video' scenes that did NOT get a real video, ensure they keep their real reference photo + Grok / Kling AI prompt!
+        // For all remaining 'video' scenes that were NOT randomly selected in this batch, ensure they use their clean real reference photo + Grok / Kling AI prompt (so Scene #01/#02 don't stay stuck as video!)
         let photoFallbackIdx = 0;
         for (const vIdx of videoSceneIndices) {
           if (selectedTargetIndices.includes(vIdx)) continue;
           const sc = nextScenes[vIdx];
-          if (sc.mediaKind === 'video') continue;
 
           const klingPack = buildStandardKlingDrawPrompt({
             order: sc.order,
@@ -457,24 +462,28 @@ export default function App() {
           const fallbackPhoto =
             verifiedPhotos[photoFallbackIdx % Math.max(1, verifiedPhotos.length)];
           if (fallbackPhoto) photoFallbackIdx++;
+          const currentNonVideoImg =
+            sc.mediaKind === 'image' && sc.hasRealPhoto && sc.mediaUrl ? sc.mediaUrl : undefined;
           const effectivePhotoUrl =
-            (sc.hasRealPhoto && sc.mediaUrl) ||
-            fallbackPhoto?.dataUrl ||
+            currentNonVideoImg ||
             sc.characterRefPhotoUrl ||
-            sc.mediaUrl;
+            fallbackPhoto?.dataUrl ||
+            generateVintageArchivalDataUrl(rawTopic, sc.title, vIdx, 'video');
 
           nextScenes[vIdx] = {
             ...sc,
+            mediaId: undefined,
             mediaUrl: effectivePhotoUrl,
             mediaKind: 'image',
+            videoTrimStartSec: 0,
+            videoTrimEndSec: undefined,
             characterRefPhotoUrl:
-              fallbackPhoto?.dataUrl || sc.characterRefPhotoUrl || effectivePhotoUrl,
-            hasRealPhoto: Boolean(sc.hasRealPhoto || fallbackPhoto?.dataUrl),
+              sc.characterRefPhotoUrl || fallbackPhoto?.dataUrl || effectivePhotoUrl,
+            hasRealPhoto: Boolean(currentNonVideoImg || sc.characterRefPhotoUrl || fallbackPhoto?.dataUrl),
             realPhotoTitle:
-              sc.realPhotoTitle ||
-              (fallbackPhoto?.title
+              fallbackPhoto?.title
                 ? `${fallbackPhoto.title} (Ảnh Gốc Tạo Video Grok / Kling)`
-                : undefined),
+                : `${rawTopic} — Ảnh Gốc + Prompt Grok/Kling`,
             imagePrompt: klingPack.klingImagePrompt,
             videoMotionPrompt: klingPack.klingVideoPrompt,
             klingStandardPrompt: klingPack.combinedBlock,
@@ -527,9 +536,9 @@ export default function App() {
 
       if (assignedSceneNumbers.length > 0) {
         setStatusBanner(
-          `🎬 Đã tự lấy, cắt và chèn ${assignedSceneNumbers.length} Video Thật vào ${assignedSceneNumbers.join(', ')} (đang phát ngay trên màn hình)${
+          `🎲 Đã tự lấy, cắt và chèn ngẫu nhiên ${assignedSceneNumbers.length} Video Thật vào vị trí bất kỳ trên Timeline: ${assignedSceneNumbers.join(', ')} (không cố định ở đầu video!)${
             grokKlingPromptScenesCount > 0
-              ? ` — ${grokKlingPromptScenesCount} đoạn video còn lại giữ nguyên Ảnh Gốc & Prompt để bạn vẽ video từ Grok hoặc Kling AI!`
+              ? ` — ${grokKlingPromptScenesCount} đoạn video còn lại giữ Ảnh Gốc & Prompt để bạn vẽ video từ Grok hoặc Kling AI!`
               : '!'
           }`
         );
@@ -809,7 +818,9 @@ export default function App() {
         : -1;
 
       if (sceneIdx < 0 && videoSceneIndices.length > 0) {
-        sceneIdx = videoSceneIndices[cutIdx % videoSceneIndices.length];
+        const unusedVideoIndices = videoSceneIndices.filter((idx) => !updatedIndices.includes(idx));
+        const pool = unusedVideoIndices.length > 0 ? unusedVideoIndices : videoSceneIndices;
+        sceneIdx = pool[Math.floor(Math.random() * pool.length)];
       }
       if (sceneIdx < 0 || sceneIdx >= nextScenes.length) return;
 
@@ -1630,8 +1641,22 @@ export default function App() {
     const visualScenes = targetScenes.filter(
       (s) => s.sceneType === 'video' || s.sceneType === 'image'
     );
-    visualScenes.forEach((sc, idx) => {
-      const candidate = allPhotos[idx];
+    const videoItems = allPhotos.filter((p) => p.mediaKind === 'video');
+    const imageItems = allPhotos.filter((p) => p.mediaKind !== 'video');
+
+    // Place any video items at RANDOM scene positions across the timeline (never fixed at index 0)
+    const shuffledVisual = [...visualScenes].sort(() => Math.random() - 0.5);
+    videoItems.slice(0, 3).forEach((vItem, idx) => {
+      const targetSc = shuffledVisual[idx];
+      if (targetSc) {
+        matchedBySceneId[targetSc.id] = vItem;
+      }
+    });
+
+    let imgCursor = 0;
+    visualScenes.forEach((sc) => {
+      if (matchedBySceneId[sc.id]) return;
+      const candidate = imageItems[imgCursor++];
       if (candidate) {
         matchedBySceneId[sc.id] = candidate;
       }

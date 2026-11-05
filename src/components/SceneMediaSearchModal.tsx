@@ -260,10 +260,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         const nextEnds: Record<string, number> = {};
         const nextTargetScenes: Record<string, string> = {};
 
+        // Shuffle candidate target scenes so batch cards default to random positions across the Timeline (not fixed at #01/#02 at the start!)
+        const shuffledScenePool = [...(videoScenesOnly.length > 0 ? videoScenesOnly : selectableScenes)].sort(
+          () => Math.random() - 0.5
+        );
+
         ytList.forEach((v, idx) => {
+          const randomPoolScene =
+            shuffledScenePool.length > 0
+              ? shuffledScenePool[idx % shuffledScenePool.length]?.id
+              : undefined;
           const defaultTargetScene =
             scene?.id ||
-            videoScenesOnly[idx % Math.max(1, videoScenesOnly.length)]?.id ||
+            randomPoolScene ||
             activeSceneId ||
             selectableScenes[0]?.id ||
             '';
@@ -271,7 +280,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           const sSec =
             typeof v.suggestedTrimStartSec === 'number' && v.suggestedTrimStartSec >= 0
               ? v.suggestedTrimStartSec
-              : 2;
+              : 4 + Math.floor(Math.random() * 20);
           nextStarts[v.id] = sSec;
           nextEnds[v.id] = sSec + targetDur;
           nextTargetScenes[v.id] = defaultTargetScene;
@@ -999,11 +1008,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                 </p>
                               </div>
 
-                              {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Trên Timeline) */}
+                              {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Bất Kỳ Trên Timeline) */}
                               {selectableScenes.length > 0 && (
-                                <div className="flex items-center justify-between gap-2 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
                                   <span className="text-sky-300 font-semibold shrink-0">
-                                    Chèn vào:
+                                    Vị trí chèn:
                                   </span>
                                   <select
                                     value={chosenSceneId}
@@ -1028,6 +1037,42 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       </option>
                                     ))}
                                   </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const pool =
+                                        selectableScenes.length > 1
+                                          ? selectableScenes.filter((s) => s.id !== chosenSceneId)
+                                          : selectableScenes;
+                                      const randSc =
+                                        pool[Math.floor(Math.random() * pool.length)] ||
+                                        selectableScenes[0];
+                                      if (!randSc) return;
+                                      const nextDur = getSceneDurationById(randSc.id);
+                                      const maxValidStart = Math.max(
+                                        6,
+                                        Math.min(200, (yt.durationSec || 45) - nextDur - 2)
+                                      );
+                                      const randStart =
+                                        2 + Math.floor(Math.random() * maxValidStart);
+                                      setYtTargetSceneIds((prev) => ({
+                                        ...prev,
+                                        [yt.id]: randSc.id,
+                                      }));
+                                      setYtTrimStarts((prev) => ({
+                                        ...prev,
+                                        [yt.id]: randStart,
+                                      }));
+                                      setYtTrimEnds((prev) => ({
+                                        ...prev,
+                                        [yt.id]: randStart + nextDur,
+                                      }));
+                                    }}
+                                    title="Đổi ngẫu nhiên sang một vị trí Cảnh bất kỳ trên Timeline và chọn ngẫu nhiên giây cắt"
+                                    className="px-1.5 py-0.5 rounded bg-violet-500/20 hover:bg-violet-500/35 text-violet-200 border border-violet-500/40 text-[10px] font-bold shrink-0"
+                                  >
+                                    🎲 Ngẫu nhiên
+                                  </button>
                                 </div>
                               )}
 

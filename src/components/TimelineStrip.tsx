@@ -197,14 +197,14 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                 type="button"
                 disabled={isTrimmingRealVideos}
                 onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 3, false)}
-                title="Tự động tìm 3 đoạn video thực tế khác nhau của diễn viên, cắt riêng từng đoạn và chèn vào 3 cảnh trên dòng thời gian"
+                title="Tự động tìm 3 đoạn video thực tế khác nhau của diễn viên, cắt ngẫu nhiên từng đoạn và chèn vào 3 vị trí ngẫu nhiên bất kỳ trên Timeline (không cố định ở đầu video)"
                 className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
               >
                 <Film className="w-3.5 h-3.5 text-sky-400" />
                 <span>
                   {isTrimmingRealVideos
-                    ? '⏳ Đang cắt riêng từng đoạn...'
-                    : '🎬 Tự Lấy & Cắt Riêng 3 Đoạn Video'}
+                    ? '⏳ Đang cắt & chèn ngẫu nhiên...'
+                    : '🎲 Tự Lấy & Chèn Ngẫu Nhiên 3 Video Thật'}
                 </span>
               </button>
             </>

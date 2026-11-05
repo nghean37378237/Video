@@ -2479,8 +2479,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
 
-      const cutOffsets = [18, 44, 95, 120, 160, 210];
-      const shiftSec = (Math.max(0, Number(cycleOffset) || 0) % 4) * 14;
+      const usedRandomOffsets: number[] = [];
+      const pickDistinctRandomOffset = (fallbackIdx: number): number => {
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const candidate = 14 + Math.floor(Math.random() * 155);
+          if (usedRandomOffsets.every((prev) => Math.abs(prev - candidate) >= 14)) {
+            usedRandomOffsets.push(candidate);
+            return candidate;
+          }
+        }
+        const fallback = 22 + fallbackIdx * 34;
+        usedRandomOffsets.push(fallback);
+        return fallback;
+      };
 
       const videoCuts = await Promise.all(
         videos.map(async (v, idx) => {
@@ -2488,7 +2499,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
               ? Math.round(Number(sceneDurations[idx]))
               : 8;
-          const startSec = (v.trimStartSec ?? cutOffsets[idx % cutOffsets.length]) + shiftSec;
+          const startSec = pickDistinctRandomOffset(idx);
           const endSec = startSec + dur;
           const distinctPhoto =
             combinedPhotos[(idx + Number(cycleOffset || 0)) % Math.max(1, combinedPhotos.length)];
@@ -3350,8 +3361,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
 
-      const cutStartPresets = [18, 34, 52, 72, 95, 118, 145];
-      const shortStartPresets = [0, 2, 4, 6, 3, 5];
       const usedDmInSearch = new Set<string>();
 
       const pickMatchedReelAndDm = (titleText: string, itemIdx: number) => {
@@ -3379,10 +3388,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return { matchedReel, pairedDmId };
       };
 
-      // Convert Shorts, TikToks, and Full Videos into unified items with clear platform badges
+      // Convert Shorts, TikToks, and Full Videos into unified items with random cut start timestamps (not fixed at the beginning)
       const formattedShorts = allShorts.map((s, idx) => {
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
-        const startSec = shortStartPresets[idx % shortStartPresets.length];
+        const startSec = 3 + Math.floor(Math.random() * 22);
         return {
           id: `yt-short-${s.youtubeId}-${idx}`,
           youtubeId: s.youtubeId,
@@ -3409,6 +3418,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           allShorts[idx % Math.max(1, allShorts.length)]?.thumbnailUrl ||
           allVideos[idx % Math.max(1, allVideos.length)]?.thumbnailUrl ||
           "https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg";
+        const ttDur = tt.durationSec || 45;
+        const maxTtStart = Math.max(4, ttDur - 12);
+        const randomTtStart = 2 + Math.floor(Math.random() * maxTtStart);
         return {
           id: `tt-${tt.tiktokId}-${idx}`,
           youtubeId: allShorts[idx % Math.max(1, allShorts.length)]?.youtubeId || "",
@@ -3418,12 +3430,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: tt.title,
           channel: tt.channel,
-          durationSec: tt.durationSec || 45,
-          durationLabel: `0:${String(tt.durationSec || 45).padStart(2, "0")} (TikTok)`,
+          durationSec: ttDur,
+          durationLabel: `0:${String(ttDur).padStart(2, "0")} (TikTok)`,
           viewsLabel: "TikTok Video",
           thumbnailUrl: tt.thumbnailUrl || fallbackThumb,
           youtubeUrl: tt.tiktokUrl,
-          suggestedTrimStartSec: idx % 2 === 0 ? 0 : 3,
+          suggestedTrimStartSec: randomTtStart,
           sourcePlatform: "tiktok" as const,
           platformBadge: "🎵 TikTok",
         };
@@ -3431,12 +3443,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const formattedVideos = allVideos.map((yt, idx) => {
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(yt.title, idx);
-        const suggestedStart = Math.min(
-          Math.max(10, yt.durationSec - 12),
-          matchedReel?.trimStartSec
-            ? matchedReel.trimStartSec + (idx >= curatedReels.length ? idx * 14 : 0)
-            : cutStartPresets[idx % cutStartPresets.length]
-        );
+        const maxValidStart = Math.max(16, Math.min(240, (yt.durationSec || 120) - 14));
+        const suggestedStart = 12 + Math.floor(Math.random() * (maxValidStart - 10));
         return {
           id: `yt-vid-${yt.youtubeId}-${idx}`,
           youtubeId: yt.youtubeId,
@@ -3975,22 +3983,43 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         uniqueVerifiedPool.push(p);
       }
 
-      // Step 2: First assign verified real archival videos to 'video' scenes in chronological order
-      const sortedVideos = [...verifiedVideos].sort(
-        (a, b) => (a.year || 1960) - (b.year || 1960)
-      );
-      const videoTargetScenes = visualScenes.filter((s: any) => s.sceneType === "video");
-      let matchedVideosCount = 0;
+      // Step 2: Assign verified real archival videos to RANDOM positions across the Timeline (never fixed at Scene #01/#02 at the start!)
+      const shuffledVideos = [...verifiedVideos].sort(() => Math.random() - 0.5);
+      const rawVideoTargetScenes = visualScenes.filter((s: any) => s.sceneType === "video");
+      const candidateVideoScenes =
+        rawVideoTargetScenes.length > 0 ? [...rawVideoTargetScenes] : [...visualScenes];
 
-      for (let vIdx = 0; vIdx < sortedVideos.length && vIdx < videoTargetScenes.length; vIdx++) {
-        const sc = videoTargetScenes[vIdx];
-        const vid = sortedVideos[vIdx];
+      // Shuffle candidate scenes randomly; if there are enough scenes (> 4), prefer non-opening scenes or spread randomly across the timeline so real videos don't always sit at #01/#02
+      const nonOpeningCandidates =
+        candidateVideoScenes.length > 4
+          ? candidateVideoScenes.filter((_s: any, idx: number) => idx > 0 || Math.random() < 0.25)
+          : candidateVideoScenes;
+      const poolToShuffle =
+        nonOpeningCandidates.length >= Math.min(3, shuffledVideos.length)
+          ? [...nonOpeningCandidates]
+          : [...candidateVideoScenes];
+      for (let i = poolToShuffle.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [poolToShuffle[i], poolToShuffle[j]] = [poolToShuffle[j], poolToShuffle[i]];
+      }
+
+      let matchedVideosCount = 0;
+      const maxRealVideosToPlace = Math.min(3, shuffledVideos.length, poolToShuffle.length);
+
+      for (let vIdx = 0; vIdx < maxRealVideosToPlace; vIdx++) {
+        const sc = poolToShuffle[vIdx];
+        const vid = shuffledVideos[vIdx];
         const label = vid.year ? `${vid.title} (${vid.year})` : vid.title;
         // Give each video scene a distinct thumbnail so they never look identical on the Timeline
         const distinctThumb =
           vid.dataUrl ||
           uniqueVerifiedPool[Math.max(0, uniqueVerifiedPool.length - 1 - vIdx)]?.dataUrl ||
           "";
+        const randomTrimStart =
+          typeof (vid as any).trimStartSec === "number" && (vid as any).trimStartSec > 10
+            ? (vid as any).trimStartSec + Math.floor(Math.random() * 25)
+            : 16 + Math.floor(Math.random() * 110);
+        const randomTrimEnd = randomTrimStart + 9;
         matchedBySceneId[sc.id] = {
           title: label,
           dataUrl: distinctThumb,
@@ -3999,8 +4028,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           width: vid.width,
           height: vid.height,
           year: vid.year,
-          trimStartSec: (vid as any).trimStartSec ?? 18 + vIdx * 26,
-          trimEndSec: (vid as any).trimEndSec ?? 27 + vIdx * 26,
+          trimStartSec: randomTrimStart,
+          trimEndSec: randomTrimEnd,
         } as any;
         allPhotos.push({
           sceneId: sc.id,
