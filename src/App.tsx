@@ -3268,6 +3268,8 @@ export default function App() {
         onChangeProxyModel={setProxyModel}
         onGenerateImageViaProxyForScene={handleGenerateImageViaProxyForScene}
         generatingImageSceneId={generatingImageSceneId}
+        onOpenSceneMediaSearch={(sceneId) => setSearchingMediaSceneId(sceneId)}
+        onQuickCycleSceneMedia={handleQuickCycleSceneMedia}
       />
     </div>
   );

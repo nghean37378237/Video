@@ -552,17 +552,52 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 </label>
               )}
 
-              {/* Quick Actions for Full-Frame Keyframe Image & Real Video Search */}
-              {onOpenSceneMediaSearch && (
-                <button
-                  type="button"
-                  onClick={() => onOpenSceneMediaSearch(activeScene.id)}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-md shadow transition-colors"
-                >
-                  <Search className="w-3.5 h-3.5 shrink-0" />
-                  <span>🔍 Tìm &amp; Cắt Video Thực Tế / Ảnh Thật Cho Cảnh #{String(activeScene.order).padStart(2, '0')}</span>
-                </button>
-              )}
+              {/* Quick Actions for Per-Scene Video Search & Replacement Video */}
+              <div className="p-2.5 rounded-lg bg-[#0E1729] border border-sky-500/40 space-y-1.5">
+                <div className="text-[11px] font-bold text-sky-300 flex items-center gap-1">
+                  <Film className="w-3.5 h-3.5 text-sky-400" />
+                  <span>
+                    🎬 Tìm Video Cho Phần #{String(activeScene.order).padStart(2, '0')} &amp; Video Thay Thế:
+                  </span>
+                </div>
+                {onOpenSceneMediaSearch && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSceneMediaSearch(activeScene.id)}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-md shadow transition-colors"
+                  >
+                    <Search className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      🔍 Tìm &amp; Chọn Video Thay Thế / Shorts / TikTok Cho Phần #{String(activeScene.order).padStart(2, '0')}
+                    </span>
+                  </button>
+                )}
+                {onFetchAndInsertTrimmedActorVideos && (
+                  <button
+                    type="button"
+                    disabled={isTrimmingRealVideos}
+                    onClick={() =>
+                      onFetchAndInsertTrimmedActorVideos(
+                        settings.projectTitle.split('—')[0].trim(),
+                        1,
+                        true
+                      )
+                    }
+                    className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 text-amber-200 border border-amber-400/50 rounded-md transition-colors"
+                  >
+                    {isTrimmingRealVideos ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Đang tự cắt &amp; thay thế video...</span>
+                      </>
+                    ) : (
+                      <span>
+                        🔄 Tự Cắt &amp; Thay Thế 1 Video Thật Khác Vào Phần #{String(activeScene.order).padStart(2, '0')} (1-Click)
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-1.5">
                 <button

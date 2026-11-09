@@ -78,6 +78,8 @@ interface ScriptPromptStudioModalProps {
   onChangeProxyModel: (model: string) => void;
   onGenerateImageViaProxyForScene: (scene: StoryScene) => Promise<void>;
   generatingImageSceneId: string | null;
+  onOpenSceneMediaSearch?: (sceneId: string) => void;
+  onQuickCycleSceneMedia?: (sceneId: string) => void;
 }
 
 export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = ({
@@ -103,6 +105,8 @@ export const ScriptPromptStudioModal: React.FC<ScriptPromptStudioModalProps> = (
   onChangeProxyModel,
   onGenerateImageViaProxyForScene,
   generatingImageSceneId,
+  onOpenSceneMediaSearch,
+  onQuickCycleSceneMedia,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'checklist' | 'proxy-api' | 'chatgpt-bridge' | 'paste-script'
@@ -1054,6 +1058,27 @@ QUY TẮC TỶ LỆ VIDEO (>1/2 ĐỘ DÀI TOÀN VIDEO) & KỊCH BẢN CHUYỂN 
 
                     {isVisualScene && (
                       <div className="flex flex-wrap items-center gap-2">
+                        {onOpenSceneMediaSearch && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSceneMediaSearch(scene.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-md shadow transition-colors whitespace-nowrap shrink-0"
+                          >
+                            <Film className="w-3.5 h-3.5" />
+                            <span>
+                              🔍 Tìm &amp; Chọn Video Thay Thế Cho Phần #{String(idx + 1).padStart(2, '0')}
+                            </span>
+                          </button>
+                        )}
+                        {onQuickCycleSceneMedia && (
+                          <button
+                            type="button"
+                            onClick={() => onQuickCycleSceneMedia(scene.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                          >
+                            <span>🔄 Đổi Video Thay Thế #{String(idx + 1).padStart(2, '0')}</span>
+                          </button>
+                        )}
                         {klingStandardPack && (
                           <button
                             onClick={() =>

@@ -2288,18 +2288,28 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }[] = [];
 
     // 0. Check Curated Pre-Verified Actor Real Video Reels first for <50ms instant response
+    const lowerQueryCheck = cleanQuery.toLowerCase();
     const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
-      (k) => lowerSubject.includes(k) || k.includes(lowerSubject)
+      (k) =>
+        lowerSubject.includes(k) ||
+        k.includes(lowerSubject) ||
+        lowerQueryCheck.includes(k)
     );
     if (matchedCuratedKey) {
       const reels = VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey];
-      const extraShiftSec = (Math.max(0, cycleOffset) % 4) * 14;
-      for (let i = 0; i < Math.min(limit, reels.length); i++) {
+      const shiftOffsets = [0, 18, 38, 62, 88, 118];
+      const baseCycleShift = (Math.max(0, cycleOffset) % 5) * 14;
+      const targetCount = Math.min(limit, 6);
+      for (let i = 0; i < targetCount; i++) {
         const r = reels[(i + Math.max(0, cycleOffset)) % reels.length];
-        const tStart = r.trimStartSec + extraShiftSec;
-        const tEnd = r.trimEndSec + extraShiftSec;
+        const extraShift = shiftOffsets[i % shiftOffsets.length] + baseCycleShift;
+        const tStart = r.trimStartSec + (i >= reels.length ? extraShift : baseCycleShift);
+        const tEnd = r.trimEndSec + (i >= reels.length ? extraShift : baseCycleShift);
         candidates.push({
-          title: r.title,
+          title:
+            i >= reels.length
+              ? `${r.title} (Góc cắt #${i + 1})`
+              : r.title,
           videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(r.rawMp4Url)}#cut=${i + 1}`,
           thumbUrl: "",
           width: r.width,
@@ -2519,13 +2529,32 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     const cutWindows = [
       { start: 18, end: 27, tag: "Cắt cảnh #1 (00:18–00:27)" },
       { start: 44, end: 53, tag: "Cắt cảnh #2 (00:44–00:53)" },
-      { start: 95, end: 105, tag: "Cắt cảnh #3 (01:35–01:45)" },
-      { start: 120, end: 130, tag: "Cắt cảnh #4 (02:00–02:10)" },
+      { start: 72, end: 81, tag: "Cắt cảnh #3 (01:12–01:21)" },
+      { start: 95, end: 105, tag: "Cắt cảnh #4 (01:35–01:45)" },
+      { start: 120, end: 130, tag: "Cắt cảnh #5 (02:00–02:10)" },
+      { start: 150, end: 160, tag: "Cắt cảnh #6 (02:30–02:40)" },
     ];
+
+    if (candidates.length === 0) {
+      const fallbackReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"] || [];
+      const baseShift = (Math.max(0, cycleOffset) % 5) * 14;
+      fallbackReels.forEach((r, idx) => {
+        candidates.push({
+          title: `${subjectFullPhrase} — ${r.title}`,
+          videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(r.rawMp4Url)}#cut=${idx + 1}`,
+          thumbUrl: "",
+          width: r.width,
+          height: r.height,
+          year: r.year,
+          trimStartSec: r.trimStartSec + baseShift,
+          trimEndSec: r.trimEndSec + baseShift,
+        });
+      });
+    }
 
     const expandedCandidates: typeof candidates = [];
     if (candidates.length > 0) {
-      for (let i = 0; i < Math.min(limit, 3); i++) {
+      for (let i = 0; i < Math.min(limit, 6); i++) {
         const base = candidates[i % candidates.length];
         const win = cutWindows[i % cutWindows.length];
         const tStart = base.trimStartSec ?? win.start;
@@ -2821,11 +2850,22 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         cycleOffset = 0,
       } = req.body || {};
 
-      const cleanChar = String(characterName || "Will Sampson")
+      const propChar = String(characterName || "Will Sampson")
         .replace(/[—–-].*$/, "")
         .trim();
-      const rawSearch = String(query || cleanChar).trim();
+      const rawSearch = String(query || propChar).trim();
       const dur = Math.max(5, Math.min(20, Math.round(Number(sceneDurationSec) || 8)));
+
+      // If rawSearch starts with or contains a known actor name, prioritize it
+      const queryCore = rawSearch
+        .replace(/\b(18|19|20)\d{2}s?\b/g, "")
+        .replace(
+          /\b(shorts|short|tiktok|video|movie|clips|clip|scene|interview|tribute|trailer|actor|portrait|circa|early|late|young|birthplace)\b/gi,
+          ""
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+      const cleanChar = queryCore.length >= 3 ? queryCore : propChar;
 
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();

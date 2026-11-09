@@ -105,7 +105,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   const videoSharePercent = totalSec > 0 ? Math.round((videoSec / totalSec) * 100) : 0;
 
   return (
-    <div className="h-48 bg-[#0B0F17] border-t border-slate-800/90 flex flex-col select-none">
+    <div className="h-52 bg-[#0B0F17] border-t border-slate-800/90 flex flex-col select-none">
       {/* Timeline Header Bar */}
       <div className="flex flex-wrap items-center justify-between px-4 py-1.5 border-b border-slate-800/80 bg-[#111827]/70 gap-1.5">
         <div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
@@ -648,18 +648,30 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/50 transition-colors shrink-0"
                   >
                     <Play className="w-2.5 h-2.5 fill-current shrink-0" />
-                    <span>Phát Riêng</span>
+                    <span>Phát</span>
                   </button>
 
                   {isVisualScene && onOpenSceneMediaSearch && (
                     <button
                       type="button"
                       onClick={() => onOpenSceneMediaSearch(scene.id)}
-                      title={`Tìm kiếm Video Thực Tế (Kho Phim / YouTube / Shorts / TikTok) hoặc Ảnh Thật khác cho Cảnh #${String(idx + 1).padStart(2, '0')}`}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border border-amber-400/60 transition-colors shrink-0"
+                      title={`Tìm kiếm Video cho riêng Phần #${String(idx + 1).padStart(2, '0')} (Kho Video Thay Thế / YouTube / Shorts / TikTok / Ảnh Thật)`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 transition-colors shrink-0"
                     >
                       <Search className="w-2.5 h-2.5 shrink-0" />
-                      <span>🔍 Tìm Khác</span>
+                      <span>🔍 Tìm Video</span>
+                    </button>
+                  )}
+
+                  {isVisualScene && onQuickCycleSceneMedia && (
+                    <button
+                      type="button"
+                      onClick={() => onQuickCycleSceneMedia(scene.id)}
+                      title={`Đổi nhanh sang Video Thay Thế / Ảnh Thực Tế khác cho riêng Phần #${String(idx + 1).padStart(2, '0')}`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border border-sky-400/60 transition-colors shrink-0"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5 shrink-0" />
+                      <span>Thay Thế</span>
                     </button>
                   )}
 
@@ -676,22 +688,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       target="_blank"
                       rel="noreferrer"
                       title={`Tải file Video MP4 đã cắt của Cảnh #${String(idx + 1).padStart(2, '0')} về máy tính của bạn`}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border border-sky-400/60 transition-colors shrink-0"
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 transition-colors shrink-0"
                     >
                       <Download className="w-2.5 h-2.5 shrink-0" />
                       <span>Lưu</span>
                     </a>
-                  )}
-
-                  {isVisualScene && onQuickCycleSceneMedia && (
-                    <button
-                      type="button"
-                      onClick={() => onQuickCycleSceneMedia(scene.id)}
-                      title="Đổi nhanh 1-Click sang Ảnh hoặc Góc Cắt Video Thực Tế khác cho cảnh này"
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors shrink-0"
-                    >
-                      <RefreshCw className="w-2.5 h-2.5" />
-                    </button>
                   )}
 
                   {onUploadFileForScene && scene.sceneType !== 'outro' && (

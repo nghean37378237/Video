@@ -136,6 +136,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     'all' | 'shorts-tiktok' | 'youtube-long'
   >('all');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoadingArchival, setIsLoadingArchival] = useState<boolean>(false);
   const [isCuttingYouTube, setIsCuttingYouTube] = useState<boolean>(false);
   const [cuttingCardId, setCuttingCardId] = useState<string | null>(null);
   const [cycleOffset, setCycleOffset] = useState<number>(0);
@@ -173,7 +174,6 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [archivalTargetScenes, setArchivalTargetScenes] = useState<Record<string, string>>({});
 
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
-  const sceneDur = Math.max(5, Math.round(scene?.durationSec || 9));
 
   // Eligible visual scenes on the Timeline that can receive a cut video
   const selectableScenes = React.useMemo(() => {
@@ -182,25 +182,57 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     return scene ? [scene] : [];
   }, [allScenes, scene]);
 
+  const [selectedModalSceneId, setSelectedModalSceneId] = useState<string>(
+    scene?.id || activeSceneId || selectableScenes[0]?.id || ''
+  );
+
+  const effectiveScene = React.useMemo(() => {
+    return (
+      allScenes.find((s) => s.id === selectedModalSceneId) ||
+      scene ||
+      allScenes.find((s) => s.id === activeSceneId) ||
+      selectableScenes[0] ||
+      null
+    );
+  }, [allScenes, selectedModalSceneId, scene, activeSceneId, selectableScenes]);
+
+  const sceneDur = Math.max(5, Math.round(effectiveScene?.durationSec || 9));
+
   const videoScenesOnly = React.useMemo(() => {
     const vList = selectableScenes.filter((s) => s.sceneType === 'video');
     return vList.length > 0 ? vList : selectableScenes;
   }, [selectableScenes]);
 
   const getSceneDurationById = (sId: string): number => {
-    const found = allScenes.find((s) => s.id === sId) || (scene?.id === sId ? scene : undefined);
+    const found =
+      allScenes.find((s) => s.id === sId) ||
+      (effectiveScene?.id === sId ? effectiveScene : undefined);
     return Math.max(5, Math.round(found?.durationSec || 9));
   };
 
   const getSceneBadgeById = (sId: string): string => {
-    const found = allScenes.find((s) => s.id === sId) || (scene?.id === sId ? scene : undefined);
+    const found =
+      allScenes.find((s) => s.id === sId) ||
+      (effectiveScene?.id === sId ? effectiveScene : undefined);
     if (!found) return 'Đoạn Đang Chọn';
     return `Đoạn #${String(found.order).padStart(2, '0')} (${Math.round(found.durationSec || 8)}s)`;
   };
 
+  const sceneSpecificQuery = React.useMemo(() => {
+    if (!effectiveScene) return '';
+    const kw = (effectiveScene.archivalKeywords || '').trim();
+    if (kw && kw.toLowerCase() !== cleanCharName.toLowerCase()) {
+      return kw.toLowerCase().includes(cleanCharName.toLowerCase())
+        ? kw
+        : `${cleanCharName} ${kw}`;
+    }
+    return '';
+  }, [effectiveScene, cleanCharName]);
+
   const suggestedQueries = React.useMemo(() => {
     const list: string[] = [
       cleanCharName,
+      ...(sceneSpecificQuery ? [sceneSpecificQuery] : []),
       `${cleanCharName} shorts`,
       `${cleanCharName} tiktok`,
     ];
@@ -239,12 +271,50 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       );
     }
     return Array.from(new Set(list)).slice(0, 7);
-  }, [cleanCharName]);
+  }, [cleanCharName, sceneSpecificQuery]);
 
-  const executeSearch = async (queryToRun: string, nextCycle = 0) => {
+  const handleSelectPartScene = (targetSc: StoryScene, runPartSearch = false) => {
+    setSelectedModalSceneId(targetSc.id);
+    // Assign all cards to target this chosen part/scene immediately
+    setYtTargetSceneIds((prev) => {
+      const next = { ...prev };
+      youtubeVideos.forEach((v) => {
+        next[v.id] = targetSc.id;
+      });
+      return next;
+    });
+    setArchivalTargetScenes((prev) => {
+      const next = { ...prev };
+      videoOptions.forEach((v) => {
+        next[v.id] = targetSc.id;
+      });
+      return next;
+    });
+    if (runPartSearch) {
+      const kw = (targetSc.archivalKeywords || '').trim();
+      const qToSearch =
+        kw && kw.toLowerCase() !== cleanCharName.toLowerCase()
+          ? kw.toLowerCase().includes(cleanCharName.toLowerCase())
+            ? kw
+            : `${cleanCharName} ${kw}`
+          : cleanCharName;
+      setSearchQuery(qToSearch);
+      executeSearch(qToSearch, cycleOffset, targetSc.id);
+    }
+  };
+
+  const executeSearch = async (queryToRun: string, nextCycle = 0, overrideSceneId?: string) => {
     setIsLoading(true);
+    setIsLoadingArchival(true);
     setPreviewingYtId(null);
     const effectiveQuery = queryToRun.trim() || cleanCharName;
+    const targetSceneForDefault =
+      overrideSceneId ||
+      selectedModalSceneId ||
+      scene?.id ||
+      activeSceneId ||
+      selectableScenes[0]?.id ||
+      '';
 
     const applyYtList = (ytList: YouTubeSearchVideoItem[]) => {
       setYoutubeVideos(ytList);
@@ -262,7 +332,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             ? shuffledScenePool[idx % shuffledScenePool.length]?.id
             : undefined;
         const defaultTargetScene =
-          scene?.id ||
+          targetSceneForDefault ||
           randomPoolScene ||
           activeSceneId ||
           selectableScenes[0]?.id ||
@@ -306,10 +376,17 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         setPhotoOptions(imgs);
 
         const initialTrims: Record<string, number> = {};
+        const nextArchTargets: Record<string, string> = {};
         vids.forEach((v) => {
           initialTrims[v.id] = v.trimStartSec;
+          if (targetSceneForDefault) {
+            nextArchTargets[v.id] = targetSceneForDefault;
+          }
         });
         setCustomTrimStarts(initialTrims);
+        if (targetSceneForDefault) {
+          setArchivalTargetScenes(nextArchTargets);
+        }
 
         vids.slice(0, 4).forEach((v) => {
           captureRealVideoFrameThumbnail(v.videoUrl, v.trimStartSec, 7500).then((frameUrl) => {
@@ -320,7 +397,10 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           });
         });
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setIsLoadingArchival(false);
+      });
 
     // 2. Fetch YouTube Shorts + TikTok + YouTube Videos (<0.8s via InnerTube JSON API)
     try {
@@ -370,7 +450,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Aggregate all sources (YouTube Shorts + TikTok + Movie Clips across all eras) by default instead of restricting to a single scene timestamp
+      const initSceneId = scene?.id || activeSceneId || selectableScenes[0]?.id || '';
+      setSelectedModalSceneId(initSceneId);
       const defaultQuery = cleanCharName;
       setSearchQuery(defaultQuery);
       setFilterTab(initialTab);
@@ -382,7 +463,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setJustCutBanner(null);
       setShowSavedCutsDrawer(false);
       loadSavedCutsFromServer();
-      executeSearch(defaultQuery, 0);
+      executeSearch(defaultQuery, 0, initSceneId);
     }
   }, [isOpen, scene?.id, initialTab]);
 
@@ -397,7 +478,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     const sSec = ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
     const chosenSceneId =
       ytTargetSceneIds[yt.id] ||
-      scene?.id ||
+      effectiveScene?.id ||
       activeSceneId ||
       selectableScenes[0]?.id ||
       '';
@@ -417,11 +498,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [previewingYtId, youtubeVideos, ytTrimStarts, ytTrimEnds, ytTargetSceneIds, scene?.id, activeSceneId]);
+  }, [previewingYtId, youtubeVideos, ytTrimStarts, ytTrimEnds, ytTargetSceneIds, effectiveScene?.id, activeSceneId]);
 
   if (!isOpen) return null;
 
-  const sceneNumLabel = scene ? `#${String(scene.order).padStart(2, '0')}` : null;
+  const sceneNumLabel = effectiveScene ? `#${String(effectiveScene.order).padStart(2, '0')}` : null;
 
   // Toggle or add a specific [video + startSec->endSec + targetSceneId] segment into the cut queue
   const handleToggleQueueSegment = (yt: YouTubeSearchVideoItem) => {
@@ -609,7 +690,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="w-full max-w-6xl max-h-[92vh] bg-[#0B0F17] border border-slate-700/90 rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Top Modal Header */}
         <div className="px-5 py-3.5 bg-[#111827] border-b border-slate-800 flex items-center justify-between gap-3">
@@ -667,17 +748,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               </button>
             )}
 
-            {scene && photoOptions.length > 0 && (
+            {effectiveScene && photoOptions.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   const chosenPhoto =
                     photoOptions.find(
                       (p) =>
-                        p.dataUrl !== scene.mediaUrl && p.dataUrl !== scene.characterRefPhotoUrl
+                        p.dataUrl !== effectiveScene.mediaUrl &&
+                        p.dataUrl !== effectiveScene.characterRefPhotoUrl
                     ) || photoOptions[0];
                   if (chosenPhoto) {
-                    onSelectPhotoForScene(scene.id, chosenPhoto, 'keep-video-grok-ref');
+                    onSelectPhotoForScene(effectiveScene.id, chosenPhoto, 'keep-video-grok-ref');
                     onClose();
                   }
                 }}
@@ -689,7 +771,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               </button>
             )}
 
-            {scene && onUploadLocalFileForScene && (
+            {effectiveScene && onUploadLocalFileForScene && (
               <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 cursor-pointer transition-colors">
                 <Upload className="w-3.5 h-3.5" />
                 <span>Tải File Từ Máy</span>
@@ -699,7 +781,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) {
-                      onUploadLocalFileForScene(scene.id, f);
+                      onUploadLocalFileForScene(effectiveScene.id, f);
                       e.target.value = '';
                       onClose();
                     }
@@ -718,6 +800,95 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* PER-PART / PER-SCENE SELECTOR BAR (TÌM & THAY THẾ VIDEO CHO TỪNG PHẦN #01 -> #N) */}
+        {selectableScenes.length > 0 && (
+          <div className="px-5 py-2.5 bg-[#0C121E] border-b border-slate-800 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-400">
+                  🎯 Tìm &amp; Thay Thế Video Cho Từng Phần (Chọn Phần / Cảnh cần làm):
+                </span>
+                {effectiveScene && (
+                  <span className="text-[11px] text-slate-300 truncate max-w-md">
+                    Đang chọn <strong className="text-amber-300">Phần #{String(effectiveScene.order).padStart(2, '0')}</strong> ({Math.round(effectiveScene.durationSec || 8)}s):{' '}
+                    <em className="text-slate-400">"{effectiveScene.narrationText.slice(0, 65)}..."</em>
+                  </span>
+                )}
+              </div>
+
+              {effectiveScene && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPartScene(effectiveScene, true)}
+                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1 shadow transition-colors"
+                    title="Tìm video đúng theo từ khóa và nội dung của riêng Phần đang chọn"
+                  >
+                    <Search className="w-3 h-3" />
+                    <span>
+                      🔍 Tìm Video Riêng Cho Phần #{String(effectiveScene.order).padStart(2, '0')}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = cycleOffset + 1;
+                      setCycleOffset(next);
+                      executeSearch(searchQuery || cleanCharName, next, effectiveScene.id);
+                    }}
+                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 flex items-center gap-1 transition-colors"
+                    title="Tải lô Video Thay Thế khác cho Phần này"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingArchival ? 'animate-spin' : ''}`} />
+                    <span>🔄 Đổi Video Thay Thế Khác</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              {selectableScenes.map((sc) => {
+                const isSelectedPart = effectiveScene?.id === sc.id;
+                const hasRealVid = Boolean(sc.mediaUrl) && sc.mediaKind === 'video';
+                const hasRealImg = Boolean(sc.mediaUrl) && sc.mediaKind !== 'video' && sc.hasRealPhoto !== false;
+                return (
+                  <button
+                    key={sc.id}
+                    type="button"
+                    onClick={() => handleSelectPartScene(sc, false)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 border shrink-0 transition-all ${
+                      isSelectedPart
+                        ? 'bg-amber-500 text-slate-950 border-amber-300 shadow ring-2 ring-amber-400/40'
+                        : hasRealVid
+                        ? 'bg-sky-950/70 text-sky-200 border-sky-500/50 hover:border-amber-400'
+                        : hasRealImg
+                        ? 'bg-emerald-950/60 text-emerald-200 border-emerald-500/40 hover:border-amber-400'
+                        : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-400'
+                    }`}
+                    title={`Bấm để chọn Phần #${String(sc.order).padStart(2, '0')}: ${sc.title} (${Math.round(sc.durationSec || 8)}s)`}
+                  >
+                    <span>Phần #{String(sc.order).padStart(2, '0')}</span>
+                    <span className="text-[10px] opacity-85 font-normal max-w-[90px] truncate">
+                      {sc.title}
+                    </span>
+                    <span
+                      className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+                        isSelectedPart
+                          ? 'bg-slate-950/25 text-slate-950 font-extrabold'
+                          : hasRealVid
+                          ? 'bg-sky-500/30 text-sky-200'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {hasRealVid ? '🎬 Đã có MP4' : hasRealImg ? '📸 Ảnh gốc' : 'Cần video'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Queued Segments Bar (Shows each individual segment [Video + Start->End + Target Scene] so user sees they are cut separately) */}
         {queuedSegments.length > 0 && (
@@ -852,11 +1023,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 ${
                   filterTab === 'video'
                     ? 'bg-sky-500 text-slate-950'
-                    : 'text-sky-300 hover:text-sky-200 bg-sky-500/10'
+                    : 'text-sky-300 hover:text-sky-200 bg-sky-500/15 border border-sky-500/40'
                 }`}
               >
                 <Film className="w-3.5 h-3.5" />
-                <span>🎬 Video Thực Tế ({videoOptions.length})</span>
+                <span>🔄 Video Thay Thế &amp; Thực Tế ({videoOptions.length})</span>
               </button>
               <button
                 type="button"
@@ -1105,32 +1276,73 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             </div>
           ) : (
             <>
-              {/* SECTION 0: REAL ARCHIVAL VIDEOS (KHO VIDEO THỰC TẾ MP4 TRỰC TIẾP) */}
-              {(filterTab === 'video' || filterTab === 'all' || filterTab === 'youtube') &&
-                videoOptions.length > 0 && (
-                  <div className="space-y-3 bg-[#0E1729] p-4 rounded-xl border border-sky-500/50 shadow">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                        <Film className="w-4 h-4 text-sky-400" />
-                        <span>
-                          🎬 KHO VIDEO THỰC TẾ TRỰC TIẾP — MP4 CẮT SẴN ({videoOptions.length} đoạn video thật của {cleanCharName}):
-                        </span>
-                      </h3>
-                      <span className="text-[11px] text-slate-300">
-                        Xem thử trực tiếp trên khung hình · Chọn giây cắt &amp; bấm 1-Click để chèn vào Cảnh
+              {/* SECTION 0: REPLACEMENT VIDEOS & REAL ARCHIVAL VIDEOS (PHẦN VIDEO THAY THẾ TRỰC TIẾP CHO TỪNG PHẦN) */}
+              {(filterTab === 'video' || filterTab === 'all' || filterTab === 'youtube') && (
+                <div className="space-y-3 bg-[#0E1729] p-4 rounded-xl border border-sky-500/60 shadow">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                      <Film className="w-4 h-4 text-sky-400" />
+                      <span>
+                        🔄 PHẦN VIDEO THAY THẾ &amp; VIDEO THỰC TẾ CẮT SẴN CHO{' '}
+                        {effectiveScene
+                          ? `PHẦN #${String(effectiveScene.order).padStart(2, '0')} (${videoOptions.length} đoạn MP4)`
+                          : `TỪNG PHẦN (${videoOptions.length} đoạn MP4)`}
+                        :
+                      </span>
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-300 hidden sm:inline">
+                        Xem thử trực tiếp · Chỉnh giây cắt &amp; bấm 1-Click để Thay Thế vào Phần đang chọn
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isLoadingArchival}
+                        onClick={() => {
+                          const next = cycleOffset + 1;
+                          setCycleOffset(next);
+                          executeSearch(searchQuery || cleanCharName, next, effectiveScene?.id);
+                        }}
+                        className="px-2.5 py-1 rounded text-[11px] font-bold bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 flex items-center gap-1 shadow transition-colors"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingArchival ? 'animate-spin' : ''}`} />
+                        <span>🔄 Đổi Lô Video Thay Thế Khác</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isLoadingArchival && videoOptions.length === 0 ? (
+                    <div className="py-6 flex items-center justify-center gap-2 text-xs text-sky-200 bg-[#0B0F17]/80 rounded-lg border border-sky-500/30">
+                      <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                      <span>
+                        Đang chuẩn bị 6 đoạn Video Thay Thế cắt sẵn cho{' '}
+                        {effectiveScene
+                          ? `Phần #${String(effectiveScene.order).padStart(2, '0')}`
+                          : cleanCharName}
+                        ...
                       </span>
                     </div>
-
+                  ) : videoOptions.length === 0 ? (
+                    <div className="p-3 rounded-lg bg-[#0B0F17]/80 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                      <span>Chưa tải được lô video thay thế. Bấm nút bên cạnh để nạp lại ngay!</span>
+                      <button
+                        type="button"
+                        onClick={() => executeSearch(cleanCharName, cycleOffset + 1, effectiveScene?.id)}
+                        className="px-3 py-1 rounded bg-sky-500 text-slate-950 font-bold"
+                      >
+                        Tải Lại Video Thay Thế
+                      </button>
+                    </div>
+                  ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                       {videoOptions.map((vid, idx) => {
                         const chosenSceneId =
                           archivalTargetScenes[vid.id] ||
-                          scene?.id ||
+                          effectiveScene?.id ||
                           activeSceneId ||
                           selectableScenes[0]?.id ||
                           '';
                         const targetDur = getSceneDurationById(chosenSceneId);
-                        const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec ?? 8;
+                        const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec ?? 18;
                         const endSec = startSec + targetDur;
                         const cleanVidUrl = (vid.videoUrl || '').split('#')[0];
 
@@ -1149,7 +1361,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                   className="w-full h-full object-cover"
                                 />
                                 <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500 text-slate-950 shadow">
-                                  🎬 Video Thật #{idx + 1}
+                                  🔄 Video Thay Thế #{idx + 1}
                                 </span>
                                 {vid.year && (
                                   <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300">
@@ -1169,7 +1381,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               {selectableScenes.length > 0 && (
                                 <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
                                   <span className="text-sky-300 font-semibold shrink-0">
-                                    Chèn vào:
+                                    Thay thế vào:
                                   </span>
                                   <select
                                     value={chosenSceneId}
@@ -1183,7 +1395,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                   >
                                     {selectableScenes.map((sc) => (
                                       <option key={sc.id} value={sc.id}>
-                                        Cảnh #{String(sc.order).padStart(2, '0')} (
+                                        Phần #{String(sc.order).padStart(2, '0')} (
                                         {Math.round(sc.durationSec || 8)}s) — {sc.title}
                                       </option>
                                     ))}
@@ -1223,7 +1435,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                             <div className="flex items-center gap-1.5">
                               <a
                                 href={cleanVidUrl}
-                                download={`Video_Thuc_Te_${idx + 1}.mp4`}
+                                download={`Video_Thay_The_${idx + 1}.mp4`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="px-2.5 py-2 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0"
@@ -1243,7 +1455,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                                 <span className="truncate">
-                                  🎬 Chèn Vào {getSceneBadgeById(chosenSceneId).split(' (')[0]}
+                                  🔄 Thay Thế Vào {getSceneBadgeById(chosenSceneId).split(' (')[0]}
                                 </span>
                               </button>
                             </div>
@@ -1251,8 +1463,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
               {/* SECTION A: Aggregated YouTube Shorts + TikTok + YouTube Picker */}
               {(filterTab === 'youtube' || filterTab === 'all') && (
@@ -1640,7 +1853,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               )}
 
               {/* SECTION B: Real Photos (when scene needs an image or Grok/Kling reference photo) */}
-              {(filterTab === 'all' || filterTab === 'image') && scene && (
+              {(filterTab === 'all' || filterTab === 'image') && effectiveScene && (
                 <div className="space-y-3 pt-2 border-t border-slate-800">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
@@ -1678,12 +1891,16 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                          {scene.sceneType === 'video' ? (
+                          {effectiveScene.sceneType === 'video' ? (
                             <>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onSelectPhotoForScene(scene.id, photo, 'keep-video-grok-ref');
+                                  onSelectPhotoForScene(
+                                    effectiveScene.id,
+                                    photo,
+                                    'keep-video-grok-ref'
+                                  );
                                   onClose();
                                 }}
                                 className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors"
@@ -1694,26 +1911,38 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
+                                  onSelectPhotoForScene(
+                                    effectiveScene.id,
+                                    photo,
+                                    'set-as-image-scene'
+                                  );
                                   onClose();
                                 }}
                                 className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors"
                               >
                                 <ImageIcon className="w-3 h-3 shrink-0" />
-                                <span className="truncate">Dùng Làm Ảnh Tĩnh Cảnh {sceneNumLabel}</span>
+                                <span className="truncate">
+                                  Dùng Làm Ảnh Tĩnh Cảnh {sceneNumLabel}
+                                </span>
                               </button>
                             </>
                           ) : (
                             <button
                               type="button"
                               onClick={() => {
-                                onSelectPhotoForScene(scene.id, photo, 'set-as-image-scene');
+                                onSelectPhotoForScene(
+                                  effectiveScene.id,
+                                  photo,
+                                  'set-as-image-scene'
+                                );
                                 onClose();
                               }}
                               className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[11px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                              <span className="truncate">Chọn Ảnh Này Cho Cảnh {sceneNumLabel}</span>
+                              <span className="truncate">
+                                Chọn Ảnh Này Cho Cảnh {sceneNumLabel}
+                              </span>
                             </button>
                           )}
                         </div>
