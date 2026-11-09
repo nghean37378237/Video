@@ -1000,6 +1000,7 @@ export default function App() {
     }));
 
     const charName = getCharacterNameForPreset(presetId);
+    saveAudioPreferences({ storyTopic: charName });
     const { updatedScenes, matchedVideosCount, matchedPhotosCount } =
       await matchAndAssignRealPhotosForScenes(presetScenes, charName);
     setScenes(updatedScenes);
@@ -3233,7 +3234,7 @@ export default function App() {
           settings.projectTitle.split('—')[0].split('-')[0].trim() ||
           loadSavedAudioPreferences().storyTopic ||
           getCharacterNameForPreset(settings.activePresetId) ||
-          'Will Sampson'
+          'Clint Eastwood'
         }
         settings={settings}
         vaultItems={vaultItems}

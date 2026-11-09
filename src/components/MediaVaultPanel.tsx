@@ -114,8 +114,19 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
 
   const initialSaved = loadSavedAudioPreferences();
   const [storyTopic, setStoryTopic] = useState<string>(
-    initialSaved.storyTopic || 'Clint Eastwood'
+    initialSaved.storyTopic ||
+      settings.projectTitle?.split('—')[0]?.split('-')[0]?.trim() ||
+      'Clint Eastwood'
   );
+
+  // Sync storyTopic when settings.projectTitle changes from preset selection
+  useEffect(() => {
+    const cleanTitle = settings.projectTitle?.split('—')[0]?.split('-')[0]?.trim();
+    if (cleanTitle && cleanTitle !== storyTopic) {
+      setStoryTopic(cleanTitle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.projectTitle]);
   const [storyLang, setStoryLang] = useState<'vi' | 'en'>(
     settings.voiceLanguage || initialSaved.voiceLanguage || 'en'
   );
@@ -360,6 +371,9 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                   const val = e.target.value;
                   setStoryTopic(val);
                   saveAudioPreferences({ storyTopic: val });
+                  if (val.trim()) {
+                    onUpdateSettings({ projectTitle: val.trim() });
+                  }
                 }}
                 placeholder="VD: Clint Eastwood, John Wayne, Audrey Hepburn..."
                 className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
@@ -382,6 +396,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                   onClick={() => {
                     setStoryTopic(name);
                     saveAudioPreferences({ storyTopic: name });
+                    onUpdateSettings({ projectTitle: name });
                   }}
                   className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                     storyTopic === name
@@ -877,11 +892,16 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             {onOpenSceneMediaSearch && (
               <button
                 type="button"
-                onClick={() => onOpenSceneMediaSearch(activeScene?.id || '__YOUTUBE_BATCH__')}
+                onClick={() => {
+                  if (storyTopic.trim()) {
+                    onUpdateSettings({ projectTitle: storyTopic.trim() });
+                  }
+                  onOpenSceneMediaSearch(activeScene?.id || '__YOUTUBE_BATCH__');
+                }}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/60 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <Search className="w-3.5 h-3.5 text-amber-300" />
-                <span>🔍 Mở Kho Tìm &amp; Chọn Cắt Video Thực Tế / Shorts / TikTok</span>
+                <span>🔍 Mở Kho Tìm &amp; Cắt Video Thực Tế (YouTube / TikTok / Instagram)</span>
               </button>
             )}
 

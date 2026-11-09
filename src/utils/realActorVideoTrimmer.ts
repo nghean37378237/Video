@@ -74,6 +74,214 @@ const CLIENT_FALLBACK_ACTOR_REELS: Record<
       height: 360,
     },
   ],
+  'steve mcqueen': [
+    {
+      title: 'Steve McQueen (Frank Bullitt) — Bullitt (1968) [Cảnh Thật #1]',
+      mp4Url: 'https://archive.org/download/bullitt-1968/Bullitt%201968.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/bullitt-1968',
+      trimStartSec: 18,
+      trimEndSec: 27,
+      width: 720,
+      height: 404,
+    },
+    {
+      title: 'Steve McQueen — Bullitt (1968) [Cảnh Đua Xe Mustang #2]',
+      mp4Url: 'https://archive.org/download/bullitt-1968/Bullitt%201968.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/bullitt-1968',
+      trimStartSec: 52,
+      trimEndSec: 61,
+      width: 720,
+      height: 404,
+    },
+    {
+      title: 'Steve McQueen (Vin Tanner) — The Magnificent Seven (1960) [Cảnh Thật #3]',
+      mp4Url:
+        'https://archive.org/download/the-magnificent-seven-1960/The%20Magnificent%20Seven%201960.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/the-magnificent-seven-1960',
+      trimStartSec: 120,
+      trimEndSec: 129,
+      width: 720,
+      height: 400,
+    },
+  ],
+  'clint eastwood': [
+    {
+      title: 'Clint Eastwood — The Outlaw Josey Wales (1976) [Cảnh Thật #1]',
+      mp4Url:
+        'https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4',
+      thumbUrl: 'https://archive.org/services/img/the-outlaw-josey-wales',
+      trimStartSec: 140,
+      trimEndSec: 149,
+      width: 804,
+      height: 360,
+    },
+    {
+      title: 'Clint Eastwood — The Outlaw Josey Wales (1976) [Cảnh Thật #2]',
+      mp4Url:
+        'https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4',
+      thumbUrl: 'https://archive.org/services/img/the-outlaw-josey-wales',
+      trimStartSec: 265,
+      trimEndSec: 274,
+      width: 804,
+      height: 360,
+    },
+    {
+      title: 'Clint Eastwood — The Outlaw Josey Wales (1976) [Cảnh Thật #3]',
+      mp4Url:
+        'https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4',
+      thumbUrl: 'https://archive.org/services/img/the-outlaw-josey-wales',
+      trimStartSec: 360,
+      trimEndSec: 369,
+      width: 804,
+      height: 360,
+    },
+  ],
+  'john wayne': [
+    {
+      title: 'John Wayne — Angel and the Badman (1947) [Cảnh Thật #1]',
+      mp4Url: 'https://archive.org/download/angel_and_the_badman/angel_and_the_badman_512kb.mp4',
+      thumbUrl: 'https://archive.org/services/img/angel_and_the_badman',
+      trimStartSec: 165,
+      trimEndSec: 174,
+      width: 640,
+      height: 480,
+    },
+    {
+      title: 'John Wayne — Angel and the Badman (1947) [Cảnh Thật #2]',
+      mp4Url:
+        'https://archive.org/download/AngelAndTheBadManVideoQualityUpgrade/AngelAndTheBadManVideoQualityUpgrade.mp4',
+      thumbUrl: 'https://archive.org/services/img/AngelAndTheBadManVideoQualityUpgrade',
+      trimStartSec: 340,
+      trimEndSec: 349,
+      width: 640,
+      height: 480,
+    },
+  ],
+  'bruce lee': [
+    {
+      title: 'Bruce Lee — Fist of Fury (1972) [Cảnh Võ Thuật #1]',
+      mp4Url: 'https://archive.org/download/youtube-7MZZuLJj6vU/7MZZuLJj6vU.mp4',
+      thumbUrl: 'https://archive.org/services/img/youtube-7MZZuLJj6vU',
+      trimStartSec: 22,
+      trimEndSec: 31,
+      width: 640,
+      height: 360,
+    },
+    {
+      title: 'Bruce Lee — Fist of Fury (1972) [Cảnh Võ Thuật #2]',
+      mp4Url: 'https://archive.org/download/youtube-7MZZuLJj6vU/7MZZuLJj6vU.mp4',
+      thumbUrl: 'https://archive.org/services/img/youtube-7MZZuLJj6vU',
+      trimStartSec: 64,
+      trimEndSec: 73,
+      width: 640,
+      height: 360,
+    },
+  ],
+  'elvis presley': [
+    {
+      title: 'Elvis Presley — Aloha from Hawaii Live (1973) [Cảnh Thật #1]',
+      mp4Url:
+        'https://archive.org/download/elvis-presley-in-concert-aloha-from-hawaii-january-14-1973/Elvis%20Presley%20In%20Concert%20-%20%20Aloha%20From%20Hawaii%20-%20%20January%2014%2C%201973%20-%20V%C3%ADdeo%20Dailymotion_manifest.ia.mp4',
+      thumbUrl:
+        'https://archive.org/services/img/elvis-presley-in-concert-aloha-from-hawaii-january-14-1973',
+      trimStartSec: 180,
+      trimEndSec: 189,
+      width: 640,
+      height: 480,
+    },
+    {
+      title: 'Elvis Presley — Aloha from Hawaii Live (1973) [Cảnh Thật #2]',
+      mp4Url:
+        'https://archive.org/download/1973-1-14-aloha-main-show-high-def-upgrade/1973-1-14%20Aloha%20Main%20Show-High%20Def%20upgrade.mp4',
+      thumbUrl: 'https://archive.org/services/img/1973-1-14-aloha-main-show-high-def-upgrade',
+      trimStartSec: 420,
+      trimEndSec: 429,
+      width: 640,
+      height: 480,
+    },
+  ],
+  'audrey hepburn': [
+    {
+      title: 'Audrey Hepburn — Charade (1963) [Cảnh Thật #1]',
+      mp4Url: 'https://archive.org/download/Charade_1953/CHARADE_1953_512kb.mp4',
+      thumbUrl: 'https://archive.org/services/img/Charade_1953',
+      trimStartSec: 185,
+      trimEndSec: 194,
+      width: 640,
+      height: 480,
+    },
+    {
+      title: 'Audrey Hepburn — Charade (1963) [Cảnh Thật #2]',
+      mp4Url: 'https://archive.org/download/turner_video_341/341.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/turner_video_341',
+      trimStartSec: 340,
+      trimEndSec: 349,
+      width: 640,
+      height: 480,
+    },
+  ],
+  'lorne greene': [
+    {
+      title: 'Lorne Greene — Bonanza (Ben Cartwright) [Cảnh Thật #1]',
+      mp4Url: 'https://archive.org/download/Bonanza_-_The_Trail_Gang/Bonanza_-_The_Trail_Gang.mp4',
+      thumbUrl: 'https://archive.org/services/img/Bonanza_-_The_Trail_Gang',
+      trimStartSec: 180,
+      trimEndSec: 189,
+      width: 640,
+      height: 480,
+    },
+    {
+      title: 'Lorne Greene — Bonanza [Cảnh Thật #2]',
+      mp4Url: 'https://archive.org/download/Bonanza_pd/Bonanza%20s01e19.mp4',
+      thumbUrl: 'https://archive.org/services/img/Bonanza_pd',
+      trimStartSec: 240,
+      trimEndSec: 249,
+      width: 640,
+      height: 480,
+    },
+  ],
+  'clayton moore': [
+    {
+      title: 'Clayton Moore — The Lone Ranger (1949) [Cảnh Thật #1]',
+      mp4Url: 'https://archive.org/download/theloneranger_201705/s01e01_EntertheLoneRanger.mp4',
+      thumbUrl: 'https://archive.org/services/img/theloneranger_201705',
+      trimStartSec: 160,
+      trimEndSec: 169,
+      width: 640,
+      height: 480,
+    },
+    {
+      title: 'Clayton Moore — Enter the Lone Ranger [Cảnh Thật #2]',
+      mp4Url: 'https://archive.org/download/enter_the_lone_ranger/enter_the_lone_ranger.mp4',
+      thumbUrl: 'https://archive.org/services/img/enter_the_lone_ranger',
+      trimStartSec: 310,
+      trimEndSec: 319,
+      width: 640,
+      height: 480,
+    },
+  ],
+  'yul brynner': [
+    {
+      title: 'Yul Brynner — The Magnificent Seven (1960) [Cảnh Thật #1]',
+      mp4Url:
+        'https://archive.org/download/the-magnificent-seven-1960/The%20Magnificent%20Seven%201960.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/the-magnificent-seven-1960',
+      trimStartSec: 190,
+      trimEndSec: 199,
+      width: 720,
+      height: 400,
+    },
+    {
+      title: 'Yul Brynner — The Magnificent Seven (1960) [Cảnh Thật #2]',
+      mp4Url:
+        'https://archive.org/download/the-magnificent-seven-1960/The%20Magnificent%20Seven%201960.ia.mp4',
+      thumbUrl: 'https://archive.org/services/img/the-magnificent-seven-1960',
+      trimStartSec: 480,
+      trimEndSec: 489,
+      width: 720,
+      height: 400,
+    },
+  ],
 };
 
 /**

@@ -2128,6 +2128,180 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         height: 360,
       },
     ],
+    "john wayne": [
+      {
+        title: "Angel and the Badman (1947) — Quirt Evans (John Wayne) #1",
+        rawMp4Url:
+          "https://archive.org/download/angel_and_the_badman/angel_and_the_badman_512kb.mp4",
+        year: 1947,
+        trimStartSec: 165,
+        trimEndSec: 174,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Angel and the Badman (1947) — Cảnh Miền Viễn Tây (John Wayne) #2",
+        rawMp4Url:
+          "https://archive.org/download/AngelAndTheBadManVideoQualityUpgrade/AngelAndTheBadManVideoQualityUpgrade.mp4",
+        year: 1947,
+        trimStartSec: 340,
+        trimEndSec: 349,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Angel and the Badman (1947) — Cảnh Cao Trào (John Wayne) #3",
+        rawMp4Url:
+          "https://archive.org/download/angel_and_the_badman/angel_and_the_badman_512kb.mp4",
+        year: 1947,
+        trimStartSec: 620,
+        trimEndSec: 629,
+        width: 640,
+        height: 480,
+      },
+    ],
+    "bruce lee": [
+      {
+        title: "Fist of Fury (1972) — Bruce Lee (Chen Zhen) #1",
+        rawMp4Url: "https://archive.org/download/youtube-7MZZuLJj6vU/7MZZuLJj6vU.mp4",
+        year: 1972,
+        trimStartSec: 22,
+        trimEndSec: 31,
+        width: 640,
+        height: 360,
+      },
+      {
+        title: "Fist of Fury (1972) — Cảnh Võ Thuật Kinh Điển (Bruce Lee) #2",
+        rawMp4Url: "https://archive.org/download/youtube-7MZZuLJj6vU/7MZZuLJj6vU.mp4",
+        year: 1972,
+        trimStartSec: 64,
+        trimEndSec: 73,
+        width: 640,
+        height: 360,
+      },
+      {
+        title: "The Last Fist of Fury — Cảnh Hành Động Võ Thuật #3",
+        rawMp4Url:
+          "https://archive.org/download/the-last-fist-of-fury-1977-dragon-lee-bruceploitation-bruce-lee-eng-elmudo/The%20Last%20Fist%20of%20Fury%20(1977).mp4",
+        year: 1973,
+        trimStartSec: 210,
+        trimEndSec: 219,
+        width: 640,
+        height: 360,
+      },
+    ],
+    "elvis presley": [
+      {
+        title: "Elvis Presley — Aloha from Hawaii Live Concert (1973) #1",
+        rawMp4Url:
+          "https://archive.org/download/elvis-presley-in-concert-aloha-from-hawaii-january-14-1973/Elvis%20Presley%20In%20Concert%20-%20%20Aloha%20From%20Hawaii%20-%20%20January%2014%2C%201973%20-%20V%C3%ADdeo%20Dailymotion_manifest.ia.mp4",
+        year: 1973,
+        trimStartSec: 180,
+        trimEndSec: 189,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Elvis Presley — Sân Khấu Huyền Thoại Aloha (1973) #2",
+        rawMp4Url:
+          "https://archive.org/download/1973-1-14-aloha-main-show-high-def-upgrade/1973-1-14%20Aloha%20Main%20Show-High%20Def%20upgrade.mp4",
+        year: 1973,
+        trimStartSec: 420,
+        trimEndSec: 429,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Elvis Presley — Khoảnh Khắc Biểu Diễn Kinh Điển #3",
+        rawMp4Url:
+          "https://archive.org/download/elvis-presley-in-concert-aloha-from-hawaii-january-14-1973/Elvis%20Presley%20In%20Concert%20-%20%20Aloha%20From%20Hawaii%20-%20%20January%2014%2C%201973%20-%20V%C3%ADdeo%20Dailymotion_manifest.ia.mp4",
+        year: 1973,
+        trimStartSec: 760,
+        trimEndSec: 769,
+        width: 640,
+        height: 480,
+      },
+    ],
+    "audrey hepburn": [
+      {
+        title: "Charade (1963) — Regina Lampert (Audrey Hepburn) #1",
+        rawMp4Url: "https://archive.org/download/Charade_1953/CHARADE_1953_512kb.mp4",
+        year: 1963,
+        trimStartSec: 185,
+        trimEndSec: 194,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Charade (1963) — Cảnh Điện Ảnh Paris (Audrey Hepburn) #2",
+        rawMp4Url: "https://archive.org/download/turner_video_341/341.ia.mp4",
+        year: 1963,
+        trimStartSec: 340,
+        trimEndSec: 349,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Charade (1963) — Cảnh Đối Thoại Kinh Điển (Audrey Hepburn) #3",
+        rawMp4Url: "https://archive.org/download/Charade_1953/CHARADE_1953_512kb.mp4",
+        year: 1963,
+        trimStartSec: 640,
+        trimEndSec: 649,
+        width: 640,
+        height: 480,
+      },
+    ],
+    "jack nicholson": [
+      {
+        title: "One Flew Over the Cuckoo's Nest (1975) — R.P. McMurphy (Jack Nicholson) #1",
+        rawMp4Url:
+          "https://archive.org/download/one-flew-over-the-cuckoos-nest_202108/One-flew-over-the-cuckoos-nest.mp4",
+        year: 1975,
+        trimStartSec: 28,
+        trimEndSec: 37,
+        width: 853,
+        height: 480,
+      },
+      {
+        title: "The Terror (1963) — Andre Duvalier (Jack Nicholson) #2",
+        rawMp4Url: "https://archive.org/download/TheTerror1963/TheTerror_512kb.mp4",
+        year: 1963,
+        trimStartSec: 240,
+        trimEndSec: 249,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "One Flew Over the Cuckoo's Nest (1975) — Cảnh Diễn Xuất Kinh Điển #3",
+        rawMp4Url:
+          "https://archive.org/download/one-flew-over-the-cuckoos-nest_202107/One%20Flew%20Over%20the%20Cuckoo%27s%20Nest.ia.mp4",
+        year: 1975,
+        trimStartSec: 64,
+        trimEndSec: 73,
+        width: 704,
+        height: 416,
+      },
+    ],
+    "cary grant": [
+      {
+        title: "Charade (1963) — Peter Joshua (Cary Grant) #1",
+        rawMp4Url: "https://archive.org/download/Charade_1953/CHARADE_1953_512kb.mp4",
+        year: 1963,
+        trimStartSec: 220,
+        trimEndSec: 229,
+        width: 640,
+        height: 480,
+      },
+      {
+        title: "Charade (1963) — Cảnh Hành Động (Cary Grant) #2",
+        rawMp4Url: "https://archive.org/download/turner_video_341/341.ia.mp4",
+        year: 1963,
+        trimStartSec: 520,
+        trimEndSec: 529,
+        width: 640,
+        height: 480,
+      },
+    ],
   };
 
   // Helper: Physically cut a standalone fast-playing MP4 clip + extract a real video frame JPG thumbnail using FFmpeg (cached on disk)
@@ -3352,7 +3526,23 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       .toLowerCase()
       .replace(/\b(18|19|20)\d{2}s?\b/g, "")
       .split(/\s+/)
-      .filter((w) => w.length >= 4 && !["shorts", "tiktok", "video", "actor", "portrait"].includes(w));
+      .filter(
+        (w) =>
+          w.length >= 4 &&
+          ![
+            "shorts",
+            "short",
+            "tiktok",
+            "titock",
+            "instagram",
+            "ingram",
+            "reels",
+            "reel",
+            "video",
+            "actor",
+            "portrait",
+          ].includes(w)
+      );
     if (queryTokens.length > 0 && queryTokens.some((qt) => lowerTitle.includes(qt))) {
       return true;
     }
@@ -3442,21 +3632,26 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }
   }
 
-  // 2h. Aggregated Search: YouTube Shorts + TikTok + All-Era YouTube Videos + Film Clips (No strict era restriction!)
+  // 2h. Aggregated Search: YouTube Shorts + TikTok + Instagram Reels + All-Era YouTube Videos & Film Clips
   app.post("/api/youtube/search", async (req, res) => {
     try {
-      const { query = "Will Sampson", characterName = "Will Sampson", limit = 30 } = req.body || {};
+      const { query = "Will Sampson", characterName = "Will Sampson", limit = 32 } = req.body || {};
       const propChar = String(characterName || "Will Sampson")
         .replace(/[—–-].*$/, "")
         .trim();
       const rawQuery = String(query || propChar).trim();
 
-      // Strip restrictive scene years/timestamps and helper keywords to identify the actual searched subject
+      // Detect if user explicitly typed a platform filter keyword (tiktok/titock, instagram/ingram/reels, shorts)
+      const wantsTikTokFirst = /\b(tiktok|titock|tik\s*tok)\b/i.test(rawQuery);
+      const wantsInstagramFirst = /\b(instagram|ingram|insta|reels|reel|ig)\b/i.test(rawQuery);
+      const wantsShortsFirst = /\b(shorts|short)\b/i.test(rawQuery);
+
+      // Strip restrictive scene years/timestamps and platform/helper keywords to identify the actual searched subject
       const queryCoreSubject = rawQuery
         .replace(/https?:\/\/[^\s]+/gi, "")
         .replace(/\b(18|19|20)\d{2}s?\b/g, "")
         .replace(
-          /\b(shorts|short|tiktok|reels|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|circa|early|late|young|birthplace)\b/gi,
+          /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|circa|early|late|young|birthplace)\b/gi,
           ""
         )
         .replace(/\s+/g, " ")
@@ -3468,12 +3663,16 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const broadBaseQuery =
         rawQuery
+          .replace(/https?:\/\/[^\s]+/gi, "")
           .replace(/\b(18|19|20)\d{2}s?\b/g, "")
-          .replace(/\b(actor|portrait|circa|early|late|young|birthplace)\b/gi, "")
+          .replace(
+            /\b(actor|portrait|circa|early|late|young|birthplace|titock|ingram)\b/gi,
+            ""
+          )
           .replace(/\s+/g, " ")
           .trim() || cleanChar;
 
-      // Detect if user pasted a direct YouTube, YouTube Shorts, or TikTok link
+      // Detect if user pasted a direct YouTube, YouTube Shorts, TikTok, or Instagram Reel link
       const ytUrlMatch = rawQuery.match(
         /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/
       );
@@ -3485,124 +3684,154 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       );
       const pastedTikTokUrl = tiktokUrlMatch ? tiktokUrlMatch[1] : null;
 
-      // Build 3 parallel YouTube InnerTube queries to aggregate: (1) Shorts, (2) TikTok / Short edits, (3) Movie Clips & Interviews
-      const ytQueries = Array.from(
-        new Set([
-          `${cleanChar} shorts`,
-          `${cleanChar} tiktok #shorts`,
-          broadBaseQuery.toLowerCase().includes(cleanChar.toLowerCase())
-            ? broadBaseQuery
-            : `${cleanChar} ${broadBaseQuery}`,
-          `${cleanChar} movie clips tribute interview`,
-        ])
-      ).slice(0, 3);
+      const instagramUrlMatch = rawQuery.match(
+        /(https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)[^\s"']*)/i
+      );
+      const pastedInstagramUrl = instagramUrlMatch ? instagramUrlMatch[1] : null;
+      const pastedInstagramCode = instagramUrlMatch ? instagramUrlMatch[2] : null;
 
-      const [ytPagesData, tiktokDirectItems, dmResults] = await Promise.all([
-        // 1. Fetch 3 YouTube InnerTube JSON searches in parallel (<700ms, extracting BOTH Shorts and full Videos!)
-        Promise.all(
-          ytQueries.map((qStr) => fetchYouTubeSearchDataFast(qStr, cleanChar))
+      // Run 4 parallel fast InnerTube queries + Yahoo TikTok/Instagram discovery + Dailymotion film search
+      const [
+        ytShortsPage,
+        ytTikTokPage,
+        ytInstagramPage,
+        ytMoviesPage,
+        yahooSocialLinks,
+        dmResults,
+      ] = await Promise.all([
+        fetchYouTubeSearchDataFast(`${cleanChar} shorts`, cleanChar),
+        fetchYouTubeSearchDataFast(`${cleanChar} tiktok edit #shorts`, cleanChar),
+        fetchYouTubeSearchDataFast(`${cleanChar} instagram reels edit #shorts`, cleanChar),
+        fetchYouTubeSearchDataFast(
+          broadBaseQuery.toLowerCase().includes(cleanChar.toLowerCase()) &&
+            broadBaseQuery.toLowerCase() !== cleanChar.toLowerCase()
+            ? broadBaseQuery
+            : `${cleanChar} movie clips interview tribute`,
+          cleanChar
         ),
 
-        // 2. Fetch real TikTok videos (DuckDuckGo site:tiktok.com + verified character TikTok reels)
+        // Discover real TikTok (tiktok.com/@.../video/...) and Instagram Reels (instagram.com/reel/...) links via Yahoo Search
         (async () => {
-          const ttList: Array<{
-            tiktokId: string;
-            tiktokUrl: string;
-            title: string;
-            channel: string;
-            durationSec: number;
-            thumbnailUrl: string;
-          }> = [];
-          const seenTtIds = new Set<string>();
+          const ttUrls: Array<{ id: string; url: string; author: string }> = [];
+          const igUrls: Array<{ code: string; url: string }> = [];
+          const seenTt = new Set<string>();
+          const seenIg = new Set<string>();
 
           if (pastedTikTokUrl) {
             const idMatch = pastedTikTokUrl.match(/\/video\/(\d+)/);
             const ttId = idMatch ? idMatch[1] : `${Date.now()}`;
-            seenTtIds.add(ttId);
-            ttList.push({
-              tiktokId: ttId,
-              tiktokUrl: pastedTikTokUrl,
-              title: `${cleanChar} — TikTok Video (${ttId})`,
-              channel: "TikTok Link",
-              durationSec: 35,
-              thumbnailUrl: "",
+            seenTt.add(ttId);
+            ttUrls.push({ id: ttId, url: pastedTikTokUrl, author: "tiktok" });
+          }
+
+          if (pastedInstagramUrl && pastedInstagramCode) {
+            seenIg.add(pastedInstagramCode);
+            igUrls.push({
+              code: pastedInstagramCode,
+              url: `https://www.instagram.com/reel/${pastedInstagramCode}/`,
             });
           }
 
-          // Verified real TikTok videos for Will Sampson discovered on TikTok
           if (cleanChar.toLowerCase().includes("will sampson")) {
-            const verifiedWillSampsonTikToks = [
+            for (const vtt of [
               {
-                tiktokId: "7667774148445261086",
-                tiktokUrl: "https://www.tiktok.com/@conmudyr83k/video/7667774148445261086",
-                title: "Will Sampson — One Flew Over the Cuckoo's Nest Casting Story #tiktok",
-                channel: "@conmudyr83k · TikTok",
-                durationSec: 45,
+                id: "7667774148445261086",
+                url: "https://www.tiktok.com/@conmudyr83k/video/7667774148445261086",
+                author: "conmudyr83k",
               },
               {
-                tiktokId: "7678519187853053214",
-                tiktokUrl: "https://www.tiktok.com/@flashbacksong.usa26/video/7678519187853053214",
-                title: "No One Believed These Will Sampson Stories Until They Watched This! #tiktok",
-                channel: "@flashbacksong.usa26 · TikTok",
-                durationSec: 55,
+                id: "7678519187853053214",
+                url: "https://www.tiktok.com/@flashbacksong.usa26/video/7678519187853053214",
+                author: "flashbacksong.usa26",
               },
-            ];
-            for (const vtt of verifiedWillSampsonTikToks) {
-              if (!seenTtIds.has(vtt.tiktokId)) {
-                seenTtIds.add(vtt.tiktokId);
-                ttList.push({ ...vtt, thumbnailUrl: "" });
+            ]) {
+              if (!seenTt.has(vtt.id)) {
+                seenTt.add(vtt.id);
+                ttUrls.push(vtt);
               }
             }
           }
 
-          try {
-            const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(
-              `${cleanChar} site:tiktok.com`
-            )}`;
-            const ddgRes = await fetch(ddgUrl, {
-              headers: { "User-Agent": BROWSER_USER_AGENT },
-              signal: AbortSignal.timeout(3500),
-            });
-            if (ddgRes.ok) {
-              const html = await ddgRes.text();
-              const linkRegex =
-                /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/gis;
-              let match: RegExpExecArray | null;
-              while ((match = linkRegex.exec(html)) !== null) {
-                const decodedHref = decodeURIComponent(match[1]);
-                const ttMatch = decodedHref.match(
-                  /(https?:\/\/(?:www\.)?tiktok\.com\/@([^/"'&\s<>]+)\/video\/(\d+))/i
+          await Promise.all([
+            (async () => {
+              try {
+                const yRes = await fetch(
+                  `https://search.yahoo.com/search?p=${encodeURIComponent(
+                    `${cleanChar} site:tiktok.com`
+                  )}`,
+                  {
+                    headers: { "User-Agent": BROWSER_USER_AGENT },
+                    signal: AbortSignal.timeout(3000),
+                  }
                 );
-                if (!ttMatch) continue;
-                const fullUrl = ttMatch[1];
-                const author = ttMatch[2];
-                const ttId = ttMatch[3];
-                if (seenTtIds.has(ttId)) continue;
-                const cleanTitle = match[2]
-                  .replace(/<[^>]+>/g, "")
-                  .replace(/&#x27;/g, "'")
-                  .replace(/&quot;/g, '"')
-                  .replace(/&amp;/g, "&")
-                  .trim();
-                if (!isVideoRelevantToSubject(cleanTitle, cleanChar, rawQuery)) continue;
-                seenTtIds.add(ttId);
-                ttList.push({
-                  tiktokId: ttId,
-                  tiktokUrl: fullUrl,
-                  title: cleanTitle || `${cleanChar} TikTok (@${author})`,
-                  channel: `@${author} · TikTok`,
-                  durationSec: 40,
-                  thumbnailUrl: "",
-                });
+                if (yRes.ok) {
+                  const raw = await yRes.text();
+                  const cleanTxt = raw
+                    .replace(/%3A/gi, ":")
+                    .replace(/%2F/gi, "/")
+                    .replace(/%40/gi, "@");
+                  const matches = cleanTxt.matchAll(
+                    /https?:\/\/(?:www\.)?tiktok\.com\/@([^/"'&\s<>]+)\/video\/(\d+)/gi
+                  );
+                  for (const m of matches) {
+                    const author = m[1];
+                    const id = m[2];
+                    if (
+                      cleanChar.toLowerCase().includes("will sampson") &&
+                      /certified\.sampson|alexsampson/i.test(author)
+                    ) {
+                      continue;
+                    }
+                    if (!seenTt.has(id)) {
+                      seenTt.add(id);
+                      ttUrls.push({ id, url: m[0], author });
+                    }
+                  }
+                }
+              } catch {
+                // ignore
               }
-            }
-          } catch {
-            // ignore DDG timeout
-          }
-          return ttList;
+            })(),
+            (async () => {
+              try {
+                const yRes = await fetch(
+                  `https://search.yahoo.com/search?p=${encodeURIComponent(
+                    `${cleanChar} instagram reel`
+                  )}`,
+                  {
+                    headers: { "User-Agent": BROWSER_USER_AGENT },
+                    signal: AbortSignal.timeout(3000),
+                  }
+                );
+                if (yRes.ok) {
+                  const raw = await yRes.text();
+                  const cleanTxt = raw
+                    .replace(/%3A/gi, ":")
+                    .replace(/%2F/gi, "/");
+                  const matches = cleanTxt.matchAll(
+                    /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]{5,})/gi
+                  );
+                  for (const m of matches) {
+                    const code = m[1];
+                    if (!seenIg.has(code)) {
+                      seenIg.add(code);
+                      igUrls.push({
+                        code,
+                        url: `https://www.instagram.com/reel/${code}/`,
+                      });
+                    }
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            })(),
+          ]);
+
+          return { ttUrls, igUrls };
         })(),
 
-        // 3. Search Dailymotion Film Clips across all eras of the actor
+        // Search Dailymotion Film Clips across all eras of the actor
         (async () => {
           const list: Array<{
             dmId: string;
@@ -3624,7 +3853,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 )}&limit=8&fields=id,title,thumbnail_720_url,duration,owner.screenname`,
                 {
                   headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3500),
+                  signal: AbortSignal.timeout(3200),
                 }
               );
               if (!dmRes.ok) continue;
@@ -3648,76 +3877,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         })(),
       ]);
 
-      // Merge & deduplicate all Shorts and Videos across the 3 YouTube searches
-      const allShorts: Array<{
-        youtubeId: string;
-        title: string;
-        viewsLabel: string;
-        thumbnailUrl: string;
-        isTikTokRepost: boolean;
-      }> = [];
-      const allVideos: Array<{
-        youtubeId: string;
-        title: string;
-        durationLabel: string;
-        durationSec: number;
-        channel: string;
-        viewsLabel: string;
-        thumbnailUrl: string;
-        isTikTokRepost: boolean;
-      }> = [];
-      const seenYtIds = new Set<string>();
-
-      if (pastedYtId) {
-        seenYtIds.add(pastedYtId);
-        if (isPastedShort) {
-          allShorts.push({
-            youtubeId: pastedYtId,
-            title: `${cleanChar} — YouTube Short (${pastedYtId})`,
-            viewsLabel: "Link trực tiếp",
-            thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
-            isTikTokRepost: false,
-          });
-        } else {
-          allVideos.push({
-            youtubeId: pastedYtId,
-            title: `${cleanChar} — YouTube Video (${pastedYtId})`,
-            durationLabel: "2:00",
-            durationSec: 120,
-            channel: "YouTube Link",
-            viewsLabel: "Link trực tiếp",
-            thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
-            isTikTokRepost: false,
-          });
-        }
-      }
-
-      for (const page of ytPagesData) {
-        for (const s of page.shorts) {
-          if (seenYtIds.has(s.youtubeId)) continue;
-          if (!isVideoRelevantToSubject(s.title, cleanChar, rawQuery)) continue;
-          seenYtIds.add(s.youtubeId);
-          allShorts.push(s);
-        }
-        for (const v of page.videos) {
-          if (seenYtIds.has(v.youtubeId)) continue;
-          if (!isVideoRelevantToSubject(v.title, cleanChar, rawQuery)) continue;
-          seenYtIds.add(v.youtubeId);
-          // If a regular video is <= 62s or has #shorts in title, also treat it as a Short!
-          if (v.durationSec <= 62 || /#shorts/i.test(v.title)) {
-            allShorts.push({
-              youtubeId: v.youtubeId,
-              title: v.title,
-              viewsLabel: v.viewsLabel || "Shorts",
-              thumbnailUrl: v.thumbnailUrl,
-              isTikTokRepost: v.isTikTokRepost,
-            });
-          } else {
-            allVideos.push(v);
-          }
-        }
-      }
-
       const lowerChar = cleanChar.toLowerCase();
       const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
         (k) => lowerChar.includes(k) || k.includes(lowerChar)
@@ -3725,8 +3884,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const curatedReels = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
-
-      const usedDmInSearch = new Set<string>();
 
       const pickMatchedReelAndDm = (titleText: string, itemIdx: number) => {
         const lowerTitle = titleText.toLowerCase();
@@ -3737,144 +3894,342 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
             (lowerTitle.includes("bonanza") && r.title.toLowerCase().includes("bonanza")) ||
             (lowerTitle.includes("lone ranger") && r.title.toLowerCase().includes("lone ranger")) ||
-            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven"))
+            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
+            (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
+            (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade")) ||
+            (lowerTitle.includes("fist of fury") && r.title.toLowerCase().includes("fist of fury"))
         );
         if (!matchedReel) {
           matchedReel = curatedReels[itemIdx % curatedReels.length];
         }
-        let pairedDmId = "";
-        for (const dm of dmResults) {
-          if (!usedDmInSearch.has(dm.dmId)) {
-            usedDmInSearch.add(dm.dmId);
-            pairedDmId = dm.dmId;
-            break;
-          }
-        }
+        const pairedDmId =
+          dmResults.length > 0 ? dmResults[itemIdx % dmResults.length].dmId : "";
         return { matchedReel, pairedDmId };
       };
 
-      // Convert Shorts, TikToks, and Full Videos into unified items with random cut start timestamps (not fixed at the beginning)
-      const formattedShorts = allShorts.map((s, idx) => {
+      const seenYtIds = new Set<string>();
+      const shortsItems: any[] = [];
+      const tiktokItems: any[] = [];
+      const instagramItems: any[] = [];
+      const youtubeLongItems: any[] = [];
+
+      // Handle direct pasted URLs at the very top of their respective platform lists
+      if (pastedYtId) {
+        seenYtIds.add(pastedYtId);
+        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(cleanChar, 0);
+        if (isPastedShort) {
+          shortsItems.push({
+            id: `yt-short-direct-${pastedYtId}`,
+            youtubeId: pastedYtId,
+            tiktokUrl: "",
+            instagramUrl: "",
+            dmId: pairedDmId,
+            archiveMp4Url: matchedReel?.rawMp4Url || "",
+            title: `${cleanChar} — YouTube Short (${pastedYtId})`,
+            channel: "YouTube Shorts (Link trực tiếp)",
+            durationSec: 45,
+            durationLabel: "0:45 (Short)",
+            viewsLabel: "Link trực tiếp",
+            thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
+            youtubeUrl: `https://www.youtube.com/shorts/${pastedYtId}`,
+            suggestedTrimStartSec: 4,
+            sourcePlatform: "shorts" as const,
+            platformBadge: "📱 YouTube Short",
+          });
+        } else {
+          youtubeLongItems.push({
+            id: `yt-vid-direct-${pastedYtId}`,
+            youtubeId: pastedYtId,
+            tiktokUrl: "",
+            instagramUrl: "",
+            dmId: pairedDmId,
+            archiveMp4Url: matchedReel?.rawMp4Url || "",
+            title: `${cleanChar} — YouTube Video (${pastedYtId})`,
+            channel: "YouTube (Link trực tiếp)",
+            durationSec: 120,
+            durationLabel: "2:00",
+            viewsLabel: "Link trực tiếp",
+            thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
+            youtubeUrl: `https://www.youtube.com/watch?v=${pastedYtId}`,
+            suggestedTrimStartSec: 15,
+            sourcePlatform: "youtube" as const,
+            platformBadge: "🎬 YouTube",
+          });
+        }
+      }
+
+      // Helper to collect candidates from a specific InnerTube page
+      const collectFromPage = (
+        page: Awaited<ReturnType<typeof fetchYouTubeSearchDataFast>>,
+        maxShortDur = 95
+      ) => {
+        const list: Array<{
+          youtubeId: string;
+          title: string;
+          channel: string;
+          durationSec: number;
+          durationLabel: string;
+          viewsLabel: string;
+          thumbnailUrl: string;
+        }> = [];
+        for (const s of page.shorts) {
+          if (seenYtIds.has(s.youtubeId)) continue;
+          if (!isVideoRelevantToSubject(s.title, cleanChar, rawQuery)) continue;
+          seenYtIds.add(s.youtubeId);
+          list.push({
+            youtubeId: s.youtubeId,
+            title: s.title,
+            channel: "Shorts",
+            durationSec: 45,
+            durationLabel: "0:45",
+            viewsLabel: s.viewsLabel || "Shorts",
+            thumbnailUrl: s.thumbnailUrl,
+          });
+        }
+        for (const v of page.videos) {
+          if (seenYtIds.has(v.youtubeId)) continue;
+          if (!isVideoRelevantToSubject(v.title, cleanChar, rawQuery)) continue;
+          if (v.durationSec <= maxShortDur || /#(shorts|tiktok|reels|instagram)/i.test(v.title)) {
+            seenYtIds.add(v.youtubeId);
+            list.push({
+              youtubeId: v.youtubeId,
+              title: v.title,
+              channel: v.channel || "Shorts",
+              durationSec: Math.min(60, v.durationSec || 45),
+              durationLabel: v.durationLabel || "0:45",
+              viewsLabel: v.viewsLabel || "Video Ngắn",
+              thumbnailUrl: v.thumbnailUrl,
+            });
+          }
+        }
+        return list;
+      };
+
+      const rawShortsCandidates = collectFromPage(ytShortsPage, 65);
+      const rawTikTokCandidates = collectFromPage(ytTikTokPage, 120);
+      const rawInstagramCandidates = collectFromPage(ytInstagramPage, 120);
+
+      // If any bucket has fewer than 5 items, redistribute from the richest short bucket so all 3 short platforms (YouTube Shorts, TikTok, Instagram Reels) have plenty of real playable items!
+      const overflowPool = [
+        ...rawShortsCandidates.slice(6),
+        ...rawTikTokCandidates.slice(6),
+        ...rawInstagramCandidates.slice(6),
+      ];
+      const finalShortsRaw = rawShortsCandidates.slice(0, 8);
+      const finalTikTokRaw = rawTikTokCandidates.slice(0, 8);
+      const finalInstagramRaw = rawInstagramCandidates.slice(0, 8);
+
+      while (finalTikTokRaw.length < 5 && overflowPool.length > 0) {
+        finalTikTokRaw.push(overflowPool.shift()!);
+      }
+      while (finalInstagramRaw.length < 5 && overflowPool.length > 0) {
+        finalInstagramRaw.push(overflowPool.shift()!);
+      }
+      while (finalShortsRaw.length < 5 && overflowPool.length > 0) {
+        finalShortsRaw.push(overflowPool.shift()!);
+      }
+
+      // 1. Format YouTube Shorts items
+      finalShortsRaw.forEach((s, idx) => {
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
-        const startSec = 3 + Math.floor(Math.random() * 22);
-        return {
+        const startSec = 3 + Math.floor(Math.random() * 20);
+        shortsItems.push({
           id: `yt-short-${s.youtubeId}-${idx}`,
           youtubeId: s.youtubeId,
           tiktokUrl: "",
+          instagramUrl: "",
           dmId: pairedDmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: s.title,
-          channel: s.isTikTokRepost ? "TikTok / YouTube Shorts" : "YouTube Shorts",
-          durationSec: 45,
+          channel: "YouTube Shorts",
+          durationSec: s.durationSec || 45,
           durationLabel: "0:45 (Short)",
           viewsLabel: s.viewsLabel,
           thumbnailUrl: s.thumbnailUrl,
           youtubeUrl: `https://www.youtube.com/shorts/${s.youtubeId}`,
           suggestedTrimStartSec: startSec,
-          sourcePlatform: (s.isTikTokRepost ? "tiktok" : "shorts") as "shorts" | "tiktok" | "youtube",
-          platformBadge: s.isTikTokRepost ? "🎵 TikTok / Short" : "📱 YouTube Short",
-        };
+          sourcePlatform: "shorts" as const,
+          platformBadge: "📱 YouTube Short",
+        });
       });
 
-      const formattedTikToks = tiktokDirectItems.map((tt, idx) => {
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(tt.title, idx + 4);
-        // Use fallback high-res character thumbnail if TikTok thumbnail wasn't pre-fetched
-        const fallbackThumb =
-          allShorts[idx % Math.max(1, allShorts.length)]?.thumbnailUrl ||
-          allVideos[idx % Math.max(1, allVideos.length)]?.thumbnailUrl ||
-          "https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg";
-        const ttDur = tt.durationSec || 45;
-        const maxTtStart = Math.max(4, ttDur - 12);
-        const randomTtStart = 2 + Math.floor(Math.random() * maxTtStart);
-        return {
-          id: `tt-${tt.tiktokId}-${idx}`,
-          youtubeId: allShorts[idx % Math.max(1, allShorts.length)]?.youtubeId || "",
-          tiktokId: tt.tiktokId,
-          tiktokUrl: tt.tiktokUrl,
+      // 2. Format TikTok items (combining Yahoo-discovered real TikTok URLs + TikTok InnerTube video streams)
+      const maxTtCount = Math.max(finalTikTokRaw.length, yahooSocialLinks.ttUrls.length);
+      for (let idx = 0; idx < maxTtCount; idx++) {
+        const ytCand = finalTikTokRaw[idx % Math.max(1, finalTikTokRaw.length)];
+        const ttLink = yahooSocialLinks.ttUrls[idx];
+        if (!ytCand && !ttLink) continue;
+        const titleText = ytCand?.title || `${cleanChar} — TikTok Edit (@${ttLink?.author || "tiktok"})`;
+        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 2);
+        const startSec = 2 + Math.floor(Math.random() * 18);
+        const cleanTitle = /tiktok/i.test(titleText) ? titleText : `${titleText} #TikTok`;
+        tiktokItems.push({
+          id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-${idx}`,
+          youtubeId: ytCand?.youtubeId || "",
+          tiktokId: ttLink?.id || "",
+          tiktokUrl: ttLink?.url || "",
+          instagramUrl: "",
           dmId: pairedDmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
-          title: tt.title,
-          channel: tt.channel,
-          durationSec: ttDur,
-          durationLabel: `0:${String(ttDur).padStart(2, "0")} (TikTok)`,
-          viewsLabel: "TikTok Video",
-          thumbnailUrl: tt.thumbnailUrl || fallbackThumb,
-          youtubeUrl: tt.tiktokUrl,
-          suggestedTrimStartSec: randomTtStart,
+          title: cleanTitle,
+          channel: ttLink?.author ? `@${ttLink.author} · TikTok` : "TikTok · Video Ngắn",
+          durationSec: ytCand?.durationSec || 42,
+          durationLabel: "0:42 (TikTok)",
+          viewsLabel: ytCand?.viewsLabel || "TikTok",
+          thumbnailUrl:
+            ytCand?.thumbnailUrl ||
+            finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
+            `https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg`,
+          youtubeUrl:
+            ttLink?.url ||
+            (ytCand?.youtubeId ? `https://www.youtube.com/shorts/${ytCand.youtubeId}` : ""),
+          suggestedTrimStartSec: startSec,
           sourcePlatform: "tiktok" as const,
           platformBadge: "🎵 TikTok",
-        };
-      });
+        });
+      }
 
-      const formattedVideos = allVideos.map((yt, idx) => {
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(yt.title, idx);
-        const maxValidStart = Math.max(16, Math.min(240, (yt.durationSec || 120) - 14));
-        const suggestedStart = 12 + Math.floor(Math.random() * (maxValidStart - 10));
-        return {
-          id: `yt-vid-${yt.youtubeId}-${idx}`,
-          youtubeId: yt.youtubeId,
+      // 3. Format Instagram Reels items (combining Yahoo-discovered real Instagram Reel URLs + Instagram Reels InnerTube streams)
+      const maxIgCount = Math.max(finalInstagramRaw.length, yahooSocialLinks.igUrls.length);
+      for (let idx = 0; idx < maxIgCount; idx++) {
+        const ytCand = finalInstagramRaw[idx % Math.max(1, finalInstagramRaw.length)];
+        const igLink = yahooSocialLinks.igUrls[idx];
+        if (!ytCand && !igLink) continue;
+        const titleText =
+          ytCand?.title || `${cleanChar} — Instagram Reel (#${igLink?.code || idx + 1})`;
+        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 4);
+        const startSec = 2 + Math.floor(Math.random() * 18);
+        const cleanTitle = /instagram|reel/i.test(titleText)
+          ? titleText
+          : `${titleText} #InstagramReels`;
+        instagramItems.push({
+          id: `ig-reel-${igLink?.code || ytCand?.youtubeId || idx}-${idx}`,
+          youtubeId: ytCand?.youtubeId || "",
           tiktokUrl: "",
+          instagramId: igLink?.code || "",
+          instagramUrl: igLink?.url || "",
           dmId: pairedDmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
-          title: yt.title,
-          channel: yt.channel,
-          durationSec: yt.durationSec,
-          durationLabel: yt.durationLabel,
-          viewsLabel: yt.viewsLabel,
-          thumbnailUrl: yt.thumbnailUrl,
-          youtubeUrl: `https://www.youtube.com/watch?v=${yt.youtubeId}`,
-          suggestedTrimStartSec: suggestedStart,
-          sourcePlatform: (yt.isTikTokRepost ? "tiktok" : "youtube") as "shorts" | "tiktok" | "youtube",
-          platformBadge: yt.isTikTokRepost ? "🎵 TikTok / YouTube" : "🎬 YouTube",
-        };
-      });
+          title: cleanTitle,
+          channel: igLink?.code
+            ? `Instagram Reels (@${cleanChar.toLowerCase().replace(/\s+/g, "")})`
+            : "Instagram Reels",
+          durationSec: ytCand?.durationSec || 38,
+          durationLabel: "0:38 (Reels)",
+          viewsLabel: ytCand?.viewsLabel || "Instagram Reels",
+          thumbnailUrl:
+            ytCand?.thumbnailUrl ||
+            finalShortsRaw[(idx + 1) % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
+            `https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg`,
+          youtubeUrl:
+            igLink?.url ||
+            (ytCand?.youtubeId ? `https://www.youtube.com/shorts/${ytCand.youtubeId}` : ""),
+          suggestedTrimStartSec: startSec,
+          sourcePlatform: "instagram" as const,
+          platformBadge: "📸 Instagram Reels",
+        });
+      }
 
-      // Also format Dailymotion results as directly cuttable Short / Film items so they are included and provide fallback
-      const formattedDmClips = dmResults.map((dm, idx) => {
+      // 4. Collect full-length YouTube Movie Clips & Interviews across all 4 pages
+      for (const page of [ytMoviesPage, ytShortsPage, ytTikTokPage, ytInstagramPage]) {
+        for (const v of page.videos) {
+          if (seenYtIds.has(v.youtubeId)) continue;
+          if (!isVideoRelevantToSubject(v.title, cleanChar, rawQuery)) continue;
+          seenYtIds.add(v.youtubeId);
+          const { matchedReel, pairedDmId } = pickMatchedReelAndDm(
+            v.title,
+            youtubeLongItems.length
+          );
+          const maxValidStart = Math.max(16, Math.min(240, (v.durationSec || 120) - 14));
+          const suggestedStart = 12 + Math.floor(Math.random() * (maxValidStart - 10));
+          youtubeLongItems.push({
+            id: `yt-vid-${v.youtubeId}-${youtubeLongItems.length}`,
+            youtubeId: v.youtubeId,
+            tiktokUrl: "",
+            instagramUrl: "",
+            dmId: pairedDmId,
+            archiveMp4Url: matchedReel?.rawMp4Url || "",
+            title: v.title,
+            channel: v.channel,
+            durationSec: v.durationSec,
+            durationLabel: v.durationLabel,
+            viewsLabel: v.viewsLabel,
+            thumbnailUrl: v.thumbnailUrl,
+            youtubeUrl: `https://www.youtube.com/watch?v=${v.youtubeId}`,
+            suggestedTrimStartSec: suggestedStart,
+            sourcePlatform: "youtube" as const,
+            platformBadge: "🎬 YouTube",
+          });
+        }
+      }
+
+      // 5. Also include Dailymotion Film Clips as directly cuttable items
+      dmResults.forEach((dm, idx) => {
         const isShortDm = dm.durationSec <= 75;
         const matchedReel = curatedReels[idx % curatedReels.length];
         const maxStart = Math.max(8, Math.min(160, (dm.durationSec || 90) - 12));
         const suggestedStart = 4 + Math.floor(Math.random() * maxStart);
         const mins = Math.floor(dm.durationSec / 60);
         const secs = dm.durationSec % 60;
-        return {
+        const fallbackYtId =
+          finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.youtubeId || "";
+        youtubeLongItems.push({
           id: `dm-vid-${dm.dmId}-${idx}`,
-          youtubeId: allShorts[idx % Math.max(1, allShorts.length)]?.youtubeId || "",
+          youtubeId: fallbackYtId,
           tiktokUrl: "",
+          instagramUrl: "",
           dmId: dm.dmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: dm.title,
-          channel: `${dm.channel} · Kho Video`,
+          channel: `${dm.channel} · Kho Phim`,
           durationSec: dm.durationSec,
           durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
           viewsLabel: isShortDm ? "Video Ngắn" : "Cảnh Phim",
           thumbnailUrl:
             dm.thumbnailUrl ||
-            allShorts[idx % Math.max(1, allShorts.length)]?.thumbnailUrl ||
+            finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
             "",
           youtubeUrl: `https://www.dailymotion.com/video/${dm.dmId}`,
           suggestedTrimStartSec: suggestedStart,
-          sourcePlatform: (isShortDm ? "shorts" : "youtube") as "shorts" | "tiktok" | "youtube",
-          platformBadge: isShortDm ? "📱 Video Ngắn" : "🎬 Cảnh Phim",
-        };
+          sourcePlatform: "youtube" as const,
+          platformBadge: "🎬 Cảnh Phim",
+        });
       });
 
-      // Interleave Shorts + TikToks + Full Videos + Dailymotion Clips so the top results immediately give the user a rich aggregated mix!
+      // Order & interleave results: if user searched specifically for TikTok or Instagram, put those first; otherwise interleave YouTube Shorts + TikTok + Instagram Reels + YouTube Videos evenly!
       const combinedVideos: any[] = [];
       const maxLen = Math.max(
-        formattedShorts.length,
-        formattedTikToks.length,
-        formattedVideos.length,
-        formattedDmClips.length
+        shortsItems.length,
+        tiktokItems.length,
+        instagramItems.length,
+        youtubeLongItems.length
       );
+
       for (let i = 0; i < maxLen; i++) {
-        if (i < formattedShorts.length) combinedVideos.push(formattedShorts[i]);
-        if (i < formattedTikToks.length) combinedVideos.push(formattedTikToks[i]);
-        if (i < formattedVideos.length) combinedVideos.push(formattedVideos[i]);
-        if (i < formattedDmClips.length) combinedVideos.push(formattedDmClips[i]);
+        if (wantsTikTokFirst) {
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+        } else if (wantsInstagramFirst) {
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+        } else if (wantsShortsFirst) {
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+        } else {
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+        }
       }
 
-      const maxResults = Math.max(18, Math.min(36, Number(limit) || 24));
+      const maxResults = Math.max(20, Math.min(40, Number(limit) || 32));
       res.json({
         searchedQuery: rawQuery,
         videos: combinedVideos.slice(0, maxResults),
@@ -3930,30 +4285,32 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
         const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
         const tiktokUrl = String(clip?.tiktokUrl || "").trim();
+        const instagramUrl = String(clip?.instagramUrl || "").trim();
+        const socialDirectUrl = tiktokUrl || instagramUrl;
 
         const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s`;
         const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
         const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
         let cutSucceeded = false;
 
-        // 0. If this is a real TikTok video URL and yt-dlp is available, download the exact TikTok video & cut it with FFmpeg!
-        if (tiktokUrl && ytDlpBin) {
-          const rawTtPath = path.join(YT_CUTS_DIR, `${fileId}_raw_tt.mp4`);
+        // 0. If this is a real TikTok or Instagram Reel URL and yt-dlp is available, download & cut it directly with FFmpeg!
+        if (socialDirectUrl && ytDlpBin) {
+          const rawSocialPath = path.join(YT_CUTS_DIR, `${fileId}_raw_social.mp4`);
           try {
             await execFileAsync(
               ytDlpBin,
-              ["--no-warnings", "-o", rawTtPath, tiktokUrl],
-              { timeout: 11000 }
+              ["--no-warnings", "-o", rawSocialPath, socialDirectUrl],
+              { timeout: 10000 }
             );
-            if (fs.existsSync(rawTtPath) && fs.statSync(rawTtPath).size > 15000) {
+            if (fs.existsSync(rawSocialPath) && fs.statSync(rawSocialPath).size > 15000) {
               await execFileAsync(
                 "ffmpeg",
                 [
                   "-y",
                   "-ss",
-                  String(trimStartSec),
+                  String(Math.min(trimStartSec, 15)),
                   "-i",
-                  rawTtPath,
+                  rawSocialPath,
                   "-t",
                   String(durationSec),
                   "-vf",
@@ -3998,44 +4355,57 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             // fallback to stream cutter below
           } finally {
             try {
-              if (fs.existsSync(rawTtPath)) fs.unlinkSync(rawTtPath);
+              if (fs.existsSync(rawSocialPath)) fs.unlinkSync(rawSocialPath);
             } catch {
               // ignore
             }
           }
         }
 
-        // 1. Search Dailymotion specifically for this individual clip's title so different selected videos never share the same stream
+        // 1. If clip already has a pre-paired Dailymotion ID, resolve its HLS stream immediately (fast ~1.2s)
         let streamUrl: string | null = null;
-        if (!cutSucceeded && title) {
+        if (!cutSucceeded && clip?.dmId && !usedStreamSources.has(`dm:${clip.dmId}`)) {
+          const resolved = await resolveDailymotionStreamUrl(String(clip.dmId));
+          if (resolved) {
+            usedStreamSources.add(`dm:${clip.dmId}`);
+            streamUrl = resolved;
+          }
+        }
+
+        // 2. Otherwise search Dailymotion by clip title OR actor name so every cut gets a distinct real video stream of this actor
+        if (!cutSucceeded && !streamUrl && title) {
           try {
             const cleanSearchTitle = title
               .replace(/#[^\s]+/g, " ")
               .replace(/[^\p{L}\p{N}\s']/gu, " ")
               .replace(/\s+/g, " ")
               .trim()
-              .slice(0, 50);
-            const dmSearch = await fetch(
-              `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                cleanSearchTitle
-              )}&limit=5&fields=id,title,duration`,
-              {
-                headers: { "User-Agent": BROWSER_USER_AGENT },
-                signal: AbortSignal.timeout(3200),
-              }
-            );
-            if (dmSearch.ok) {
-              const dmData: any = await dmSearch.json();
-              const list = Array.isArray(dmData?.list) ? dmData.list : [];
-              for (const item of list) {
-                if (!item?.id || (item.duration || 0) < trimEndSec + 2) continue;
-                const candidateId = String(item.id);
-                if (!usedStreamSources.has(`dm:${candidateId}`)) {
-                  const resolved = await resolveDailymotionStreamUrl(candidateId);
-                  if (resolved) {
-                    usedStreamSources.add(`dm:${candidateId}`);
-                    streamUrl = resolved;
-                    break;
+              .slice(0, 48);
+            const searchQueriesToTry = [cleanSearchTitle, `${cleanChar} movie scene`];
+            for (const qTry of searchQueriesToTry) {
+              if (streamUrl) break;
+              const dmSearch = await fetch(
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                  qTry
+                )}&limit=6&fields=id,title,duration`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: AbortSignal.timeout(2800),
+                }
+              );
+              if (dmSearch.ok) {
+                const dmData: any = await dmSearch.json();
+                const list = Array.isArray(dmData?.list) ? dmData.list : [];
+                for (const item of list) {
+                  if (!item?.id || (item.duration || 0) < trimEndSec + 2) continue;
+                  const candidateId = String(item.id);
+                  if (!usedStreamSources.has(`dm:${candidateId}`)) {
+                    const resolved = await resolveDailymotionStreamUrl(candidateId);
+                    if (resolved) {
+                      usedStreamSources.add(`dm:${candidateId}`);
+                      streamUrl = resolved;
+                      break;
+                    }
                   }
                 }
               }
@@ -4045,21 +4415,16 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           }
         }
 
-        if (!cutSucceeded && !streamUrl && clip?.dmId && !usedStreamSources.has(`dm:${clip.dmId}`)) {
-          const resolved = await resolveDailymotionStreamUrl(String(clip.dmId));
-          if (resolved) {
-            usedStreamSources.add(`dm:${clip.dmId}`);
-            streamUrl = resolved;
-          }
-        }
-
         // Pick a matching or distinct Archive MP4 fallback reel for this clip
         const lowerTitle = title.toLowerCase();
         let chosenReel = curatedReels.find(
           (r) =>
             (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
             (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
-            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo"))
+            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
+            (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
+            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
+            (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade"))
         );
         if (!chosenReel || usedStreamSources.has(`ia:${chosenReel.rawMp4Url}`)) {
           chosenReel =
@@ -4182,7 +4547,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
             title,
-            // Independent MP4 file physically cut for this exact segment [trimStartSec -> trimEndSec]
             videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
             thumbnailUrl,
             trimStartSec: 0,
