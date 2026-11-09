@@ -9,9 +9,42 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const execFileAsync = promisify(execFile);
-const YT_CUTS_DIR = "/tmp/yt_cuts";
+const YT_CUTS_DIR = path.join(process.cwd(), "public", "saved_cuts");
 if (!fs.existsSync(YT_CUTS_DIR)) {
   fs.mkdirSync(YT_CUTS_DIR, { recursive: true });
+}
+const SAVED_CUTS_MANIFEST_PATH = path.join(YT_CUTS_DIR, "saved_cuts_manifest.json");
+
+function loadSavedCutsManifest(): any[] {
+  try {
+    if (!fs.existsSync(SAVED_CUTS_MANIFEST_PATH)) return [];
+    const raw = fs.readFileSync(SAVED_CUTS_MANIFEST_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCutsToManifest(newCuts: any[]): any[] {
+  try {
+    const existing = loadSavedCutsManifest();
+    const merged = [
+      ...newCuts.map((c) => ({
+        ...c,
+        savedAt: new Date().toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      })),
+      ...existing.filter((ex) => !newCuts.some((nc) => nc.videoUrl === ex.videoUrl)),
+    ].slice(0, 40);
+    fs.writeFileSync(SAVED_CUTS_MANIFEST_PATH, JSON.stringify(merged, null, 2), "utf-8");
+    return merged;
+  } catch {
+    return newCuts;
+  }
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2013,7 +2046,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     ],
     "clint eastwood": [
       {
-        title: "The Outlaw Josey Wales (1976) — Cảnh #1",
+        title: "The Outlaw Josey Wales (1976) — Cảnh Mở Đầu",
         rawMp4Url:
           "https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4",
         year: 1976,
@@ -2023,7 +2056,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         height: 360,
       },
       {
-        title: "The Outlaw Josey Wales (1976) — Cảnh #2",
+        title: "The Outlaw Josey Wales (1976) — Cảnh Miền Viễn Tây #2",
+        rawMp4Url:
+          "https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4",
+        year: 1976,
+        trimStartSec: 265,
+        trimEndSec: 274,
+        width: 804,
+        height: 360,
+      },
+      {
+        title: "The Outlaw Josey Wales (1976) — Cảnh Đối Thoại #3",
         rawMp4Url:
           "https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4",
         year: 1976,
@@ -2033,7 +2076,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         height: 360,
       },
       {
-        title: "The Outlaw Josey Wales (1976) — Cảnh #3",
+        title: "The Outlaw Josey Wales (1976) — Cảnh Hành Động #4",
+        rawMp4Url:
+          "https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4",
+        year: 1976,
+        trimStartSec: 510,
+        trimEndSec: 519,
+        width: 804,
+        height: 360,
+      },
+      {
+        title: "The Outlaw Josey Wales (1976) — Cảnh Cao Trào #5",
         rawMp4Url:
           "https://archive.org/download/the-outlaw-josey-wales/The%20Outlaw%20Josey%20Wales%20(1976).mp4",
         year: 1976,
@@ -2044,6 +2097,112 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       },
     ],
   };
+
+  // Helper: Physically cut a standalone fast-playing MP4 clip + extract a real video frame JPG thumbnail using FFmpeg (cached on disk)
+  async function cutAndCacheRealVideoClip(
+    rawOrProxyUrl: string,
+    startSec: number,
+    durationSec: number,
+    idx = 0
+  ): Promise<{
+    videoUrl: string;
+    frameDataUrl: string;
+    trimStartSec: number;
+    trimEndSec: number;
+    originalStartSec: number;
+    originalEndSec: number;
+  } | null> {
+    try {
+      let cleanSource = String(rawOrProxyUrl || "").split("#")[0];
+      if (cleanSource.includes("/api/archival/video-stream?url=")) {
+        const uParam = cleanSource.split("url=")[1];
+        if (uParam) cleanSource = decodeURIComponent(uParam.split("&")[0]);
+      }
+      if (!cleanSource.startsWith("http")) return null;
+
+      const safeStart = Math.max(2, Math.round(startSec || 18));
+      const safeDur = Math.max(4, Math.min(20, Math.round(durationSec || 8)));
+      const safeEnd = safeStart + safeDur;
+      const urlSlug = Buffer.from(cleanSource)
+        .toString("base64")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .slice(-16);
+      const fileId = `real_cut_${urlSlug}_${safeStart}s_${safeEnd}s`;
+      const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+      const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+
+      if (!fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 12000) {
+        await execFileAsync(
+          "ffmpeg",
+          [
+            "-y",
+            "-ss",
+            String(safeStart),
+            "-i",
+            cleanSource,
+            "-t",
+            String(safeDur),
+            "-vf",
+            "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            outMp4Path,
+          ],
+          { timeout: 11500 }
+        );
+      }
+
+      if (!fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 12000) {
+        return null;
+      }
+
+      if (!fs.existsSync(outJpgPath) || fs.statSync(outJpgPath).size < 1000) {
+        const thumbSeek = Math.min(2.2, Math.max(0.5, Number((safeDur * 0.35).toFixed(1))));
+        await execFileAsync(
+          "ffmpeg",
+          [
+            "-y",
+            "-ss",
+            String(thumbSeek),
+            "-i",
+            outMp4Path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            outJpgPath,
+          ],
+          { timeout: 3500 }
+        ).catch(() => {});
+      }
+
+      let frameDataUrl = "";
+      if (fs.existsSync(outJpgPath) && fs.statSync(outJpgPath).size > 500) {
+        const jpgBuf = fs.readFileSync(outJpgPath);
+        frameDataUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
+      }
+
+      return {
+        videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${safeStart}-${safeEnd}`,
+        frameDataUrl,
+        trimStartSec: 0,
+        trimEndSec: safeDur,
+        originalStartSec: safeStart,
+        originalEndSec: safeEnd,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   // Helper: Search Wikimedia Commons + Internet Archive for STRICTLY VERIFIED real archival video clips (.webm / .mp4 / .ogv) of the actor & auto-trim them into 2-3 clean text-free highlight cuts
   async function searchRealArchivalVideos(
@@ -2786,10 +2945,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }
   });
 
-  // 2g. Serve FFmpeg-Cut MP4 Clips from /tmp/yt_cuts
+  // 2g. Serve FFmpeg-Cut MP4 Clips from public/saved_cuts (with ?download=1 support to save MP4 to computer)
   app.get("/api/youtube/cut-file/:filename", (req, res) => {
     const safeName = path.basename(String(req.params.filename || ""));
-    const fullPath = path.join(YT_CUTS_DIR, safeName);
+    let fullPath = path.join(YT_CUTS_DIR, safeName);
+    if (!fs.existsSync(fullPath) && fs.existsSync(path.join("/tmp/yt_cuts", safeName))) {
+      fullPath = path.join("/tmp/yt_cuts", safeName);
+    }
     if (!safeName.endsWith(".mp4") || !fs.existsSync(fullPath)) {
       res.status(404).send("Cut clip not found");
       return;
@@ -2797,7 +2959,32 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Accept-Ranges", "bytes");
+    if (req.query.download === "1") {
+      const customName = String(req.query.name || safeName)
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .replace(/_{2,}/g, "_");
+      const downloadFileName = customName.endsWith(".mp4") ? customName : `${customName}.mp4`;
+      res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName}"`);
+    }
     res.sendFile(fullPath);
+  });
+
+  // 2g-2. Get or Delete Persistently Saved Cut Video Clips
+  app.get("/api/youtube/saved-cuts", (_req, res) => {
+    const list = loadSavedCutsManifest();
+    res.json({ cuts: list });
+  });
+
+  app.delete("/api/youtube/saved-cuts/:id", (req, res) => {
+    try {
+      const targetId = String(req.params.id || "");
+      const existing = loadSavedCutsManifest();
+      const filtered = existing.filter((item) => item.id !== targetId);
+      fs.writeFileSync(SAVED_CUTS_MANIFEST_PATH, JSON.stringify(filtered, null, 2), "utf-8");
+      res.json({ cuts: filtered });
+    } catch {
+      res.json({ cuts: [] });
+    }
   });
 
   // Helper: Parse duration string like "1:50" or "10:15" into seconds
@@ -3816,8 +4003,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         }
       }
 
+      const savedManifest = saveCutsToManifest(results);
+
       res.json({
         cuts: results,
+        savedCuts: savedManifest,
       });
     } catch (error: any) {
       res.status(500).json({
@@ -3936,7 +4126,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ];
 
         const [foundVideos, ...eraPhotoLists] = await Promise.all([
-          searchRealArchivalVideos(cleanTopic, 4, usedUrls, cleanTopic, usedTitleKeys),
+          searchRealArchivalVideos(cleanTopic, 6, usedUrls, cleanTopic, usedTitleKeys),
           ...eraQueries.map((eq) =>
             searchRealArchivalPhotos(
               eq,
@@ -3983,62 +4173,70 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         uniqueVerifiedPool.push(p);
       }
 
-      // Step 2: Assign verified real archival videos to RANDOM positions across the Timeline (never fixed at Scene #01/#02 at the start!)
+      // Step 2: Prioritize cutting & assigning REAL MP4 VIDEO CLIPS (with real extracted video frame thumbnails) to 'video' scenes at random positions across the Timeline!
+      // Any 'video' scene that does not get a verified cut MP4 is left unassigned here so the client gives it a Reference Image + Grok/Kling Prompt to draw later!
       const shuffledVideos = [...verifiedVideos].sort(() => Math.random() - 0.5);
       const rawVideoTargetScenes = visualScenes.filter((s: any) => s.sceneType === "video");
       const candidateVideoScenes =
         rawVideoTargetScenes.length > 0 ? [...rawVideoTargetScenes] : [...visualScenes];
 
-      // Shuffle candidate scenes randomly; if there are enough scenes (> 4), prefer non-opening scenes or spread randomly across the timeline so real videos don't always sit at #01/#02
-      const nonOpeningCandidates =
-        candidateVideoScenes.length > 4
-          ? candidateVideoScenes.filter((_s: any, idx: number) => idx > 0 || Math.random() < 0.25)
-          : candidateVideoScenes;
-      const poolToShuffle =
-        nonOpeningCandidates.length >= Math.min(3, shuffledVideos.length)
-          ? [...nonOpeningCandidates]
-          : [...candidateVideoScenes];
+      const poolToShuffle = [...candidateVideoScenes];
       for (let i = poolToShuffle.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [poolToShuffle[i], poolToShuffle[j]] = [poolToShuffle[j], poolToShuffle[i]];
       }
 
       let matchedVideosCount = 0;
-      const maxRealVideosToPlace = Math.min(3, shuffledVideos.length, poolToShuffle.length);
+      const maxRealVideosToPlace = Math.min(4, shuffledVideos.length, poolToShuffle.length);
+      const usedCutWindows: number[] = [];
 
-      for (let vIdx = 0; vIdx < maxRealVideosToPlace; vIdx++) {
+      const cutJobs = Array.from({ length: maxRealVideosToPlace }, (_, vIdx) => {
         const sc = poolToShuffle[vIdx];
         const vid = shuffledVideos[vIdx];
-        const label = vid.year ? `${vid.title} (${vid.year})` : vid.title;
-        // Give each video scene a distinct thumbnail so they never look identical on the Timeline
-        const distinctThumb =
-          vid.dataUrl ||
-          uniqueVerifiedPool[Math.max(0, uniqueVerifiedPool.length - 1 - vIdx)]?.dataUrl ||
-          "";
-        const randomTrimStart =
+        let baseStart =
           typeof (vid as any).trimStartSec === "number" && (vid as any).trimStartSec > 10
-            ? (vid as any).trimStartSec + Math.floor(Math.random() * 25)
-            : 16 + Math.floor(Math.random() * 110);
-        const randomTrimEnd = randomTrimStart + 9;
+            ? (vid as any).trimStartSec + Math.floor(Math.random() * 20)
+            : 24 + vIdx * 55 + Math.floor(Math.random() * 35);
+        while (usedCutWindows.some((w) => Math.abs(w - baseStart) < 16)) {
+          baseStart += 28;
+        }
+        usedCutWindows.push(baseStart);
+        return { sc, vid, vIdx, baseStart };
+      });
+
+      const cutResults = await Promise.all(
+        cutJobs.map(async ({ sc, vid, vIdx, baseStart }) => {
+          const cutClip = await cutAndCacheRealVideoClip(vid.videoUrl, baseStart, 8, vIdx);
+          return { sc, vid, vIdx, baseStart, cutClip };
+        })
+      );
+
+      for (const { sc, vid, baseStart, cutClip } of cutResults) {
+        // Strictly require a real cut MP4 clip with a real extracted video frame thumbnail!
+        if (!cutClip) continue;
+        const label = vid.year ? `${vid.title} (${vid.year})` : vid.title;
+        const distinctThumb = cutClip.frameDataUrl || vid.dataUrl || "";
         matchedBySceneId[sc.id] = {
           title: label,
           dataUrl: distinctThumb,
-          videoUrl: vid.videoUrl,
+          videoUrl: cutClip.videoUrl,
           mediaKind: "video",
-          width: vid.width,
-          height: vid.height,
+          width: 640,
+          height: 360,
           year: vid.year,
-          trimStartSec: randomTrimStart,
-          trimEndSec: randomTrimEnd,
+          trimStartSec: cutClip.trimStartSec,
+          trimEndSec: cutClip.trimEndSec,
+          originalStartSec: cutClip.originalStartSec ?? baseStart,
+          originalEndSec: cutClip.originalEndSec ?? baseStart + 8,
         } as any;
         allPhotos.push({
           sceneId: sc.id,
           title: label,
           dataUrl: distinctThumb,
-          videoUrl: vid.videoUrl,
+          videoUrl: cutClip.videoUrl,
           mediaKind: "video",
-          width: vid.width,
-          height: vid.height,
+          width: 640,
+          height: 360,
           year: vid.year,
         });
         matchedVideosCount++;
@@ -4050,16 +4248,37 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .sort((a, b) => (a.year || 0) - (b.year || 0));
       const undatedPhotos = uniqueVerifiedPool.filter((p) => p.year === null);
 
-      const remainingVisualScenes = visualScenes.filter(
-        (sc: any) => !matchedBySceneId[sc.id]
+      // Assign chronological archival photos ONLY to 'image' scenes (or if there are no 'image' scenes),
+      // so 'video' scenes that didn't receive a real cut MP4 keep their Reference Photo + Grok/Kling Prompt for the user to either cut a video into or draw later!
+      const remainingImageScenes = visualScenes.filter(
+        (sc: any) => !matchedBySceneId[sc.id] && sc.sceneType === "image"
       );
+      const remainingVisualScenes =
+        remainingImageScenes.length > 0
+          ? remainingImageScenes
+          : visualScenes.filter((sc: any) => !matchedBySceneId[sc.id]);
       const orderedVerifiedPhotos = [...datedPhotos, ...undatedPhotos].slice(
         0,
-        remainingVisualScenes.length
+        Math.max(remainingVisualScenes.length, 6)
       );
 
-      // Step 4: Assign verified photos smoothly across remaining visual scenes in chronological order.
-      // Never repeat any photo; leave remaining scenes unassigned so the user gets a Reference Image + Standard Kling AI Prompt for them!
+      // Always include extra verified photos in allPhotos so the client has unique reference portraits for every remaining 'video' scene (Ảnh Gốc + Prompt Grok/Kling)!
+      for (const extraP of [...datedPhotos, ...undatedPhotos].slice(0, 12)) {
+        if (!allPhotos.some((ap) => ap.dataUrl === extraP.dataUrl)) {
+          allPhotos.push({
+            sceneId: "",
+            title: extraP.year ? `${extraP.title} (${extraP.year})` : extraP.title,
+            dataUrl: extraP.dataUrl,
+            mediaKind: "image",
+            width: extraP.width,
+            height: extraP.height,
+            year: extraP.year,
+          });
+        }
+      }
+
+      // Step 4: Assign verified photos smoothly across remaining 'image' scenes in chronological order.
+      // Remaining 'video' scenes without a real video automatically get a unique Reference Image + Standard Grok/Kling AI Prompt on the client!
       if (orderedVerifiedPhotos.length > 0 && remainingVisualScenes.length > 0) {
         if (orderedVerifiedPhotos.length >= remainingVisualScenes.length) {
           for (let i = 0; i < remainingVisualScenes.length; i++) {

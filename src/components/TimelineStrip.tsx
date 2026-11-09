@@ -15,6 +15,7 @@ import {
   ArrowLeftRight,
   Search,
   Play,
+  Download,
 } from 'lucide-react';
 import { StoryScene, VaultItem } from '../types';
 import { formatSecLabel } from '../utils/frameExtractor';
@@ -463,16 +464,21 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     </span>
                   </button>
                 ) : isVideoSceneHoldingTempImage ? (
-                  <div
-                    title={`Đoạn #${idx + 1} chưa có video thật — Đã gắn sẵn Ảnh thật (${attachedFileName}) + Prompt chuẩn để bạn tạo video từ Grok hoặc Kling AI.`}
-                    className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate bg-sky-950/80 text-sky-200 border border-sky-400/50"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenPromptStudio();
+                    }}
+                    title={`Đoạn #${idx + 1} chưa có video thật — Đã gắn sẵn Ảnh thật (${attachedFileName}) + Prompt chuẩn để bạn vẽ sau (hoặc bấm "✂️ Chọn & Cắt Video" bên dưới để chọn & cắt video thật chèn vào đây).`}
+                    className="w-full px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 truncate bg-sky-950/80 hover:bg-sky-900/80 text-sky-200 border border-sky-400/50 transition-colors text-left"
                   >
                     <Film className="w-3 h-3 shrink-0 text-sky-400" />
                     <span className="font-bold text-amber-300 shrink-0">
-                      📸 Ảnh gốc + Prompt Grok/Kling:
+                      📸 Ảnh gốc + Prompt vẽ sau:
                     </span>
                     <span className="truncate">{attachedFileName}</span>
-                  </div>
+                  </button>
                 ) : hasMedia ? (
                   <div
                     title={`Đã gắn ${actualMediaKind === 'video' ? 'Video thật' : 'Ảnh thật chuẩn'}: ${attachedFileName}`}
@@ -680,12 +686,41 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     <button
                       type="button"
                       onClick={() => onOpenSceneMediaSearch(scene.id)}
-                      title={`Tìm kiếm & chọn lại Ảnh hoặc Đoạn Video Thật khác hợp lý hơn cho Cảnh #${String(idx + 1).padStart(2, '0')}`}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border border-amber-500/50 transition-colors"
+                      title={
+                        scene.sceneType === 'video'
+                          ? `Ưu tiên chọn & cắt đoạn Video Thật (YouTube / Shorts / TikTok / Kho Phim) chèn vào Cảnh #${String(idx + 1).padStart(2, '0')} (hoặc đổi Ảnh Gốc + Prompt để vẽ sau)`
+                          : `Tìm kiếm & chọn lại Ảnh hoặc Đoạn Video Thật khác cho Cảnh #${String(idx + 1).padStart(2, '0')}`
+                      }
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold border transition-colors ${
+                        scene.sceneType === 'video'
+                          ? 'bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border-amber-400/60'
+                          : 'bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border-amber-500/50'
+                      }`}
                     >
                       <Search className="w-2.5 h-2.5 shrink-0" />
-                      <span>Tìm Khác</span>
+                      <span>
+                        {scene.sceneType === 'video' ? '✂️ Chọn & Cắt Video' : 'Đổi Ảnh'}
+                      </span>
                     </button>
+                  )}
+                  {actualMediaKind === 'video' && scene.mediaUrl && (
+                    <a
+                      href={
+                        scene.mediaUrl.split('#')[0].includes('/api/youtube/cut-file/')
+                          ? `${scene.mediaUrl.split('#')[0]}?download=1&name=${encodeURIComponent(
+                              `Canh_${String(idx + 1).padStart(2, '0')}_video_da_cat.mp4`
+                            )}`
+                          : scene.mediaUrl.split('#')[0]
+                      }
+                      download={`Canh_${String(idx + 1).padStart(2, '0')}_video_da_cat.mp4`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Tải file Video MP4 đã cắt của Cảnh #${String(idx + 1).padStart(2, '0')} về máy tính của bạn`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border border-sky-400/60 transition-colors"
+                    >
+                      <Download className="w-2.5 h-2.5 shrink-0" />
+                      <span>⬇ Lưu MP4</span>
+                    </a>
                   )}
                   {isVisualScene && onQuickCycleSceneMedia && (
                     <button

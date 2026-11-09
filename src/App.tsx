@@ -64,8 +64,39 @@ import {
 } from './utils/realActorVideoTrimmer';
 
 export default function App() {
-  const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
-  const [scenes, setScenes] = useState<StoryScene[]>(WILL_SAMPSON_SCENES);
+  const [vaultItems, setVaultItems] = useState<VaultItem[]>(() => {
+    try {
+      const savedRaw = localStorage.getItem('legendcut_saved_vault_cuts_v1');
+      if (savedRaw) {
+        const parsed: VaultItem[] = JSON.parse(savedRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return [
+            ...parsed,
+            ...INITIAL_VAULT_ITEMS.filter((iv) => !parsed.some((p) => p.id === iv.id)),
+          ];
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_VAULT_ITEMS;
+  });
+  const [scenes, setScenes] = useState<StoryScene[]>(() => {
+    try {
+      const savedMapRaw = localStorage.getItem('legendcut_user_cut_scenes_v1');
+      if (savedMapRaw) {
+        const savedMap: Record<string, Partial<StoryScene>> = JSON.parse(savedMapRaw);
+        if (savedMap && typeof savedMap === 'object') {
+          return WILL_SAMPSON_SCENES.map((sc) =>
+            savedMap[sc.id] ? ({ ...sc, ...savedMap[sc.id] } as StoryScene) : sc
+          );
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return WILL_SAMPSON_SCENES;
+  });
   const [settings, setSettings] = useState<ProjectSettings>(() => {
     const saved = loadSavedAudioPreferences();
     return {
@@ -553,16 +584,66 @@ export default function App() {
   };
 
   // Handler when Admin selects a specific Video Cut from SceneMediaSearchModal for a scene
-  const handleSelectVideoForScene = (
+  const handleSelectVideoForScene = async (
     sceneId: string,
     videoOpt: SceneVideoOption,
     customTrimStartSec: number,
     customTrimEndSec: number
   ) => {
     const cleanStreamUrl = videoOpt.videoUrl.split('#')[0];
+    let archiveMp4Url = cleanStreamUrl;
+    if (cleanStreamUrl.includes('/api/archival/video-stream?url=')) {
+      const uParam = cleanStreamUrl.split('url=')[1];
+      if (uParam) archiveMp4Url = decodeURIComponent(uParam.split('&')[0]);
+    }
+
+    const dur = Math.max(4, customTrimEndSec - customTrimStartSec);
+    const sIdx = scenes.findIndex((s) => s.id === sceneId);
+    const targetScene = sIdx >= 0 ? scenes[sIdx] : undefined;
+    const rawTopic =
+      loadSavedAudioPreferences().storyTopic ||
+      getCharacterNameForPreset(settings.activePresetId) ||
+      settings.projectTitle.split('—')[0].trim() ||
+      'Will Sampson';
+
+    setStatusBanner(
+      `⏳ Đang cắt riêng đoạn ${customTrimStartSec}s → ${customTrimEndSec}s từ Video Thật "${videoOpt.title}" cho Cảnh #${String(targetScene?.order || 1).padStart(2, '0')}...`
+    );
+
+    // Cut the exact segment into a fast standalone MP4 file + real video frame thumbnail via FFmpeg
+    try {
+      const cutRes = await fetch('/api/youtube/cut-clips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterName: rawTopic,
+          clips: [
+            {
+              title: videoOpt.title,
+              archiveMp4Url,
+              trimStartSec: customTrimStartSec,
+              trimEndSec: customTrimEndSec,
+              durationSec: dur,
+              thumbnailUrl: videoOpt.dataUrl,
+              targetSceneId: sceneId,
+            },
+          ],
+        }),
+      });
+      if (cutRes.ok) {
+        const cutData = await cutRes.json();
+        const cuts: CutYouTubeResultItem[] = Array.isArray(cutData?.cuts) ? cutData.cuts : [];
+        if (cuts.length > 0) {
+          handleInsertCutYouTubeClips(cuts, sceneId);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to direct stream below if cut endpoint fails
+    }
+
     const finalVideoUrl = `${cleanStreamUrl}#cut=${Date.now()}&t=${customTrimStartSec},${customTrimEndSec}`;
     const newVaultId = `scene-vid-${Date.now()}`;
-    const dur = Math.max(5, customTrimEndSec - customTrimStartSec);
 
     const newItem: VaultItem = {
       id: newVaultId,
@@ -579,9 +660,7 @@ export default function App() {
 
     setVaultItems((prev) => [newItem, ...prev]);
 
-    const sIdx = scenes.findIndex((s) => s.id === sceneId);
-    if (sIdx >= 0) {
-      const targetScene = scenes[sIdx];
+    if (sIdx >= 0 && targetScene) {
       const nextScenes = [...scenes];
       nextScenes[sIdx] = {
         ...targetScene,
@@ -605,25 +684,12 @@ export default function App() {
       const targetDur = Math.ceil(targetScene.durationSec || 5);
       setActiveSceneId(sceneId);
       setCurrentTimeSec(jumpSec);
-      // Lock playback to ONLY this 1 selected video scene so it never runs through all 16 scenes!
       setSingleSceneStopTimeSec(jumpSec + targetDur);
       setIsPlaying(true);
 
       setStatusBanner(
         `🎬 Đã đổi sang đoạn Video Thật "${videoOpt.title}" (cắt ${customTrimStartSec}s→${customTrimEndSec}s) và chỉ chạy riêng Cảnh #${String(targetScene.order).padStart(2, '0')} (${targetDur}s)!`
       );
-
-      captureRealVideoFrameThumbnail(finalVideoUrl, customTrimStartSec).then((frameDataUrl) => {
-        if (!frameDataUrl) return;
-        setVaultItems((prev) =>
-          prev.map((item) =>
-            item.id === newVaultId ? { ...item, thumbnailUrl: frameDataUrl } : item
-          )
-        );
-        setScenes((prev) =>
-          prev.map((s) => (s.id === sceneId ? { ...s, characterRefPhotoUrl: frameDataUrl } : s))
-        );
-      });
     }
   };
 
@@ -790,7 +856,19 @@ export default function App() {
       createdAt: cut.sourceLabel,
     }));
 
-    setVaultItems((prev) => [...newVaultItems, ...prev]);
+    setVaultItems((prev) => {
+      const merged = [
+        ...newVaultItems,
+        ...prev.filter((p) => !newVaultItems.some((nv) => nv.id === p.id)),
+      ];
+      try {
+        const savedOnly = merged.filter((v) => v.url?.includes('/api/youtube/cut-file/'));
+        localStorage.setItem('legendcut_saved_vault_cuts_v1', JSON.stringify(savedOnly.slice(0, 40)));
+      } catch {
+        // ignore
+      }
+      return merged;
+    });
 
     const nextScenes = [...scenes];
     const assignedLabels: string[] = [];
@@ -847,6 +925,35 @@ export default function App() {
 
     setScenes(nextScenes);
 
+    // Persist user-cut scene assignments in localStorage so reloads or background media hydration never lose them
+    try {
+      const existingRaw = localStorage.getItem('legendcut_user_cut_scenes_v1');
+      const savedMap: Record<string, Partial<StoryScene>> = existingRaw
+        ? JSON.parse(existingRaw)
+        : {};
+      updatedIndices.forEach((idx) => {
+        const updatedSc = nextScenes[idx];
+        if (updatedSc) {
+          savedMap[updatedSc.id] = {
+            sceneType: updatedSc.sceneType,
+            mediaId: updatedSc.mediaId,
+            mediaUrl: updatedSc.mediaUrl,
+            mediaKind: updatedSc.mediaKind,
+            videoTrimStartSec: updatedSc.videoTrimStartSec,
+            videoTrimEndSec: updatedSc.videoTrimEndSec,
+            characterRefPhotoUrl: updatedSc.characterRefPhotoUrl,
+            hasRealPhoto: updatedSc.hasRealPhoto,
+            realPhotoTitle: updatedSc.realPhotoTitle,
+            frameStyle: updatedSc.frameStyle,
+            showBottomSubtitles: updatedSc.showBottomSubtitles,
+          };
+        }
+      });
+      localStorage.setItem('legendcut_user_cut_scenes_v1', JSON.stringify(savedMap));
+    } catch {
+      // ignore
+    }
+
     if (updatedIndices.length > 0) {
       const firstIdx = updatedIndices[0];
       const firstScene = nextScenes[firstIdx];
@@ -862,7 +969,7 @@ export default function App() {
         setIsPlaying(true);
       }
       setStatusBanner(
-        `🎬 Đã cắt riêng video đã chọn và chỉ phát riêng ${assignedLabels.join(', ')} (tự dừng khi hết đoạn cắt, không chạy tràn sang tất cả các cảnh)!`
+        `🎬 Đã cắt & lưu cố định video đã chọn vào ${assignedLabels.join(', ')} (Bạn cũng có thể bấm "⬇ Lưu MP4" để tải về máy hoặc mở Kho Video Đã Cắt để chèn thay thế)!`
       );
     }
   };
@@ -901,9 +1008,37 @@ export default function App() {
     );
   };
 
-  // Automatically hydrate initial preset scenes with real web photos & videos on first load
+  // Automatically hydrate initial preset scenes with real web photos & videos on first load (without overwriting user-cut scenes!)
   useEffect(() => {
     let cancelled = false;
+
+    // Also hydrate saved cuts from server into Media Vault on mount
+    fetch('/api/youtube/saved-cuts')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.savedCuts) && data.savedCuts.length > 0) {
+          const serverVaultCuts: VaultItem[] = data.savedCuts.map(
+            (cut: CutYouTubeResultItem, i: number) => ({
+              id: cut.id,
+              name: `✂️ Đã Cắt #${i + 1} (${cut.originalStartSec}s→${cut.originalEndSec}s): ${cut.title}`,
+              type: 'video',
+              url: cut.videoUrl,
+              thumbnailUrl: cut.thumbnailUrl,
+              width: cut.width || 640,
+              height: cut.height || 360,
+              durationSec: cut.durationSec,
+              sourceTag: 'uploaded',
+              createdAt: cut.sourceLabel || 'Đã cắt & lưu cố định',
+            })
+          );
+          setVaultItems((prev) => [
+            ...serverVaultCuts,
+            ...prev.filter((p) => !serverVaultCuts.some((sv) => sv.id === p.id)),
+          ]);
+        }
+      })
+      .catch(() => {});
+
     const initRealMedia = async () => {
       const charName = getCharacterNameForPreset(settings.activePresetId);
       const { updatedScenes, matchedCount } = await matchAndAssignRealPhotosForScenes(
@@ -911,7 +1046,21 @@ export default function App() {
         charName
       );
       if (!cancelled && matchedCount > 0) {
-        setScenes(updatedScenes);
+        setScenes((prevScenes) =>
+          updatedScenes.map((uScene, idx) => {
+            const currentScene = prevScenes.find((ps) => ps.id === uScene.id) || prevScenes[idx];
+            // Never overwrite a scene where the user has already cut or uploaded a custom video!
+            if (
+              currentScene &&
+              (currentScene.mediaUrl?.includes('/api/youtube/cut-file/') ||
+                currentScene.realPhotoTitle?.includes('✂️ Cắt riêng') ||
+                currentScene.mediaUrl?.startsWith('blob:'))
+            ) {
+              return currentScene;
+            }
+            return uScene;
+          })
+        );
       }
     };
     initRealMedia();
@@ -1716,15 +1865,24 @@ export default function App() {
       > = data?.matchedBySceneId || {};
 
       // Primary verified real portrait of the character so scenes missing unique media still give the user a downloadable reference face photo
-      const allPoolItems: Array<{ dataUrl?: string; mediaKind?: string }> = Array.isArray(
-        data?.allPhotos
-      )
-        ? data.allPhotos
-        : [];
+      const allPoolItems: Array<{ title?: string; dataUrl?: string; mediaKind?: string }> =
+        Array.isArray(data?.allPhotos) ? data.allPhotos : [];
+      const photoPoolOnly = allPoolItems.filter(
+        (item) => item.mediaKind !== 'video' && item.dataUrl
+      );
       const primaryCharacterPhotoUrl =
-        allPoolItems.find((item) => item.mediaKind !== 'video' && item.dataUrl)?.dataUrl ||
-        allPoolItems[0]?.dataUrl ||
-        undefined;
+        photoPoolOnly[0]?.dataUrl || allPoolItems[0]?.dataUrl || undefined;
+
+      // Track which photos were already assigned to 'image' scenes so remaining 'video' scenes get distinct reference photos for Grok/Kling drawing
+      const assignedImageUrls = new Set<string>(
+        Object.values(matchedMap)
+          .filter((m) => m.mediaKind !== 'video' && m.dataUrl)
+          .map((m) => m.dataUrl)
+      );
+      const spareRefPhotos = photoPoolOnly.filter(
+        (p) => p.dataUrl && !assignedImageUrls.has(p.dataUrl)
+      );
+      let spareRefCursor = 0;
 
       const newVaultItems: VaultItem[] = [];
       let matchedCount = 0;
@@ -1749,25 +1907,33 @@ export default function App() {
 
         const matched = matchedMap[sc.id];
         if (!matched || (!matched.dataUrl && !matched.videoUrl)) {
-          // Do NOT assign random or repeated photos! Provide character reference portrait + Kling AI Blueprint card + Standard Kling Prompt to draw & reg video
+          // For any 'video' scene without a real cut video, provide a clean real Reference Photo of the actor + ready-to-copy Grok / Kling AI Prompt so the user can either pick & cut a video or draw it later!
           missingCount++;
+          const pickedRef =
+            spareRefPhotos[spareRefCursor % Math.max(1, spareRefPhotos.length)] ||
+            photoPoolOnly[spareRefCursor % Math.max(1, photoPoolOnly.length)];
+          if (pickedRef) spareRefCursor++;
+          const refDataUrl = pickedRef?.dataUrl || primaryCharacterPhotoUrl || sc.characterRefPhotoUrl;
           return {
             ...sc,
-            hasRealPhoto: false,
-            realPhotoTitle: undefined,
-            characterRefPhotoUrl: primaryCharacterPhotoUrl || sc.characterRefPhotoUrl,
+            hasRealPhoto: Boolean(refDataUrl),
+            realPhotoTitle: pickedRef?.title
+              ? `${pickedRef.title} (Ảnh Gốc Tạo Video Grok / Kling)`
+              : `${topicHint} (Ảnh Gốc Tạo Video Grok / Kling)`,
+            characterRefPhotoUrl: refDataUrl,
             imagePrompt: klingPack.klingImagePrompt,
             videoMotionPrompt: klingPack.klingVideoPrompt,
             klingStandardPrompt: klingPack.combinedBlock,
             mediaUrl:
-              sc.hasRealPhoto && sc.mediaUrl
+              refDataUrl ||
+              (sc.hasRealPhoto && sc.mediaUrl
                 ? sc.mediaUrl
                 : generateVintageArchivalDataUrl(
                     topicHint,
                     sc.title,
                     idx,
                     sc.sceneType === 'video' ? 'video' : 'image'
-                  ),
+                  )),
             mediaKind: 'image' as const,
             frameStyle: 'full-bleed' as FrameStyle,
             showBottomSubtitles: true,
@@ -1783,13 +1949,21 @@ export default function App() {
         }
 
         const scDur = Math.max(5, Math.round(sc.durationSec || 8));
-        const trimStart = isRealVideo ? Number((matched as any).trimStartSec ?? 14) : 0;
-        const trimEnd = isRealVideo ? trimStart + scDur : undefined;
+        const trimStart = isRealVideo ? Number((matched as any).trimStartSec ?? 0) : 0;
+        const trimEnd = isRealVideo
+          ? Number((matched as any).trimEndSec ?? trimStart + scDur)
+          : undefined;
+        const origStart = isRealVideo
+          ? Number((matched as any).originalStartSec ?? trimStart)
+          : 0;
+        const origEnd = isRealVideo
+          ? Number((matched as any).originalEndSec ?? origStart + scDur)
+          : undefined;
 
         const vaultItem: VaultItem = {
           id: `real-media-${Date.now()}-${idx}`,
           name: isRealVideo
-            ? `🎬 Video Thật Cảnh #${String(sc.order).padStart(2, '0')} (✂️ ${trimStart}s→${trimEnd}s): ${matched.title}`
+            ? `🎬 Video Thật Cảnh #${String(sc.order).padStart(2, '0')} (✂️ ${origStart}s→${origEnd}s): ${matched.title}`
             : `📸 Ảnh Thật Cảnh #${String(sc.order).padStart(2, '0')}: ${matched.title}`,
           type: isRealVideo ? 'video' : 'image',
           url: isRealVideo ? matched.videoUrl! : matched.dataUrl,
@@ -1799,7 +1973,7 @@ export default function App() {
           durationSec: scDur,
           sourceTag: 'uploaded',
           createdAt: isRealVideo
-            ? `✂️ Video thật đã cắt ${trimStart}s→${trimEnd}s`
+            ? `✂️ Video thật đã cắt ${origStart}s→${origEnd}s`
             : 'Ảnh thật chuẩn nhân vật',
         };
         newVaultItems.push(vaultItem);
@@ -1813,7 +1987,7 @@ export default function App() {
           videoTrimEndSec: isRealVideo ? trimEnd : sc.videoTrimEndSec,
           hasRealPhoto: true,
           realPhotoTitle: isRealVideo
-            ? `${matched.title} (✂️ Cắt ${trimStart}s→${trimEnd}s)`
+            ? `✂️ Cắt riêng (${origStart}s→${origEnd}s) · ${matched.title}`
             : matched.title,
           characterRefPhotoUrl: matched.dataUrl || primaryCharacterPhotoUrl,
           imagePrompt: klingPack.klingImagePrompt,

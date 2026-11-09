@@ -14,6 +14,8 @@ import {
   Youtube,
   CheckSquare,
   Square,
+  Download,
+  Trash2,
 } from 'lucide-react';
 import { ProjectSettings, StoryScene, VaultItem } from '../types';
 import { captureRealVideoFrameThumbnail } from '../utils/realActorVideoTrimmer';
@@ -151,6 +153,22 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [videoOptions, setVideoOptions] = useState<SceneVideoOption[]>([]);
   const [photoOptions, setPhotoOptions] = useState<ScenePhotoOption[]>([]);
   const [customTrimStarts, setCustomTrimStarts] = useState<Record<string, number>>({});
+
+  // Persistent Saved Cuts Library (allows downloading MP4 to computer or replacing into any scene)
+  const [savedCuts, setSavedCuts] = useState<CutYouTubeResultItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('legendcut_saved_cuts_list_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [savedCutTargetScenes, setSavedCutTargetScenes] = useState<Record<string, string>>({});
+  const [justCutBanner, setJustCutBanner] = useState<string | null>(null);
 
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
   const sceneDur = Math.max(5, Math.round(scene?.durationSec || 9));
@@ -323,6 +341,25 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     }
   };
 
+  const loadSavedCutsFromServer = async () => {
+    try {
+      const res = await fetch('/api/youtube/saved-cuts');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.savedCuts) && data.savedCuts.length > 0) {
+          setSavedCuts(data.savedCuts);
+          try {
+            localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(data.savedCuts));
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       // Aggregate all sources (YouTube Shorts + TikTok + Movie Clips across all eras) by default instead of restricting to a single scene timestamp
@@ -334,6 +371,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setQueuedSegments([]);
       setPreviewingYtId(null);
       setPreviewRemainingSec(0);
+      setJustCutBanner(null);
+      loadSavedCutsFromServer();
       executeSearch(defaultQuery, 0);
     }
   }, [isOpen, scene?.id, initialTab]);
@@ -489,16 +528,56 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data?.cuts) && data.cuts.length > 0) {
-          onInsertCutYouTubeClips(
-            data.cuts,
-            segmentsToCut.length === 1 ? segmentsToCut[0].targetSceneId : null
+          const targetIdForSingle =
+            segmentsToCut.length === 1 ? segmentsToCut[0].targetSceneId : null;
+          onInsertCutYouTubeClips(data.cuts, targetIdForSingle);
+
+          // Update persistent Saved Cuts list so user sees the cut video immediately and can download or re-insert
+          const nextSaved: CutYouTubeResultItem[] = Array.isArray(data?.savedCuts) && data.savedCuts.length > 0
+            ? data.savedCuts
+            : [
+                ...data.cuts,
+                ...savedCuts.filter((sc) => !data.cuts.some((nc: CutYouTubeResultItem) => nc.id === sc.id)),
+              ];
+          setSavedCuts(nextSaved);
+          try {
+            localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(nextSaved));
+          } catch {
+            // ignore
+          }
+
+          setQueuedSegments([]);
+          const cutSummary = data.cuts
+            .map(
+              (c: CutYouTubeResultItem) =>
+                `${getSceneBadgeById(c.targetSceneId || targetIdForSingle || scene?.id || '')} (${c.originalStartSec}s→${c.originalEndSec}s)`
+            )
+            .join(', ');
+          setJustCutBanner(
+            `✅ ĐÃ CẮT & LƯU THÀNH CÔNG (${cutSummary})! Video đã được gắn thẳng vào Cảnh trên Timeline VÀ lưu cố định tại mục "💾 KHO VIDEO ĐÃ CẮT & LƯU" ngay bên dưới. Bạn có thể bấm "⬇ Lưu File MP4 Về Máy" để tải về máy tính hoặc chọn Cảnh bất kỳ để chèn thay thế!`
           );
-          onClose();
         }
       }
     } finally {
       setIsCuttingYouTube(false);
       setCuttingCardId(null);
+    }
+  };
+
+  const handleDeleteSavedCut = async (cutId: string) => {
+    setSavedCuts((prev) => {
+      const next = prev.filter((c) => c.id !== cutId);
+      try {
+        localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    try {
+      await fetch(`/api/youtube/saved-cuts/${encodeURIComponent(cutId)}`, { method: 'DELETE' });
+    } catch {
+      // ignore
     }
   };
 
@@ -575,6 +654,28 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                     </span>
                   </>
                 )}
+              </button>
+            )}
+
+            {scene && photoOptions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const chosenPhoto =
+                    photoOptions.find(
+                      (p) =>
+                        p.dataUrl !== scene.mediaUrl && p.dataUrl !== scene.characterRefPhotoUrl
+                    ) || photoOptions[0];
+                  if (chosenPhoto) {
+                    onSelectPhotoForScene(scene.id, chosenPhoto, 'keep-video-grok-ref');
+                    onClose();
+                  }
+                }}
+                title="Nếu đoạn này chưa có video thật ưng ý, bấm để giữ Ảnh Thật Gốc + Bộ Prompt Grok/Kling AI để bạn vẽ video sau"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-400/50 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>🖼️ Để Ảnh Gốc + Prompt Vẽ Sau</span>
               </button>
             )}
 
@@ -768,7 +869,182 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         </div>
 
         {/* Results Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Just-Cut Success Banner */}
+          {justCutBanner && (
+            <div className="p-3.5 rounded-xl bg-emerald-950/90 border-2 border-emerald-400 text-emerald-100 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-start gap-2.5 flex-1 min-w-[260px]">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="text-xs leading-relaxed font-medium">{justCutBanner}</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow transition-colors"
+                >
+                  ✅ Xem Ngay Trên Timeline &amp; Đóng Cửa Sổ
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* PERSISTENT SAVED CUTS LIBRARY (KHO VIDEO ĐÃ CẮT & LƯU) */}
+          {savedCuts.length > 0 && (
+            <div className="p-4 rounded-xl bg-[#101929] border-2 border-emerald-500/60 space-y-3 shadow-lg">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500 text-slate-950 flex items-center gap-1">
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>💾 KHO VIDEO ĐÃ CẮT &amp; LƯU ({savedCuts.length} đoạn MP4)</span>
+                  </span>
+                  <span className="text-xs text-emerald-200/90">
+                    Các đoạn bạn đã cắt được lưu cố định tại đây — Bấm <strong className="text-amber-300">"⬇ Lưu File MP4 Về Máy"</strong> hoặc <strong className="text-sky-300">"📌 Chèn Thay Thế Vào Cảnh"</strong> bất kỳ lúc nào:
+                  </span>
+                </div>
+                {scene && onUploadLocalFileForScene && (
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer shadow transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>⬆ Up File MP4 Đã Lưu Lên Thay Thế Cảnh {sceneNumLabel}</span>
+                    <input
+                      type="file"
+                      accept="video/*,image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          onUploadLocalFileForScene(scene.id, f);
+                          e.target.value = '';
+                          onClose();
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-1">
+                {savedCuts.map((cut, cIdx) => {
+                  const chosenTargetId =
+                    savedCutTargetScenes[cut.id] ||
+                    scene?.id ||
+                    cut.targetSceneId ||
+                    activeSceneId ||
+                    selectableScenes[0]?.id ||
+                    '';
+                  const cleanMp4Url = (cut.videoUrl || '').split('#')[0];
+                  const safeDownloadName = `Cut_${cIdx + 1}_${cut.originalStartSec}s-${cut.originalEndSec}s_${(
+                    cut.title || 'video'
+                  )
+                    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                    .slice(0, 32)}.mp4`;
+                  const downloadHref = cleanMp4Url.includes('/api/youtube/cut-file/')
+                    ? `${cleanMp4Url}?download=1&name=${encodeURIComponent(safeDownloadName)}`
+                    : cleanMp4Url;
+
+                  return (
+                    <div
+                      key={cut.id}
+                      className="rounded-lg bg-[#0B0F17] border border-emerald-500/50 p-2.5 flex flex-col justify-between gap-2"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className="relative w-28 h-16 rounded overflow-hidden bg-black border border-slate-700 shrink-0">
+                          <video
+                            src={cleanMp4Url}
+                            poster={cut.thumbnailUrl}
+                            controls
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              ✂️ {cut.originalStartSec}s → {cut.originalEndSec}s ({cut.durationSec}s)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSavedCut(cut.id)}
+                              title="Xóa đoạn cắt này khỏi kho lưu"
+                              className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p
+                            className="text-[11px] font-semibold text-slate-100 line-clamp-2 mt-1"
+                            title={cut.title}
+                          >
+                            {cut.title}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Target Scene Selector + Replace Button + Download MP4 Button */}
+                      <div className="space-y-1.5 pt-1.5 border-t border-slate-800">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-sky-300 font-semibold shrink-0">
+                            Chèn vào:
+                          </span>
+                          <select
+                            value={chosenTargetId}
+                            onChange={(e) =>
+                              setSavedCutTargetScenes((prev) => ({
+                                ...prev,
+                                [cut.id]: e.target.value,
+                              }))
+                            }
+                            className="flex-1 bg-[#111827] border border-slate-700 rounded px-1.5 py-1 text-[10px] font-bold text-amber-300 focus:outline-none focus:border-amber-400 truncate"
+                          >
+                            {selectableScenes.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                Cảnh #{String(s.order).padStart(2, '0')} (
+                                {s.sceneType === 'video' ? 'VIDEO' : 'ẢNH'} ·{' '}
+                                {Math.round(s.durationSec || 8)}s) — {s.title.slice(0, 24)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <a
+                            href={downloadHref}
+                            download={safeDownloadName}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 transition-colors"
+                            title="Tải file video .MP4 đã cắt này về máy tính của bạn để lưu trữ hoặc upload lại bất cứ lúc nào"
+                          >
+                            <Download className="w-3 h-3 shrink-0" />
+                            <span>⬇ Lưu File MP4 Về Máy</span>
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onInsertCutYouTubeClips) {
+                                onInsertCutYouTubeClips(
+                                  [{ ...cut, targetSceneId: chosenTargetId }],
+                                  chosenTargetId
+                                );
+                                onClose();
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[10px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow transition-colors"
+                            title="Gắn và thay thế đoạn video đã cắt này ngay vào Cảnh đang chọn"
+                          >
+                            <CheckCircle2 className="w-3 h-3 shrink-0" />
+                            <span>📌 Thay Vào {getSceneBadgeById(chosenTargetId).split(' ')[0]} {getSceneBadgeById(chosenTargetId).split(' ')[1]}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="py-16 flex flex-col items-center justify-center text-slate-300 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-red-400" />
