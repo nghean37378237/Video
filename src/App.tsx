@@ -3230,9 +3230,9 @@ export default function App() {
         initialTab="youtube"
         totalScenes={scenes.length}
         characterName={
+          settings.projectTitle.split('—')[0].split('-')[0].trim() ||
           loadSavedAudioPreferences().storyTopic ||
           getCharacterNameForPreset(settings.activePresetId) ||
-          settings.projectTitle.split('—')[0].trim() ||
           'Will Sampson'
         }
         settings={settings}

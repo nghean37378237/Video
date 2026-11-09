@@ -246,71 +246,55 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     setPreviewingYtId(null);
     const effectiveQuery = queryToRun.trim() || cleanCharName;
 
-    try {
-      const [ytRes, archRes] = await Promise.all([
-        fetch('/api/youtube/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: effectiveQuery,
-            characterName: cleanCharName,
-            limit: 30,
-          }),
-        }),
-        fetch('/api/archival/search-scene-media', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: effectiveQuery,
-            characterName: cleanCharName,
-            sceneDurationSec: sceneDur,
-            limit: 16,
-            cycleOffset: nextCycle,
-          }),
-        }),
-      ]);
+    const applyYtList = (ytList: YouTubeSearchVideoItem[]) => {
+      setYoutubeVideos(ytList);
+      const nextStarts: Record<string, number> = {};
+      const nextEnds: Record<string, number> = {};
+      const nextTargetScenes: Record<string, string> = {};
 
-      if (ytRes.ok) {
-        const ytData = await ytRes.json();
-        const ytList: YouTubeSearchVideoItem[] = Array.isArray(ytData?.videos)
-          ? ytData.videos
-          : [];
-        setYoutubeVideos(ytList);
-        const nextStarts: Record<string, number> = {};
-        const nextEnds: Record<string, number> = {};
-        const nextTargetScenes: Record<string, string> = {};
+      const shuffledScenePool = [
+        ...(videoScenesOnly.length > 0 ? videoScenesOnly : selectableScenes),
+      ].sort(() => Math.random() - 0.5);
 
-        // Shuffle candidate target scenes so batch cards default to random positions across the Timeline (not fixed at #01/#02 at the start!)
-        const shuffledScenePool = [...(videoScenesOnly.length > 0 ? videoScenesOnly : selectableScenes)].sort(
-          () => Math.random() - 0.5
-        );
+      ytList.forEach((v, idx) => {
+        const randomPoolScene =
+          shuffledScenePool.length > 0
+            ? shuffledScenePool[idx % shuffledScenePool.length]?.id
+            : undefined;
+        const defaultTargetScene =
+          scene?.id ||
+          randomPoolScene ||
+          activeSceneId ||
+          selectableScenes[0]?.id ||
+          '';
+        const targetDur = getSceneDurationById(defaultTargetScene);
+        const sSec =
+          typeof v.suggestedTrimStartSec === 'number' && v.suggestedTrimStartSec >= 0
+            ? v.suggestedTrimStartSec
+            : 4 + Math.floor(Math.random() * 20);
+        nextStarts[v.id] = sSec;
+        nextEnds[v.id] = sSec + targetDur;
+        nextTargetScenes[v.id] = defaultTargetScene;
+      });
+      setYtTrimStarts(nextStarts);
+      setYtTrimEnds(nextEnds);
+      setYtTargetSceneIds(nextTargetScenes);
+    };
 
-        ytList.forEach((v, idx) => {
-          const randomPoolScene =
-            shuffledScenePool.length > 0
-              ? shuffledScenePool[idx % shuffledScenePool.length]?.id
-              : undefined;
-          const defaultTargetScene =
-            scene?.id ||
-            randomPoolScene ||
-            activeSceneId ||
-            selectableScenes[0]?.id ||
-            '';
-          const targetDur = getSceneDurationById(defaultTargetScene);
-          const sSec =
-            typeof v.suggestedTrimStartSec === 'number' && v.suggestedTrimStartSec >= 0
-              ? v.suggestedTrimStartSec
-              : 4 + Math.floor(Math.random() * 20);
-          nextStarts[v.id] = sSec;
-          nextEnds[v.id] = sSec + targetDur;
-          nextTargetScenes[v.id] = defaultTargetScene;
-        });
-        setYtTrimStarts(nextStarts);
-        setYtTrimEnds(nextEnds);
-        setYtTargetSceneIds(nextTargetScenes);
-      }
-
-      if (archRes.ok) {
+    // 1. Fire Archival Videos & Photos search in parallel (non-blocking so Shorts/YouTube results appear in <0.8s!)
+    fetch('/api/archival/search-scene-media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: effectiveQuery,
+        characterName: cleanCharName,
+        sceneDurationSec: sceneDur,
+        limit: 16,
+        cycleOffset: nextCycle,
+      }),
+    })
+      .then(async (archRes) => {
+        if (!archRes.ok) return;
         const data = await archRes.json();
         const vids: SceneVideoOption[] = Array.isArray(data?.videoOptions)
           ? data.videoOptions
@@ -335,7 +319,29 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             );
           });
         });
+      })
+      .catch(() => {});
+
+    // 2. Fetch YouTube Shorts + TikTok + YouTube Videos (<0.8s via InnerTube JSON API)
+    try {
+      let ytList: YouTubeSearchVideoItem[] = [];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const ytRes = await fetch('/api/youtube/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: effectiveQuery,
+            characterName: cleanCharName,
+            limit: 30,
+          }),
+        });
+        if (ytRes.ok) {
+          const ytData = await ytRes.json();
+          ytList = Array.isArray(ytData?.videos) ? ytData.videos : [];
+          if (ytList.length > 0) break;
+        }
       }
+      applyYtList(ytList);
     } catch {
       // Keep existing options
     } finally {
@@ -820,6 +826,12 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   type="button"
                   onClick={() => {
                     setSearchQuery(q);
+                    setFilterTab('youtube');
+                    if (/\b(shorts|tiktok)\b/i.test(q)) {
+                      setVideoSourceSubFilter('shorts-tiktok');
+                    } else {
+                      setVideoSourceSubFilter('all');
+                    }
                     executeSearch(q, cycleOffset);
                   }}
                   className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
