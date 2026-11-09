@@ -20,6 +20,7 @@ import {
   Volume2,
   History,
   CheckCircle2,
+  Search,
 } from 'lucide-react';
 import { PresetId, ProjectSettings, StoryScene, VaultItem } from '../types';
 import {
@@ -81,6 +82,7 @@ interface MediaVaultPanelProps {
   onOpenPromptStudio: () => void;
   settings: ProjectSettings;
   onUpdateSettings: (patch: Partial<ProjectSettings>) => void;
+  onOpenSceneMediaSearch?: (sceneId: string) => void;
 }
 
 export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
@@ -104,6 +106,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   onOpenPromptStudio,
   settings,
   onUpdateSettings,
+  onOpenSceneMediaSearch,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'video' | 'image'>('all');
@@ -869,6 +872,18 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 Tự Tìm Ảnh Thật Vào Kho
               </button>
             </div>
+
+            {/* 1-Click Open Real Video Search Modal or Auto-Trim 3 Real Videos */}
+            {onOpenSceneMediaSearch && (
+              <button
+                type="button"
+                onClick={() => onOpenSceneMediaSearch(activeScene?.id || '__YOUTUBE_BATCH__')}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/60 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-300" />
+                <span>🔍 Mở Kho Tìm &amp; Chọn Cắt Video Thực Tế / Shorts / TikTok</span>
+              </button>
+            )}
 
             {/* 1-Click Fetch, Cut & Insert 3 Real Actor Videos into Timeline */}
             {onFetchAndInsertTrimmedActorVideos && (

@@ -19,6 +19,7 @@ import {
   Upload,
   ExternalLink,
   History,
+  Search,
 } from 'lucide-react';
 import {
   ColorFilter,
@@ -90,6 +91,7 @@ interface SceneInspectorProps {
     targetCurrentSceneOnly?: boolean
   ) => Promise<void>;
   isTrimmingRealVideos?: boolean;
+  onOpenSceneMediaSearch?: (sceneId: string) => void;
 }
 
 export const SceneInspector: React.FC<SceneInspectorProps> = ({
@@ -111,6 +113,7 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
   onTriggerExport,
   onFetchAndInsertTrimmedActorVideos,
   isTrimmingRealVideos = false,
+  onOpenSceneMediaSearch,
 }) => {
   const [activeTab, setActiveTab] = useState<'scene' | 'summary' | 'thumbnail' | 'style'>('scene');
   const [isGeneratingSceneTTS, setIsGeneratingSceneTTS] = useState(false);
@@ -549,7 +552,18 @@ export const SceneInspector: React.FC<SceneInspectorProps> = ({
                 </label>
               )}
 
-              {/* Quick Actions for Full-Frame Keyframe Image */}
+              {/* Quick Actions for Full-Frame Keyframe Image & Real Video Search */}
+              {onOpenSceneMediaSearch && (
+                <button
+                  type="button"
+                  onClick={() => onOpenSceneMediaSearch(activeScene.id)}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-md shadow transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5 shrink-0" />
+                  <span>🔍 Tìm &amp; Cắt Video Thực Tế / Ảnh Thật Cho Cảnh #{String(activeScene.order).padStart(2, '0')}</span>
+                </button>
+              )}
+
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={handleFetchRealPhotoForScene}

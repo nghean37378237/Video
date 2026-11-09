@@ -169,6 +169,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   });
   const [savedCutTargetScenes, setSavedCutTargetScenes] = useState<Record<string, string>>({});
   const [justCutBanner, setJustCutBanner] = useState<string | null>(null);
+  const [showSavedCutsDrawer, setShowSavedCutsDrawer] = useState<boolean>(false);
+  const [archivalTargetScenes, setArchivalTargetScenes] = useState<Record<string, string>>({});
 
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
   const sceneDur = Math.max(5, Math.round(scene?.durationSec || 9));
@@ -372,6 +374,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setPreviewingYtId(null);
       setPreviewRemainingSec(0);
       setJustCutBanner(null);
+      setShowSavedCutsDrawer(false);
       loadSavedCutsFromServer();
       executeSearch(defaultQuery, 0);
     }
@@ -556,6 +559,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           setJustCutBanner(
             `✅ ĐÃ CẮT & LƯU THÀNH CÔNG (${cutSummary})! Video đã được gắn thẳng vào Cảnh trên Timeline VÀ lưu cố định tại mục "💾 KHO VIDEO ĐÃ CẮT & LƯU" ngay bên dưới. Bạn có thể bấm "⬇ Lưu File MP4 Về Máy" để tải về máy tính hoặc chọn Cảnh bất kỳ để chèn thay thế!`
           );
+          setShowSavedCutsDrawer(true);
         }
       }
     } finally {
@@ -829,7 +833,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
+            <div className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterTab('video')}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 ${
+                  filterTab === 'video'
+                    ? 'bg-sky-500 text-slate-950'
+                    : 'text-sky-300 hover:text-sky-200 bg-sky-500/10'
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>🎬 Video Thực Tế ({videoOptions.length})</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setFilterTab('youtube')}
@@ -864,6 +880,20 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               >
                 Tất Cả
               </button>
+              {savedCuts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowSavedCutsDrawer((prev) => !prev)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 border transition-colors ${
+                    showSavedCutsDrawer
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
+                  }`}
+                >
+                  <Scissors className="w-3 h-3" />
+                  <span>💾 Kho Đã Cắt ({savedCuts.length})</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -891,15 +921,22 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
           {/* PERSISTENT SAVED CUTS LIBRARY (KHO VIDEO ĐÃ CẮT & LƯU) */}
           {savedCuts.length > 0 && (
-            <div className="p-4 rounded-xl bg-[#101929] border-2 border-emerald-500/60 space-y-3 shadow-lg">
+            <div className="p-3.5 rounded-xl bg-[#101929] border border-emerald-500/50 space-y-3 shadow">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500 text-slate-950 flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSavedCutsDrawer((prev) => !prev)}
+                    className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1 transition-colors"
+                  >
                     <Scissors className="w-3.5 h-3.5" />
-                    <span>💾 KHO VIDEO ĐÃ CẮT &amp; LƯU ({savedCuts.length} đoạn MP4)</span>
-                  </span>
+                    <span>
+                      💾 KHO VIDEO ĐÃ CẮT &amp; LƯU ({savedCuts.length} đoạn MP4) —{' '}
+                      {showSavedCutsDrawer ? 'Thu gọn ▲' : 'Bấm để Mở Xem / Tải MP4 Về Máy ▼'}
+                    </span>
+                  </button>
                   <span className="text-xs text-emerald-200/90">
-                    Các đoạn bạn đã cắt được lưu cố định tại đây — Bấm <strong className="text-amber-300">"⬇ Lưu File MP4 Về Máy"</strong> hoặc <strong className="text-sky-300">"📌 Chèn Thay Thế Vào Cảnh"</strong> bất kỳ lúc nào:
+                    Bấm <strong className="text-amber-300">"⬇ Lưu File MP4 Về Máy"</strong> hoặc <strong className="text-sky-300">"📌 Thay Vào Đoạn"</strong> bất kỳ lúc nào.
                   </span>
                 </div>
                 {scene && onUploadLocalFileForScene && (
@@ -923,11 +960,12 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-1">
-                {savedCuts.map((cut, cIdx) => {
-                  const chosenTargetId =
-                    savedCutTargetScenes[cut.id] ||
-                    scene?.id ||
+              {showSavedCutsDrawer && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto pr-1">
+                  {savedCuts.map((cut, cIdx) => {
+                    const chosenTargetId =
+                      savedCutTargetScenes[cut.id] ||
+                      scene?.id ||
                     cut.targetSceneId ||
                     activeSceneId ||
                     selectableScenes[0]?.id ||
@@ -1042,6 +1080,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   );
                 })}
               </div>
+              )}
             </div>
           )}
 
@@ -1049,11 +1088,160 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             <div className="py-16 flex flex-col items-center justify-center text-slate-300 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-red-400" />
               <p className="text-xs font-semibold">
-                Đang tổng hợp toàn bộ YouTube Shorts, TikTok &amp; Cảnh Phim của "{searchQuery}"...
+                Đang tìm Video Thực Tế, YouTube Shorts, TikTok &amp; Cảnh Phim của "{searchQuery}"...
               </p>
             </div>
           ) : (
             <>
+              {/* SECTION 0: REAL ARCHIVAL VIDEOS (KHO VIDEO THỰC TẾ MP4 TRỰC TIẾP) */}
+              {(filterTab === 'video' || filterTab === 'all' || filterTab === 'youtube') &&
+                videoOptions.length > 0 && (
+                  <div className="space-y-3 bg-[#0E1729] p-4 rounded-xl border border-sky-500/50 shadow">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                        <Film className="w-4 h-4 text-sky-400" />
+                        <span>
+                          🎬 KHO VIDEO THỰC TẾ TRỰC TIẾP — MP4 CẮT SẴN ({videoOptions.length} đoạn video thật của {cleanCharName}):
+                        </span>
+                      </h3>
+                      <span className="text-[11px] text-slate-300">
+                        Xem thử trực tiếp trên khung hình · Chọn giây cắt &amp; bấm 1-Click để chèn vào Cảnh
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {videoOptions.map((vid, idx) => {
+                        const chosenSceneId =
+                          archivalTargetScenes[vid.id] ||
+                          scene?.id ||
+                          activeSceneId ||
+                          selectableScenes[0]?.id ||
+                          '';
+                        const targetDur = getSceneDurationById(chosenSceneId);
+                        const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec ?? 8;
+                        const endSec = startSec + targetDur;
+                        const cleanVidUrl = (vid.videoUrl || '').split('#')[0];
+
+                        return (
+                          <div
+                            key={vid.id}
+                            className="rounded-lg bg-[#111827] border border-sky-500/50 hover:border-sky-400 p-3 flex flex-col justify-between gap-2.5 transition-all"
+                          >
+                            <div className="space-y-2">
+                              <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
+                                <video
+                                  src={`${cleanVidUrl}#t=${startSec},${endSec}`}
+                                  poster={vid.dataUrl}
+                                  controls
+                                  preload="metadata"
+                                  className="w-full h-full object-cover"
+                                />
+                                <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500 text-slate-950 shadow">
+                                  🎬 Video Thật #{idx + 1}
+                                </span>
+                                {vid.year && (
+                                  <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300">
+                                    {vid.year}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p
+                                className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug"
+                                title={vid.title}
+                              >
+                                {vid.title}
+                              </p>
+
+                              {/* Target Scene Selector */}
+                              {selectableScenes.length > 0 && (
+                                <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                  <span className="text-sky-300 font-semibold shrink-0">
+                                    Chèn vào:
+                                  </span>
+                                  <select
+                                    value={chosenSceneId}
+                                    onChange={(e) =>
+                                      setArchivalTargetScenes((prev) => ({
+                                        ...prev,
+                                        [vid.id]: e.target.value,
+                                      }))
+                                    }
+                                    className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-bold text-amber-300 truncate focus:outline-none focus:border-amber-400"
+                                  >
+                                    {selectableScenes.map((sc) => (
+                                      <option key={sc.id} value={sc.id}>
+                                        Cảnh #{String(sc.order).padStart(2, '0')} (
+                                        {Math.round(sc.durationSec || 8)}s) — {sc.title}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+
+                              {/* Start Second Trimmer */}
+                              <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                <span className="text-slate-300 flex items-center gap-1 shrink-0">
+                                  <Scissors className="w-3 h-3 text-sky-400" />
+                                  <span>Cắt từ giây:</span>
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={600}
+                                    step={2}
+                                    value={startSec}
+                                    onChange={(e) => {
+                                      const val = Math.max(0, parseInt(e.target.value || '0', 10));
+                                      setCustomTrimStarts((prev) => ({
+                                        ...prev,
+                                        [vid.id]: val,
+                                      }));
+                                    }}
+                                    className="w-16 px-1.5 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
+                                  />
+                                  <span className="text-slate-400 font-mono">
+                                    s → {endSec}s ({targetDur}s)
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <a
+                                href={cleanVidUrl}
+                                download={`Video_Thuc_Te_${idx + 1}.mp4`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2.5 py-2 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0"
+                                title="Tải file MP4 của video thực tế này về máy"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>⬇ Lưu MP4</span>
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!chosenSceneId) return;
+                                  onSelectVideoForScene(chosenSceneId, vid, startSec, endSec);
+                                  onClose();
+                                }}
+                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 shadow transition-colors"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">
+                                  🎬 Chèn Vào {getSceneBadgeById(chosenSceneId).split(' (')[0]}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
               {/* SECTION A: Aggregated YouTube Shorts + TikTok + YouTube Picker */}
               {(filterTab === 'youtube' || filterTab === 'all') && (
                 <div className="space-y-3">
@@ -1519,42 +1707,6 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </div>
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION C: Direct Archival Video Cuts */}
-              {(filterTab === 'all' || filterTab === 'video') && scene && videoOptions.length > 0 && (
-                <div className="space-y-3 pt-2 border-t border-slate-800">
-                  <h3 className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                    <Film className="w-4 h-4 text-sky-400" />
-                    <span>Kho Cuộn Phim Archive Cắt Sẵn ({videoOptions.length} đoạn)</span>
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {videoOptions.map((vid, idx) => {
-                      const startSec = customTrimStarts[vid.id] ?? vid.trimStartSec;
-                      const endSec = startSec + sceneDur;
-                      return (
-                        <div
-                          key={vid.id}
-                          className="rounded-lg bg-[#111827] border border-sky-500/40 p-3 flex flex-col justify-between gap-2"
-                        >
-                          <p className="text-xs font-bold text-slate-100 truncate">
-                            #{idx + 1}. {vid.title} ({startSec}s→{endSec}s)
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSelectVideoForScene(scene.id, vid, startSec, endSec);
-                              onClose();
-                            }}
-                            className="w-full px-3 py-1.5 rounded text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950"
-                          >
-                            Chèn Đoạn Phim Này Vào Cảnh {sceneNumLabel}
-                          </button>
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               )}

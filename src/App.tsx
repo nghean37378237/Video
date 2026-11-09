@@ -3144,6 +3144,7 @@ export default function App() {
             onOpenPromptStudio={() => setIsPromptStudioOpen(true)}
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            onOpenSceneMediaSearch={(sceneId) => setSearchingMediaSceneId(sceneId)}
           />
         </div>
 
@@ -3187,6 +3188,7 @@ export default function App() {
             onTriggerExport={() => setTriggerExportCounter((c) => c + 1)}
             onFetchAndInsertTrimmedActorVideos={handleFetchAndInsertTrimmedActorVideos}
             isTrimmingRealVideos={isTrimmingRealVideos}
+            onOpenSceneMediaSearch={(sceneId) => setSearchingMediaSceneId(sceneId)}
           />
         </div>
       </div>

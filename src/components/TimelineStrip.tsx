@@ -107,8 +107,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
   return (
     <div className="h-48 bg-[#0B0F17] border-t border-slate-800/90 flex flex-col select-none">
       {/* Timeline Header Bar */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800/80 bg-[#111827]/70 gap-2">
-        <div className="flex items-center gap-2 text-xs text-slate-400 min-w-0 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between px-4 py-1.5 border-b border-slate-800/80 bg-[#111827]/70 gap-1.5">
+        <div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
           <span className="font-semibold text-slate-200 shrink-0">
             Dòng Thời Gian Phân Cảnh ({scenes.length} đoạn · {totalSec}s)
           </span>
@@ -120,8 +120,9 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
           >
             <Film className="w-3 h-3 shrink-0" />
             <span>
-              Đoạn VIDEO ({videoSceneNumbers.length} cảnh · {videoSec}s/{totalSec}s = {videoSharePercent}%):{' '}
-              {videoSceneNumbers.length > 0 ? videoSceneNumbers.join(', ') : '0'}
+              Đoạn VIDEO ({videoSceneNumbers.length} cảnh · {videoSec}s):{' '}
+              {videoSceneNumbers.length > 0 ? videoSceneNumbers.slice(0, 6).join(', ') : '0'}
+              {videoSceneNumbers.length > 6 ? '...' : ''}
             </span>
           </span>
 
@@ -130,31 +131,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
             className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0"
           >
             <ImageIcon className="w-3 h-3 shrink-0" />
-            <span>
-              Đoạn ẢNH ({imageSceneNumbers.length}):{' '}
-              {imageSceneNumbers.length > 0 ? imageSceneNumbers.join(', ') : '0'}
-            </span>
+            <span>Đoạn ẢNH ({imageSceneNumbers.length})</span>
           </span>
-
-          {needsKlingDrawScenes.length > 0 ? (
-            <button
-              type="button"
-              onClick={onOpenPromptStudio}
-              title={`Các đoạn chưa có ảnh thật trên mạng (không lấy ảnh lung tung): ${missingRealPhotoNumbers.join(', ')}. Bấm để mở Bảng Prompt Chuẩn Kling AI theo thứ tự!`}
-              className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 flex items-center gap-1 shrink-0 transition-colors"
-            >
-              <span>
-                🎨 Chưa có ảnh thật ({needsKlingDrawScenes.length}): {missingRealPhotoNumbers.join(', ')} — Lấy Prompt Kling
-              </span>
-            </button>
-          ) : (
-            <span className="hidden 2xl:inline-flex px-2 py-0.5 rounded text-[11px] font-semibold border shrink-0 bg-emerald-500/15 text-emerald-300 border-emerald-500/40">
-              📸 Đã có ảnh thật/video: {verifiedRealPhotoScenes.length}/{visualScenes.length} cảnh
-            </span>
-          )}
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono-tabular shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400 font-mono-tabular">
           {swapSourceSceneId && swapSourceIdx >= 0 && (
             <button
               type="button"
@@ -173,11 +154,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
             <button
               type="button"
               onClick={onOpenYouTubePicker}
-              title="Mở kho tìm kiếm YouTube, chọn riêng từng đoạn thời gian (Start → End) và gán vào đúng Cảnh bạn muốn"
+              title="Mở kho tìm kiếm Video Thực Tế, YouTube, Shorts, TikTok — chọn riêng từng đoạn thời gian (Start → End) và gán vào đúng Cảnh bạn muốn"
               className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-red-600/25 hover:bg-red-600/40 text-red-200 border border-red-500/60 font-sans font-bold transition-colors whitespace-nowrap shrink-0"
             >
-              <Film className="w-3.5 h-3.5 text-red-400" />
-              <span>🔴 Chọn &amp; Cắt Riêng Từng Đoạn YouTube</span>
+              <Search className="w-3.5 h-3.5 text-amber-300" />
+              <span>🔍 Tìm &amp; Cắt Video Thực Tế / YouTube</span>
             </button>
           )}
 
@@ -188,24 +169,24 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                 disabled={isTrimmingRealVideos}
                 onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 1, true)}
                 title="Chỉ cắt & thay video thật cho đúng 1 Đoạn (Cảnh) bạn đang chọn trên Timeline (không đụng tới các đoạn khác)"
-                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-50 text-violet-200 border border-violet-400/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-50 text-violet-200 border border-violet-400/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
               >
                 <Film className="w-3.5 h-3.5 text-violet-300" />
-                <span>✂️ Tự Cắt Cho Đoạn Đang Chọn</span>
+                <span>✂️ Tự Cắt 1 Video Cho Cảnh Đang Chọn</span>
               </button>
 
               <button
                 type="button"
                 disabled={isTrimmingRealVideos}
                 onClick={() => onFetchAndInsertTrimmedActorVideos(undefined, 3, false)}
-                title="Tự động tìm 3 đoạn video thực tế khác nhau của diễn viên, cắt ngẫu nhiên từng đoạn và chèn vào 3 vị trí ngẫu nhiên bất kỳ trên Timeline (không cố định ở đầu video)"
-                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+                title="Tự động tìm 3 đoạn video thực tế khác nhau của diễn viên, cắt ngẫu nhiên từng đoạn và chèn vào 3 vị trí ngẫu nhiên bất kỳ trên Timeline"
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
               >
                 <Film className="w-3.5 h-3.5 text-sky-400" />
                 <span>
                   {isTrimmingRealVideos
-                    ? '⏳ Đang cắt & chèn ngẫu nhiên...'
-                    : '🎲 Tự Lấy & Chèn Ngẫu Nhiên 3 Video Thật'}
+                    ? '⏳ Đang cắt & chèn...'
+                    : '🎲 Tự Lấy & Chèn 3 Video Thật'}
                 </span>
               </button>
             </>
@@ -216,20 +197,20 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               type="button"
               onClick={onBatchSwapVideoImageMedia}
               title="Đảo chéo vị trí Video và Ảnh giữa các phân cảnh nhưng GIỮ NGUYÊN 100% thứ tự nội dung kịch bản, phụ đề và giọng đọc từ đầu đến cuối"
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-sans font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
-              <span>Đảo Video ⇄ Ảnh (Giữ Nguyên Nội Dung)</span>
+              <span>Đảo Video ⇄ Ảnh</span>
             </button>
           )}
 
           {onSmartBatchUploadFiles && (
             <label
               title="Chọn nhiều file Ảnh/Video cùng lúc (tên bất kỳ hoặc đặt tên 1.mp4, 2.png, canh 1.mp4)"
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-sans font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-sans font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
             >
               <FolderUp className="w-3.5 h-3.5" />
-              <span>Thay Hàng Loạt Ảnh/Video Mới</span>
+              <span>Thay Hàng Loạt Ảnh/Video</span>
               <input
                 type="file"
                 multiple
@@ -248,13 +229,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
             onClick={onOpenPromptStudio}
             className="text-amber-400 hover:text-amber-300 font-sans font-semibold underline underline-offset-2 whitespace-nowrap shrink-0"
           >
-            Xem Bảng Prompt Toàn Bộ Các Đoạn
+            Bảng Prompt
           </button>
           <span aria-hidden="true">·</span>
-          <span>Con trỏ: {formatSecLabel(currentTimeSec)}</span>
-          <span aria-hidden="true">·</span>
           <span>
-            Tổng:{' '}
+            {formatSecLabel(currentTimeSec)} /{' '}
             {formatSecLabel(scenes.reduce((acc, s) => acc + Math.ceil(s.durationSec || 5), 0))}
           </span>
         </div>
@@ -648,22 +627,11 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
               </div>
 
               {/* Bottom Metadata, Quick Replace Button & Reorder Controls */}
-              <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/80">
-                <div className="flex items-center gap-1 font-mono-tabular truncate">
-                  <span>
-                    {formatSecLabel(startSec)}–{formatSecLabel(endSec)}
-                  </span>
-                  {scene.voiceoverUrl && (
-                    <span title="Đã có Voice" className="inline-flex items-center shrink-0">
-                      <Mic className="w-3 h-3 text-emerald-400" />
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  className="flex items-center gap-1 shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
+              <div
+                className="flex items-center justify-between gap-1 text-[10px] text-slate-400 pt-1 border-t border-slate-800/80"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-1 flex-wrap">
                   <button
                     type="button"
                     onClick={() => {
@@ -677,32 +645,24 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       window.dispatchEvent(evt);
                     }}
                     title={`Chỉ phát riêng Cảnh #${String(idx + 1).padStart(2, '0')} (${formatSecLabel(startSec)}–${formatSecLabel(endSec)}) và tự dừng khi hết cảnh này`}
-                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/50 transition-colors"
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/50 transition-colors shrink-0"
                   >
                     <Play className="w-2.5 h-2.5 fill-current shrink-0" />
                     <span>Phát Riêng</span>
                   </button>
+
                   {isVisualScene && onOpenSceneMediaSearch && (
                     <button
                       type="button"
                       onClick={() => onOpenSceneMediaSearch(scene.id)}
-                      title={
-                        scene.sceneType === 'video'
-                          ? `Ưu tiên chọn & cắt đoạn Video Thật (YouTube / Shorts / TikTok / Kho Phim) chèn vào Cảnh #${String(idx + 1).padStart(2, '0')} (hoặc đổi Ảnh Gốc + Prompt để vẽ sau)`
-                          : `Tìm kiếm & chọn lại Ảnh hoặc Đoạn Video Thật khác cho Cảnh #${String(idx + 1).padStart(2, '0')}`
-                      }
-                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold border transition-colors ${
-                        scene.sceneType === 'video'
-                          ? 'bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border-amber-400/60'
-                          : 'bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border-amber-500/50'
-                      }`}
+                      title={`Tìm kiếm Video Thực Tế (Kho Phim / YouTube / Shorts / TikTok) hoặc Ảnh Thật khác cho Cảnh #${String(idx + 1).padStart(2, '0')}`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 border border-amber-400/60 transition-colors shrink-0"
                     >
                       <Search className="w-2.5 h-2.5 shrink-0" />
-                      <span>
-                        {scene.sceneType === 'video' ? '✂️ Chọn & Cắt Video' : 'Đổi Ảnh'}
-                      </span>
+                      <span>🔍 Tìm Khác</span>
                     </button>
                   )}
+
                   {actualMediaKind === 'video' && scene.mediaUrl && (
                     <a
                       href={
@@ -716,26 +676,28 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       target="_blank"
                       rel="noreferrer"
                       title={`Tải file Video MP4 đã cắt của Cảnh #${String(idx + 1).padStart(2, '0')} về máy tính của bạn`}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border border-sky-400/60 transition-colors"
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border border-sky-400/60 transition-colors shrink-0"
                     >
                       <Download className="w-2.5 h-2.5 shrink-0" />
-                      <span>⬇ Lưu MP4</span>
+                      <span>Lưu</span>
                     </a>
                   )}
+
                   {isVisualScene && onQuickCycleSceneMedia && (
                     <button
                       type="button"
                       onClick={() => onQuickCycleSceneMedia(scene.id)}
-                      title="Đổi nhanh 1-Click sang Ảnh hoặc Góc Cắt Video khác cho cảnh này"
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
+                      title="Đổi nhanh 1-Click sang Ảnh hoặc Góc Cắt Video Thực Tế khác cho cảnh này"
+                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors shrink-0"
                     >
                       <RefreshCw className="w-2.5 h-2.5" />
                     </button>
                   )}
+
                   {onUploadFileForScene && scene.sceneType !== 'outro' && (
                     <label
                       title="Chọn file Video (.mp4, .mov) hoặc Ảnh (.png, .jpg, .webp) bất kỳ từ máy tính"
-                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-semibold cursor-pointer transition-colors border ${
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-semibold cursor-pointer transition-colors border shrink-0 ${
                         isVideoSceneHoldingTempImage
                           ? 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-200 border-sky-400/50'
                           : hasMedia
@@ -744,9 +706,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       }`}
                     >
                       <Upload className="w-2.5 h-2.5" />
-                      <span>
-                        {hasMedia ? 'Tải File' : '+File'}
-                      </span>
+                      <span>{hasMedia ? 'Tải File' : '+File'}</span>
                       <input
                         type="file"
                         accept={ACCEPTED_MEDIA_INPUT}
@@ -761,6 +721,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       />
                     </label>
                   )}
+
                   {isVisualScene && onSwapSceneMedia && (
                     <button
                       type="button"
@@ -781,7 +742,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                           ? `Bấm để đổi Video/Ảnh của cảnh này với Cảnh #${String(swapSourceIdx + 1).padStart(2, '0')} (Giữ nguyên thứ tự nội dung chữ & giọng đọc)`
                           : 'Chọn cảnh này để đảo Video/Ảnh với 1 cảnh khác (Giữ nguyên thứ tự nội dung chữ & giọng đọc)'
                       }
-                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-semibold border transition-colors ${
+                      className={`flex items-center gap-0.5 px-1 py-0.5 rounded font-sans font-semibold border transition-colors shrink-0 ${
                         isSwapSource
                           ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
                           : isSwapTargetCandidate
@@ -790,31 +751,8 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       }`}
                     >
                       <ArrowLeftRight className="w-2.5 h-2.5" />
-                      <span>
-                        {isSwapSource
-                          ? 'Hủy'
-                          : isSwapTargetCandidate && swapSourceIdx >= 0
-                          ? `Đổi #${String(swapSourceIdx + 1).padStart(2, '0')}`
-                          : 'Đảo'}
-                      </span>
                     </button>
                   )}
-                  <button
-                    onClick={() => onMoveScene(scene.id, -1)}
-                    disabled={idx === 0 || !isVisualScene}
-                    title="Đảo riêng Video/Ảnh sang cảnh bên trái (Giữ nguyên thứ tự nội dung chữ & giọng đọc)"
-                    className="p-0.5 hover:text-amber-300 disabled:opacity-30"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => onMoveScene(scene.id, 1)}
-                    disabled={idx === scenes.length - 1 || !isVisualScene}
-                    title="Đảo riêng Video/Ảnh sang cảnh bên phải (Giữ nguyên thứ tự nội dung chữ & giọng đọc)"
-                    className="p-0.5 hover:text-amber-300 disabled:opacity-30"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
             </div>
