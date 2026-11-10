@@ -849,8 +849,8 @@ export default function App() {
       type: 'video',
       url: cut.videoUrl,
       thumbnailUrl: cut.thumbnailUrl,
-      width: cut.width || 640,
-      height: cut.height || 360,
+      width: cut.width || 720,
+      height: cut.height || 960,
       durationSec: cut.durationSec,
       sourceTag: 'uploaded',
       createdAt: cut.sourceLabel,
@@ -3230,12 +3230,28 @@ export default function App() {
         activeSceneId={activeSceneId}
         initialTab="youtube"
         totalScenes={scenes.length}
-        characterName={
-          settings.projectTitle.split('—')[0].split('-')[0].trim() ||
-          loadSavedAudioPreferences().storyTopic ||
-          getCharacterNameForPreset(settings.activePresetId) ||
-          'Clint Eastwood'
-        }
+        characterName={(() => {
+          const firstNarr = scenes[0]?.narrationText || '';
+          const narrMatch = firstNarr.match(/knew the name ([A-Z][a-zA-Z.\s'-]{2,28}?),/);
+          if (narrMatch && narrMatch[1]) {
+            return narrMatch[1].trim();
+          }
+          const savedTopic = (loadSavedAudioPreferences().storyTopic || '').trim();
+          const titlePart = settings.projectTitle.split('—')[0].split('-')[0].trim();
+          if (
+            savedTopic &&
+            (!titlePart || titlePart.toLowerCase() === 'will sampson') &&
+            savedTopic.toLowerCase() !== 'will sampson'
+          ) {
+            return savedTopic;
+          }
+          return (
+            titlePart ||
+            savedTopic ||
+            getCharacterNameForPreset(settings.activePresetId) ||
+            'Clint Eastwood'
+          );
+        })()}
         settings={settings}
         vaultItems={vaultItems}
         onClose={() => setSearchingMediaSceneId(null)}

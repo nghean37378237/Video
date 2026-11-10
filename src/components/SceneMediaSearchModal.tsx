@@ -68,6 +68,8 @@ export interface YouTubeSearchVideoItem {
 export interface CutYouTubeResultItem {
   id: string;
   targetSceneId?: string;
+  characterName?: string;
+  sourceVideoUrl?: string;
   title: string;
   videoUrl: string;
   thumbnailUrl: string;
@@ -78,6 +80,8 @@ export interface CutYouTubeResultItem {
   durationSec: number;
   width: number;
   height: number;
+  frameMode?: string;
+  focusX?: string;
   sourceLabel: string;
 }
 
@@ -152,6 +156,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [previewingYtId, setPreviewingYtId] = useState<string | null>(null);
   const [previewRemainingSec, setPreviewRemainingSec] = useState<number>(0);
   const [previewUseDirectMp4, setPreviewUseDirectMp4] = useState<Record<string, boolean>>({});
+  const [ytPlayheadSec, setYtPlayheadSec] = useState<Record<string, number>>({});
+  const [ytActualDurationSec, setYtActualDurationSec] = useState<Record<string, number>>({});
+  const ytVideoRefs = React.useRef<Record<string, HTMLVideoElement | null>>({});
 
   // Archival video & photo results
   const [videoOptions, setVideoOptions] = useState<SceneVideoOption[]>([]);
@@ -183,6 +190,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [showSavedCutsDrawer, setShowSavedCutsDrawer] = useState<boolean>(false);
   const [archivalTargetScenes, setArchivalTargetScenes] = useState<Record<string, string>>({});
 
+  // 3:4 HD Anti-Blur Framing Controls (720x960 Lanczos + Unsharp)
+  const [cutFrameMode, setCutFrameMode] = useState<'3:4-sharp' | '3:4-cinema' | '3:4-full-wide'>(
+    '3:4-sharp'
+  );
+  const [cutFocusX, setCutFocusX] = useState<'center' | 'left' | 'right'>('center');
+  const [show34Guide, setShow34Guide] = useState<boolean>(true);
+
   const formatMmSs = (sec: number): string => {
     const clean = Math.max(0, Math.floor(sec || 0));
     const m = Math.floor(clean / 60);
@@ -190,7 +204,79 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
-  const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Will Sampson';
+  const getPlayableCutVideoSrc = (cut: CutYouTubeResultItem): string => {
+    const rawUrl = cut.videoUrl || '';
+    const basePart = rawUrl.split('#')[0];
+    if (basePart.includes('/api/youtube/cut-file/')) {
+      return basePart;
+    }
+    if (basePart.includes('/api/archival/video-stream')) {
+      return `${basePart}#t=${cut.originalStartSec},${cut.originalEndSec}`;
+    }
+    return basePart;
+  };
+
+  const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Clint Eastwood';
+
+  const activeCharName = React.useMemo(() => {
+    const stripped = (searchQuery || '')
+      .replace(/https?:\/\/[^\s]+/gi, '')
+      .replace(/\b(18|19|20)\d{2}s?\b/g, '')
+      .replace(
+        /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|iconic|circa|early|late|young|birthplace)\b/gi,
+        ''
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+    return stripped.length >= 3 ? stripped : cleanCharName;
+  }, [searchQuery, cleanCharName]);
+
+  // Filter saved cuts to only show cuts belonging to the currently active character/subject (prevents showing Will Sampson's Cuckoo's Nest cut when working on Clint Eastwood!)
+  const visibleSavedCuts = React.useMemo(() => {
+    const lowerActive = activeCharName.toLowerCase();
+    const otherKnownActors = [
+      'will sampson',
+      'chief bromden',
+      "cuckoo's nest",
+      'cuckoos nest',
+      'the chief learns to dunk',
+      'steve mcqueen',
+      'bullitt',
+      'clint eastwood',
+      'john wayne',
+      'bruce lee',
+      'elvis presley',
+      'audrey hepburn',
+      'lorne greene',
+      'clayton moore',
+      'yul brynner',
+    ];
+    return savedCuts.filter((cut) => {
+      const cutChar = (cut.characterName || '').toLowerCase();
+      const cutTitle = (cut.title || '').toLowerCase();
+      if (cutChar) {
+        return cutChar.includes(lowerActive) || lowerActive.includes(cutChar);
+      }
+      // If legacy cut has no characterName tag, check if it explicitly belongs to a different known actor
+      const belongsToOtherActor = otherKnownActors.some((actorKeyword) => {
+        if (lowerActive.includes(actorKeyword)) return false;
+        if (
+          lowerActive.includes('will sampson') &&
+          (actorKeyword === 'chief bromden' ||
+            actorKeyword === "cuckoo's nest" ||
+            actorKeyword === 'cuckoos nest' ||
+            actorKeyword === 'the chief learns to dunk')
+        ) {
+          return false;
+        }
+        if (lowerActive.includes('steve mcqueen') && actorKeyword === 'bullitt') {
+          return false;
+        }
+        return cutTitle.includes(actorKeyword);
+      });
+      return !belongsToOtherActor;
+    });
+  }, [savedCuts, activeCharName]);
 
   // Eligible visual scenes on the Timeline that can receive a cut video
   const selectableScenes = React.useMemo(() => {
@@ -308,6 +394,28 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     setIsLoadingArchival(true);
     setPreviewingYtId(null);
     const effectiveQuery = queryToRun.trim() || cleanCharName;
+    const strippedSubject = effectiveQuery
+      .replace(/https?:\/\/[^\s]+/gi, '')
+      .replace(/\b(18|19|20)\d{2}s?\b/g, '')
+      .replace(
+        /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|iconic|circa|early|late|young|birthplace)\b/gi,
+        ''
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+    const effectiveCharForSearch = strippedSubject.length >= 3 ? strippedSubject : cleanCharName;
+
+    // Clear any stale accepted cut banner if it belongs to a different character
+    setLatestAcceptedCut((prev) => {
+      if (!prev) return null;
+      const prevChar = (prev.characterName || prev.title || '').toLowerCase();
+      if (!prevChar.includes(effectiveCharForSearch.toLowerCase())) {
+        setJustCutBanner(null);
+        return null;
+      }
+      return prev;
+    });
+
     const targetSceneForDefault =
       overrideSceneId ||
       selectedModalSceneId ||
@@ -341,7 +449,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         const sSec =
           typeof v.suggestedTrimStartSec === 'number' && v.suggestedTrimStartSec >= 0
             ? v.suggestedTrimStartSec
-            : 4 + Math.floor(Math.random() * 20);
+            : 18 + (idx % 6) * 20;
         nextStarts[v.id] = sSec;
         nextEnds[v.id] = sSec + targetDur;
         nextTargetScenes[v.id] = defaultTargetScene;
@@ -357,7 +465,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: effectiveQuery,
-        characterName: cleanCharName,
+        characterName: effectiveCharForSearch,
         sceneDurationSec: sceneDur,
         limit: 16,
         cycleOffset: nextCycle,
@@ -415,7 +523,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query: effectiveQuery,
-            characterName: cleanCharName,
+            characterName: effectiveCharForSearch,
             limit: 30,
           }),
         });
@@ -438,10 +546,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       const res = await fetch('/api/youtube/saved-cuts');
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data?.savedCuts) && data.savedCuts.length > 0) {
-          setSavedCuts(data.savedCuts);
+        const serverList = Array.isArray(data?.savedCuts)
+          ? data.savedCuts
+          : Array.isArray(data?.cuts)
+          ? data.cuts
+          : [];
+        if (serverList.length > 0) {
+          setSavedCuts(serverList);
           try {
-            localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(data.savedCuts));
+            localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(serverList));
           } catch {
             // ignore
           }
@@ -464,12 +577,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setQueuedSegments([]);
       setPreviewingYtId(null);
       setPreviewRemainingSec(0);
+      setLatestAcceptedCut(null);
       setJustCutBanner(null);
       setShowSavedCutsDrawer(false);
       loadSavedCutsFromServer();
       executeSearch(defaultQuery, 0, initSceneId);
     }
-  }, [isOpen, scene?.id, initialTab]);
+  }, [isOpen, scene?.id, initialTab, cleanCharName]);
 
   // Auto-stop the preview player inside the card right when the selected (startSec -> endSec) segment finishes!
   useEffect(() => {
@@ -584,17 +698,23 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          characterName: cleanCharName,
+          characterName: activeCharName,
+          searchQuery: searchQuery || activeCharName,
+          frameMode: cutFrameMode,
+          focusX: cutFocusX,
           clips: [
             {
               id: vid.id,
               targetSceneId: chosenSceneId,
               title: vid.title,
               archiveMp4Url,
+              preferArchiveMp4: true,
               thumbnailUrl: vid.dataUrl,
               trimStartSec: startSec,
               trimEndSec: endSec,
               durationSec: dur,
+              frameMode: cutFrameMode,
+              focusX: cutFocusX,
             },
           ],
         }),
@@ -604,6 +724,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         if (Array.isArray(data?.cuts) && data.cuts.length > 0 && onInsertCutYouTubeClips) {
           const cutObj: CutYouTubeResultItem = {
             ...data.cuts[0],
+            characterName: activeCharName,
             targetSceneId: chosenSceneId,
           };
           onInsertCutYouTubeClips([cutObj], chosenSceneId);
@@ -697,10 +818,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         instagramUrl: seg.video.instagramUrl || '',
         dmId: seg.video.dmId,
         archiveMp4Url: seg.video.archiveMp4Url,
+        preferArchiveMp4: true,
         thumbnailUrl: seg.video.thumbnailUrl,
         trimStartSec: seg.trimStartSec,
         trimEndSec: seg.trimEndSec,
         durationSec: Math.max(3, seg.trimEndSec - seg.trimStartSec),
+        frameMode: cutFrameMode,
+        focusX: cutFocusX,
       }));
 
       const res = await fetch('/api/youtube/cut-clips', {
@@ -708,7 +832,10 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clips: clipsPayload,
-          characterName: cleanCharName,
+          characterName: activeCharName,
+          searchQuery: searchQuery || activeCharName,
+          frameMode: cutFrameMode,
+          focusX: cutFocusX,
         }),
       });
       if (res.ok) {
@@ -734,6 +861,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
           const firstCut: CutYouTubeResultItem = {
             ...data.cuts[0],
+            characterName: activeCharName,
             targetSceneId:
               data.cuts[0].targetSceneId ||
               targetIdForSingle ||
@@ -1005,6 +1133,89 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 );
               })}
             </div>
+
+            {/* 3:4 HD ANTI-BLUR FRAMING BAR (CHUẨN KHUNG 3:4 SẮC NÉT 720x960 — CHỐNG MỜ KHI CẮT) */}
+            <div className="pt-1.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-extrabold text-emerald-300 flex items-center gap-1">
+                  <span>📐 Khung Chuẩn 3:4 HD (720×960 · Chống Mờ):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCutFrameMode('3:4-sharp')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                    cutFrameMode === '3:4-sharp'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
+                      : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-emerald-400'
+                  }`}
+                  title="Cắt chuẩn khung dọc 3:4 tràn viền (720x960 HD) + thuật toán Lanczos & Unsharp nâng nét quang học để video không bị mờ"
+                >
+                  ✨ Full Khung 3:4 Sắc Nét (Khử Mờ HD)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCutFrameMode('3:4-cinema')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                    cutFrameMode === '3:4-cinema'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
+                      : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-emerald-400'
+                  }`}
+                  title="Giữ góc cảnh rộng hơn để không phóng to quá mức gây mờ, đồng thời phủ phông mờ 3:4 sang trọng ở viền trên/dưới"
+                >
+                  🎬 Khung 3:4 Cân Bằng (Rõ Mặt + Viền Mờ 3:4)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCutFrameMode('3:4-full-wide')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                    cutFrameMode === '3:4-full-wide'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
+                      : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-emerald-400'
+                  }`}
+                  title="Giữ nguyên 100% chiều ngang video gốc sắc nét tuyệt đối ở chính giữa khung 3:4 (720x960)"
+                >
+                  🖼️ Khung 3:4 Giữ 100% Góc Rộng (Nét Tuyệt Đối)
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] text-slate-400 font-semibold">
+                  Canh tâm 3:4:
+                </span>
+                {(
+                  [
+                    { id: 'left', label: '⬅ Trái' },
+                    { id: 'center', label: '🎯 Giữa chuẩn' },
+                    { id: 'right', label: 'Phải ➡' },
+                  ] as const
+                ).map((pos) => (
+                  <button
+                    key={pos.id}
+                    type="button"
+                    onClick={() => setCutFocusX(pos.id)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                      cutFocusX === pos.id
+                        ? 'bg-amber-500 text-slate-950 border-amber-300'
+                        : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-400'
+                    }`}
+                  >
+                    {pos.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShow34Guide((prev) => !prev)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                    show34Guide
+                      ? 'bg-sky-500/25 text-sky-200 border-sky-400'
+                      : 'bg-slate-900 text-slate-400 border-slate-700'
+                  }`}
+                  title="Bật/tắt khung ngắm tỉ lệ 3:4 trực tiếp trên từng ô video"
+                >
+                  {show34Guide ? '📐 Đang bật Khung Ngắm 3:4' : '📐 Bật Khung Ngắm 3:4'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1185,24 +1396,21 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               >
                 Tất Cả
               </button>
-              {savedCuts.length > 0 && (
+              {visibleSavedCuts.length > 0 && (
                 <button
                   type="button"
                   onClick={() => {
                     setShowSavedCutsDrawer((prev) => !prev);
-                    if (!latestAcceptedCut && savedCuts[0]) {
-                      setLatestAcceptedCut(savedCuts[0]);
-                    }
                     resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 border transition-colors ${
-                    showSavedCutsDrawer || latestAcceptedCut
+                    showSavedCutsDrawer
                       ? 'bg-emerald-500 text-slate-950 border-emerald-400'
                       : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
                   }`}
                 >
                   <Scissors className="w-3 h-3" />
-                  <span>✂️ 💾 Kho Đã Cắt ({savedCuts.length})</span>
+                  <span>✂️ 💾 Kho Đã Cắt ({visibleSavedCuts.length})</span>
                 </button>
               )}
             </div>
@@ -1235,10 +1443,10 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
               {latestAcceptedCut && (
                 <div className="p-3 rounded-lg bg-[#090E17]/95 border border-emerald-500/50 flex flex-col md:flex-row items-stretch gap-3.5">
-                  <div className="relative w-full md:w-56 h-32 rounded-md overflow-hidden bg-black border border-emerald-400/60 shrink-0">
+                  <div className="relative w-36 md:w-44 aspect-[3/4] rounded-md overflow-hidden bg-black border-2 border-emerald-400 shadow-lg shrink-0 mx-auto md:mx-0">
                     <video
                       key={latestAcceptedCut.videoUrl}
-                      src={(latestAcceptedCut.videoUrl || '').split('#')[0]}
+                      src={getPlayableCutVideoSrc(latestAcceptedCut)}
                       poster={latestAcceptedCut.thumbnailUrl}
                       controls
                       autoPlay
@@ -1246,7 +1454,10 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                       className="w-full h-full object-cover"
                     />
                     <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500 text-slate-950 shadow">
-                      ✂️ Đã cắt: {latestAcceptedCut.originalStartSec}s → {latestAcceptedCut.originalEndSec}s ({latestAcceptedCut.durationSec}s)
+                      ✂️ {latestAcceptedCut.originalStartSec}s → {latestAcceptedCut.originalEndSec}s ({latestAcceptedCut.durationSec}s)
+                    </span>
+                    <span className="absolute bottom-9 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold bg-black/85 text-amber-300 border border-amber-400/50">
+                      📐 Chuẩn 3:4 HD (720×960)
                     </span>
                   </div>
 
@@ -1345,7 +1556,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           )}
 
           {/* PERSISTENT SAVED CUTS LIBRARY (KHO VIDEO ĐÃ CẮT & LƯU) */}
-          {savedCuts.length > 0 && (
+          {visibleSavedCuts.length > 0 && (
             <div className="p-3.5 rounded-xl bg-[#101929] border border-emerald-500/50 space-y-3 shadow">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1356,7 +1567,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   >
                     <Scissors className="w-3.5 h-3.5" />
                     <span>
-                      💾 KHO VIDEO ĐÃ CẮT &amp; LƯU ({savedCuts.length} đoạn MP4) —{' '}
+                      💾 KHO VIDEO ĐÃ CẮT &amp; LƯU ({visibleSavedCuts.length} đoạn MP4 của {activeCharName}) —{' '}
                       {showSavedCutsDrawer ? 'Thu gọn ▲' : 'Bấm để Mở Xem / Tải MP4 Về Máy ▼'}
                     </span>
                   </button>
@@ -1387,39 +1598,39 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
               {showSavedCutsDrawer && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto pr-1">
-                  {savedCuts.map((cut, cIdx) => {
+                  {visibleSavedCuts.map((cut, cIdx) => {
                     const chosenTargetId =
                       savedCutTargetScenes[cut.id] ||
                       scene?.id ||
-                    cut.targetSceneId ||
-                    activeSceneId ||
-                    selectableScenes[0]?.id ||
-                    '';
-                  const cleanMp4Url = (cut.videoUrl || '').split('#')[0];
-                  const safeDownloadName = `Cut_${cIdx + 1}_${cut.originalStartSec}s-${cut.originalEndSec}s_${(
-                    cut.title || 'video'
-                  )
-                    .replace(/[^a-zA-Z0-9_-]+/g, '_')
-                    .slice(0, 32)}.mp4`;
-                  const downloadHref = cleanMp4Url.includes('/api/youtube/cut-file/')
-                    ? `${cleanMp4Url}?download=1&name=${encodeURIComponent(safeDownloadName)}`
-                    : cleanMp4Url;
+                      cut.targetSceneId ||
+                      activeSceneId ||
+                      selectableScenes[0]?.id ||
+                      '';
+                    const cleanMp4Url = (cut.videoUrl || '').split('#')[0];
+                    const safeDownloadName = `Cut_${cIdx + 1}_${cut.originalStartSec}s-${cut.originalEndSec}s_${(
+                      cut.title || 'video'
+                    )
+                      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                      .slice(0, 32)}.mp4`;
+                    const downloadHref = cleanMp4Url.includes('/api/youtube/cut-file/')
+                      ? `${cleanMp4Url}?download=1&name=${encodeURIComponent(safeDownloadName)}`
+                      : cleanMp4Url;
 
-                  return (
-                    <div
-                      key={cut.id}
-                      className="rounded-lg bg-[#0B0F17] border border-emerald-500/50 p-2.5 flex flex-col justify-between gap-2"
-                    >
-                      <div className="flex items-start gap-2.5">
-                        <div className="relative w-28 h-16 rounded overflow-hidden bg-black border border-slate-700 shrink-0">
-                          <video
-                            src={cleanMp4Url}
-                            poster={cut.thumbnailUrl}
-                            controls
-                            preload="metadata"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
+                    return (
+                      <div
+                        key={cut.id}
+                        className="rounded-lg bg-[#0B0F17] border border-emerald-500/50 p-2.5 flex flex-col justify-between gap-2"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div className="relative w-28 h-16 rounded overflow-hidden bg-black border border-slate-700 shrink-0">
+                            <video
+                              src={getPlayableCutVideoSrc(cut)}
+                              poster={cut.thumbnailUrl}
+                              controls
+                              preload="metadata"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1">
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
@@ -1678,8 +1889,25 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       setPreviewingArchivalId(null);
                                     }
                                   }}
-                                  className="w-full h-full object-cover"
+                                  className={`w-full h-full ${
+                                    cutFrameMode === '3:4-full-wide'
+                                      ? 'object-contain'
+                                      : 'object-cover'
+                                  } ${
+                                    cutFocusX === 'left'
+                                      ? 'object-left'
+                                      : cutFocusX === 'right'
+                                      ? 'object-right'
+                                      : 'object-center'
+                                  }`}
                                 />
+                                {show34Guide && (
+                                  <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 aspect-[3/4] h-full border-2 border-dashed border-emerald-400/80 shadow-[0_0_0_999px_rgba(0,0,0,0.45)] flex items-end justify-center pb-1">
+                                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/90 text-slate-950 text-[9px] font-extrabold">
+                                      Khung 3:4 HD
+                                    </span>
+                                  </div>
+                                )}
                                 <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500 text-slate-950 shadow">
                                   🔄 Video Thay Thế #{idx + 1}
                                 </span>
@@ -2024,66 +2252,131 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                           }
                           return true;
                         })
-                        .map((yt) => {
+                        .map((yt, ytIdx) => {
                           const startSec =
-                            ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 0;
-                        const chosenSceneId =
-                          ytTargetSceneIds[yt.id] ||
-                          scene?.id ||
-                          activeSceneId ||
-                          selectableScenes[0]?.id ||
-                          '';
-                        const targetDur = getSceneDurationById(chosenSceneId);
-                        const endSec = Math.max(
-                          startSec + 3,
-                          ytTrimEnds[yt.id] ?? startSec + targetDur
-                        );
-                        const cutDur = Math.max(3, endSec - startSec);
-                        const isPreviewing = previewingYtId === yt.id;
-                        const useDirectStream =
-                          previewUseDirectMp4[yt.id] || !yt.youtubeId;
-                        const directStreamSrc = yt.archiveMp4Url
-                          ? `/api/archival/video-stream?url=${encodeURIComponent(
-                              yt.archiveMp4Url
-                            )}#t=${startSec},${endSec}`
-                          : '';
-                        const externalLinkUrl =
-                          yt.tiktokUrl || yt.instagramUrl || yt.youtubeUrl;
-                        const isThisSegmentQueued = queuedSegments.some(
-                          (q) =>
-                            q.video.id === yt.id &&
-                            q.trimStartSec === startSec &&
-                            q.trimEndSec === endSec &&
-                            q.targetSceneId === chosenSceneId
-                        );
-                        const queuedCountForThisVideo = queuedSegments.filter(
-                          (q) => q.video.id === yt.id
-                        ).length;
+                            ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
+                          const chosenSceneId =
+                            ytTargetSceneIds[yt.id] ||
+                            effectiveScene?.id ||
+                            scene?.id ||
+                            activeSceneId ||
+                            selectableScenes[0]?.id ||
+                            '';
+                          const targetDur = getSceneDurationById(chosenSceneId);
+                          const endSec = Math.max(
+                            startSec + 3,
+                            ytTrimEnds[yt.id] ?? startSec + targetDur
+                          );
+                          const cutDur = Math.max(3, endSec - startSec);
+                          const isPreviewing = previewingYtId === yt.id;
+                          const showYoutubeEmbed = previewUseDirectMp4[yt.id] === true;
+                          const cleanYtDirectUrl = yt.archiveMp4Url
+                            ? `/api/archival/video-stream?url=${encodeURIComponent(
+                                yt.archiveMp4Url
+                              )}`
+                            : '';
+                          const curYtPlayhead = ytPlayheadSec[yt.id] ?? startSec;
+                          const realYtTotalDur = ytActualDurationSec[yt.id] || 0;
+                          const externalLinkUrl =
+                            yt.tiktokUrl || yt.instagramUrl || yt.youtubeUrl;
+                          const isThisSegmentQueued = queuedSegments.some(
+                            (q) =>
+                              q.video.id === yt.id &&
+                              q.trimStartSec === startSec &&
+                              q.trimEndSec === endSec &&
+                              q.targetSceneId === chosenSceneId
+                          );
+                          const queuedCountForThisVideo = queuedSegments.filter(
+                            (q) => q.video.id === yt.id
+                          ).length;
 
-                        return (
-                          <div
-                            key={yt.id}
-                            className={`rounded-lg bg-[#111827] border p-3 flex flex-col justify-between gap-2.5 transition-all ${
-                              isThisSegmentQueued || queuedCountForThisVideo > 0
-                                ? 'border-amber-400 ring-2 ring-amber-400/40 bg-[#161F33]'
-                                : 'border-slate-800 hover:border-slate-600'
-                            }`}
-                          >
-                            <div className="space-y-2">
-                              {/* Video Preview Box (Thumbnail OR Embedded Player / Direct MP4 Stream at startSec -> endSec) */}
-                              <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
-                                {isPreviewing ? (
-                                  <div className="relative w-full h-full">
-                                    {useDirectStream && directStreamSrc ? (
-                                      <video
-                                        src={directStreamSrc}
-                                        poster={yt.thumbnailUrl}
-                                        autoPlay
-                                        controls
-                                        playsInline
-                                        className="w-full h-full object-cover"
-                                      />
-                                    ) : (
+                          return (
+                            <div
+                              key={yt.id}
+                              className={`rounded-lg bg-[#111827] border p-3 flex flex-col justify-between gap-2.5 transition-all ${
+                                isThisSegmentQueued || queuedCountForThisVideo > 0
+                                  ? 'border-amber-400 ring-2 ring-amber-400/40 bg-[#161F33]'
+                                  : 'border-slate-800 hover:border-slate-600'
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                {/* Video Preview Box: Plays the EXACT cuttable MP4 stream so preview & cut match 100%! */}
+                                <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
+                                  {!showYoutubeEmbed && cleanYtDirectUrl ? (
+                                    <video
+                                      ref={(el) => {
+                                        ytVideoRefs.current[yt.id] = el;
+                                      }}
+                                      src={cleanYtDirectUrl}
+                                      poster={yt.thumbnailUrl}
+                                      controls
+                                      preload="metadata"
+                                      onLoadedMetadata={(e) => {
+                                        const el = e.currentTarget;
+                                        const dur = Math.floor(el.duration || 0);
+                                        if (dur > 0) {
+                                          setYtActualDurationSec((prev) => ({
+                                            ...prev,
+                                            [yt.id]: dur,
+                                          }));
+                                          let initStart =
+                                            ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
+                                          if (initStart >= Math.max(4, dur - targetDur - 1)) {
+                                            initStart = Math.max(
+                                              2,
+                                              Math.min(
+                                                Math.max(2, dur - targetDur - 2),
+                                                Math.floor((dur * ((ytIdx % 5) + 1)) / 7)
+                                              )
+                                            );
+                                            setYtTrimStarts((prev) => ({
+                                              ...prev,
+                                              [yt.id]: initStart,
+                                            }));
+                                            setYtTrimEnds((prev) => ({
+                                              ...prev,
+                                              [yt.id]: Math.min(dur, initStart + targetDur),
+                                            }));
+                                          }
+                                          try {
+                                            el.currentTime = initStart;
+                                          } catch {
+                                            // ignore
+                                          }
+                                          setYtPlayheadSec((prev) => ({
+                                            ...prev,
+                                            [yt.id]: initStart,
+                                          }));
+                                        }
+                                      }}
+                                      onTimeUpdate={(e) => {
+                                        const el = e.currentTarget;
+                                        const cur = Math.floor(el.currentTime || 0);
+                                        setYtPlayheadSec((prev) =>
+                                          prev[yt.id] === cur ? prev : { ...prev, [yt.id]: cur }
+                                        );
+                                        if (
+                                          previewingYtId === yt.id &&
+                                          el.currentTime >= endSec
+                                        ) {
+                                          el.pause();
+                                          setPreviewingYtId(null);
+                                        }
+                                      }}
+                                      className={`w-full h-full ${
+                                        cutFrameMode === '3:4-full-wide'
+                                          ? 'object-contain'
+                                          : 'object-cover'
+                                      } ${
+                                        cutFocusX === 'left'
+                                          ? 'object-left'
+                                          : cutFocusX === 'right'
+                                          ? 'object-right'
+                                          : 'object-center'
+                                      }`}
+                                    />
+                                  ) : isPreviewing && yt.youtubeId ? (
+                                    <div className="relative w-full h-full">
                                       <iframe
                                         src={`https://www.youtube.com/embed/${yt.youtubeId}?start=${startSec}&end=${endSec}&autoplay=1&rel=0`}
                                         title={yt.title}
@@ -2091,341 +2384,429 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                         allowFullScreen
                                         className="w-full h-full border-0"
                                       />
-                                    )}
-                                    <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setPreviewingYtId(null)}
-                                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold shadow-lg flex items-center gap-1"
-                                      >
-                                        <span>
-                                          ⏹ Dừng ({previewRemainingSec}s)
-                                        </span>
-                                      </button>
-                                      {yt.youtubeId && directStreamSrc && (
+                                      <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1">
                                         <button
                                           type="button"
-                                          onClick={() =>
-                                            setPreviewUseDirectMp4((prev) => ({
-                                              ...prev,
-                                              [yt.id]: !prev[yt.id],
-                                            }))
-                                          }
-                                          className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold shadow-lg"
-                                          title="Nếu video gốc hạn chế nhúng, bấm để đổi sang phát luồng MP4 trực tiếp"
+                                          onClick={() => setPreviewingYtId(null)}
+                                          className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold shadow-lg flex items-center gap-1"
                                         >
-                                          {useDirectStream ? '🔄 Phát Embed' : '🔄 Phát MP4 Trực Tiếp'}
+                                          <span>⏹ Dừng ({previewRemainingSec}s)</span>
                                         </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <img
-                                      src={yt.thumbnailUrl}
-                                      alt={yt.title}
-                                      referrerPolicy="no-referrer"
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewingYtId(yt.id)}
-                                      className="absolute inset-0 bg-black/45 hover:bg-black/25 flex items-center justify-center transition-colors group"
-                                      title="Bấm để xem trước đúng đoạn từ giây Start đến giây End (tự dừng khi hết đoạn cắt)"
-                                    >
-                                      <div className="px-3 py-1.5 rounded-full bg-red-600 group-hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
-                                        <Play className="w-3.5 h-3.5 fill-current" />
-                                        <span>Xem Thử Riêng Đoạn ({startSec}s→{endSec}s)</span>
+                                        {cleanYtDirectUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setPreviewUseDirectMp4((prev) => ({
+                                                ...prev,
+                                                [yt.id]: false,
+                                              }))
+                                            }
+                                            className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold shadow-lg"
+                                          >
+                                            🔄 Quay lại Player Cắt MP4
+                                          </button>
+                                        )}
                                       </div>
-                                    </button>
-                                  </>
-                                )}
-
-                                {/* Top-Left Queue Segment Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleQueueSegment(yt)}
-                                  className={`absolute top-2 left-2 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow ${
-                                    isThisSegmentQueued
-                                      ? 'bg-amber-500 text-slate-950'
-                                      : 'bg-black/85 text-slate-100 hover:bg-amber-500 hover:text-slate-950'
-                                  }`}
-                                  title="Thêm đoạn (Start→End) này vào danh sách cắt riêng"
-                                >
-                                  {isThisSegmentQueued ? (
-                                    <>
-                                      <CheckSquare className="w-3.5 h-3.5" />
-                                      <span>Đã Chọn Đoạn ({startSec}s→{endSec}s)</span>
-                                    </>
+                                    </div>
                                   ) : (
                                     <>
-                                      <Square className="w-3.5 h-3.5" />
-                                      <span>
-                                        + Chọn Đoạn Này
-                                        {queuedCountForThisVideo > 0
-                                          ? ` (Đã có ${queuedCountForThisVideo})`
-                                          : ''}
-                                      </span>
+                                      <img
+                                        src={yt.thumbnailUrl}
+                                        alt={yt.title}
+                                        referrerPolicy="no-referrer"
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewingYtId(yt.id)}
+                                        className="absolute inset-0 bg-black/45 hover:bg-black/25 flex items-center justify-center transition-colors group"
+                                        title="Bấm để xem trước đúng đoạn từ giây Start đến giây End"
+                                      >
+                                        <div className="px-3 py-1.5 rounded-full bg-red-600 group-hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
+                                          <Play className="w-3.5 h-3.5 fill-current" />
+                                          <span>Xem Thử Riêng Đoạn ({startSec}s→{endSec}s)</span>
+                                        </div>
+                                      </button>
                                     </>
                                   )}
-                                </button>
 
-                                {/* Top-Right Source Platform Badge (Shorts / TikTok / Instagram / YouTube) */}
-                                <span
-                                  className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold shadow ${
-                                    yt.sourcePlatform === 'tiktok'
-                                      ? 'bg-pink-600 text-white'
-                                      : yt.sourcePlatform === 'instagram'
-                                      ? 'bg-gradient-to-r from-fuchsia-600 to-amber-500 text-white'
-                                      : yt.sourcePlatform === 'shorts'
-                                      ? 'bg-red-600 text-white'
-                                      : 'bg-slate-900/90 text-sky-300 border border-sky-500/40'
-                                  }`}
-                                >
-                                  {yt.platformBadge ||
-                                    (yt.sourcePlatform === 'tiktok'
-                                      ? '🎵 TikTok'
-                                      : yt.sourcePlatform === 'instagram'
-                                      ? '📸 Instagram Reels'
-                                      : yt.sourcePlatform === 'shorts'
-                                      ? '📱 YouTube Short'
-                                      : '🎬 YouTube')}
-                                </span>
-
-                                {/* Bottom-Right Total Duration Badge */}
-                                <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/85 text-white">
-                                  Tổng: {yt.durationLabel}
-                                </span>
-                              </div>
-
-                              <div>
-                                <p
-                                  className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug"
-                                  title={yt.title}
-                                >
-                                  {yt.title}
-                                </p>
-                                <div className="flex items-center justify-between gap-2 mt-0.5">
-                                  <p className="text-[10px] text-slate-400 truncate">
-                                    Kênh: {yt.channel} {yt.viewsLabel ? `· ${yt.viewsLabel}` : ''}
-                                  </p>
-                                  {externalLinkUrl && (
-                                    <a
-                                      href={externalLinkUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 shrink-0 underline"
-                                      title="Mở xem link gốc trên YouTube / TikTok / Instagram"
-                                    >
-                                      ↗ Link gốc
-                                    </a>
+                                  {show34Guide && !showYoutubeEmbed && (
+                                    <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 aspect-[3/4] h-full border-2 border-dashed border-emerald-400/80 shadow-[0_0_0_999px_rgba(0,0,0,0.45)] flex items-end justify-center pb-1">
+                                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/90 text-slate-950 text-[9px] font-extrabold">
+                                        Khung 3:4 HD
+                                      </span>
+                                    </div>
                                   )}
-                                </div>
-                              </div>
 
-                              {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Bất Kỳ Trên Timeline) */}
-                              {selectableScenes.length > 0 && (
-                                <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
-                                  <span className="text-sky-300 font-semibold shrink-0">
-                                    Vị trí chèn:
-                                  </span>
-                                  <select
-                                    value={chosenSceneId}
-                                    onChange={(e) => {
-                                      const nextSceneId = e.target.value;
-                                      const nextDur = getSceneDurationById(nextSceneId);
-                                      setYtTargetSceneIds((prev) => ({
-                                        ...prev,
-                                        [yt.id]: nextSceneId,
-                                      }));
-                                      setYtTrimEnds((prev) => ({
-                                        ...prev,
-                                        [yt.id]: startSec + nextDur,
-                                      }));
-                                    }}
-                                    className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-bold text-amber-300 truncate focus:outline-none focus:border-amber-400"
-                                  >
-                                    {selectableScenes.map((sc) => (
-                                      <option key={sc.id} value={sc.id}>
-                                        Cảnh #{String(sc.order).padStart(2, '0')} (
-                                        {Math.round(sc.durationSec || 8)}s) — {sc.title}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  {/* Top-Left Queue Segment Button */}
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      const pool =
-                                        selectableScenes.length > 1
-                                          ? selectableScenes.filter((s) => s.id !== chosenSceneId)
-                                          : selectableScenes;
-                                      const randSc =
-                                        pool[Math.floor(Math.random() * pool.length)] ||
-                                        selectableScenes[0];
-                                      if (!randSc) return;
-                                      const nextDur = getSceneDurationById(randSc.id);
-                                      const maxValidStart = Math.max(
-                                        6,
-                                        Math.min(200, (yt.durationSec || 45) - nextDur - 2)
-                                      );
-                                      const randStart =
-                                        2 + Math.floor(Math.random() * maxValidStart);
-                                      setYtTargetSceneIds((prev) => ({
-                                        ...prev,
-                                        [yt.id]: randSc.id,
-                                      }));
-                                      setYtTrimStarts((prev) => ({
-                                        ...prev,
-                                        [yt.id]: randStart,
-                                      }));
-                                      setYtTrimEnds((prev) => ({
-                                        ...prev,
-                                        [yt.id]: randStart + nextDur,
-                                      }));
-                                    }}
-                                    title="Đổi ngẫu nhiên sang một vị trí Cảnh bất kỳ trên Timeline và chọn ngẫu nhiên giây cắt"
-                                    className="px-1.5 py-0.5 rounded bg-violet-500/20 hover:bg-violet-500/35 text-violet-200 border border-violet-500/40 text-[10px] font-bold shrink-0"
+                                    onClick={() => handleToggleQueueSegment(yt)}
+                                    className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow ${
+                                      isThisSegmentQueued
+                                        ? 'bg-amber-500 text-slate-950'
+                                        : 'bg-black/85 text-slate-100 hover:bg-amber-500 hover:text-slate-950'
+                                    }`}
+                                    title="Thêm đoạn (Start→End) này vào danh sách cắt riêng"
                                   >
-                                    🎲 Ngẫu nhiên
+                                    {isThisSegmentQueued ? (
+                                      <>
+                                        <CheckSquare className="w-3 h-3" />
+                                        <span>Đã Chọn ({startSec}s→{endSec}s)</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Square className="w-3 h-3" />
+                                        <span>
+                                          + Chọn Đoạn
+                                          {queuedCountForThisVideo > 0
+                                            ? ` (${queuedCountForThisVideo})`
+                                            : ''}
+                                        </span>
+                                      </>
+                                    )}
                                   </button>
-                                </div>
-                              )}
 
-                              {/* Independent Start -> End Second Controls */}
-                              <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
-                                <span className="text-slate-300 flex items-center gap-1 shrink-0">
-                                  <Scissors className="w-3 h-3 text-amber-400" />
-                                  <span>Đoạn cắt:</span>
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={Math.max(30, yt.durationSec - 4)}
-                                    step={2}
-                                    value={startSec}
-                                    onChange={(e) => {
-                                      const val = Math.max(0, parseInt(e.target.value || '0', 10));
-                                      setYtTrimStarts((prev) => ({ ...prev, [yt.id]: val }));
-                                      setYtTrimEnds((prev) => ({
-                                        ...prev,
-                                        [yt.id]: val + cutDur,
-                                      }));
-                                    }}
-                                    className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
-                                    title="Giây bắt đầu cắt (Start)"
-                                  />
-                                  <span className="text-slate-400 font-mono">s →</span>
-                                  <input
-                                    type="number"
-                                    min={startSec + 3}
-                                    max={Math.max(startSec + 25, yt.durationSec)}
-                                    step={1}
-                                    value={endSec}
-                                    onChange={(e) => {
-                                      const val = Math.max(
-                                        startSec + 3,
-                                        parseInt(e.target.value || String(startSec + 8), 10)
-                                      );
-                                      setYtTrimEnds((prev) => ({ ...prev, [yt.id]: val }));
-                                    }}
-                                    className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-emerald-300"
-                                    title="Giây kết thúc cắt (End)"
-                                  />
-                                  <span className="text-slate-400 font-mono">
-                                    s ({cutDur}s)
+                                  {/* Top-Right Source Platform Badge */}
+                                  <span
+                                    className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold shadow ${
+                                      yt.sourcePlatform === 'tiktok'
+                                        ? 'bg-pink-600 text-white'
+                                        : yt.sourcePlatform === 'instagram'
+                                        ? 'bg-gradient-to-r from-fuchsia-600 to-amber-500 text-white'
+                                        : yt.sourcePlatform === 'shorts'
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-slate-900/90 text-sky-300 border border-sky-500/40'
+                                    }`}
+                                  >
+                                    {yt.platformBadge ||
+                                      (yt.sourcePlatform === 'tiktok'
+                                        ? '🎵 TikTok'
+                                        : yt.sourcePlatform === 'instagram'
+                                        ? '📸 Instagram Reels'
+                                        : yt.sourcePlatform === 'shorts'
+                                        ? '📱 YouTube Short'
+                                        : '🎬 YouTube')}
                                   </span>
                                 </div>
-                              </div>
-                            </div>
 
-                            {/* 1-Click Accept Cut & Replace Into Chosen Part */}
-                            <div className="space-y-1.5">
-                              <button
-                                type="button"
-                                disabled={isCuttingYouTube && cuttingCardId === yt.id}
-                                onClick={() => {
-                                  if (isCuttingYouTube) return;
-                                  handleCutAndInsertYouTubeVideos(yt, false);
-                                }}
-                                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-colors ${
-                                  isCuttingYouTube && cuttingCardId === yt.id
-                                    ? 'bg-emerald-500 text-slate-950 ring-2 ring-emerald-300'
-                                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow'
-                                }`}
-                              >
-                                {isCuttingYouTube && cuttingCardId === yt.id ? (
-                                  <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                                    <span>
-                                      Đang cắt ({startSec}s→{endSec}s) &amp; thay vào{' '}
-                                      {getSceneBadgeById(chosenSceneId)
-                                        .split(' (')[0]
-                                        .replace('Đoạn', 'Phần')}
-                                      ...
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Scissors className="w-3.5 h-3.5 shrink-0" />
-                                    <span className="truncate">
-                                      ✅ Chấp Nhận Cắt ({startSec}s→{endSec}s) &amp; Thay Vào{' '}
-                                      {getSceneBadgeById(chosenSceneId)
-                                        .split(' (')[0]
-                                        .replace('Đoạn', 'Phần')}
-                                    </span>
-                                  </>
+                                {/* 1-Click Sync Playhead From Scrubber + Preview Segment Button */}
+                                {cleanYtDirectUrl && !showYoutubeEmbed && (
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const el = ytVideoRefs.current[yt.id];
+                                        const pickedStart = Math.max(
+                                          0,
+                                          Math.floor(el ? el.currentTime : curYtPlayhead)
+                                        );
+                                        const pickedEnd =
+                                          realYtTotalDur > 0
+                                            ? Math.min(realYtTotalDur, pickedStart + targetDur)
+                                            : pickedStart + targetDur;
+                                        setYtTrimStarts((prev) => ({
+                                          ...prev,
+                                          [yt.id]: pickedStart,
+                                        }));
+                                        setYtTrimEnds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: Math.max(pickedStart + 3, pickedEnd),
+                                        }));
+                                      }}
+                                      className="flex-1 px-2 py-1 rounded text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/50 flex items-center justify-center gap-1 transition-colors"
+                                      title="Tua thanh video phía trên tới cảnh bạn thích rồi bấm nút này để lấy đúng giây đó làm điểm bắt đầu cắt"
+                                    >
+                                      <span>
+                                        📍 Lấy mốc đang xem ({formatMmSs(curYtPlayhead)} = {curYtPlayhead}s)
+                                      </span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const el = ytVideoRefs.current[yt.id];
+                                        if (!el) return;
+                                        if (previewingYtId === yt.id && !el.paused) {
+                                          el.pause();
+                                          setPreviewingYtId(null);
+                                          return;
+                                        }
+                                        try {
+                                          el.currentTime = startSec;
+                                          setPreviewingYtId(yt.id);
+                                          el.play().catch(() => {});
+                                        } catch {
+                                          // ignore
+                                        }
+                                      }}
+                                      className="px-2 py-1 rounded text-[10px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 flex items-center gap-1 shrink-0 transition-colors"
+                                      title="Phát thử đúng đoạn từ giây bắt đầu đến giây kết thúc (tự dừng khi hết đoạn cắt)"
+                                    >
+                                      <Play className="w-3 h-3 fill-current" />
+                                      <span>
+                                        {previewingYtId === yt.id
+                                          ? '⏹ Dừng'
+                                          : `Xem thử (${startSec}s→${endSec}s)`}
+                                      </span>
+                                    </button>
+                                  </div>
                                 )}
-                              </button>
 
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleQueueSegment(yt)}
-                                  className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 border shrink-0 transition-colors ${
-                                    isThisSegmentQueued
-                                      ? 'bg-amber-500/25 text-amber-200 border-amber-400'
-                                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                                  }`}
-                                  title="Thêm đoạn này vào danh sách cắt nhiều đoạn"
-                                >
-                                  {isThisSegmentQueued ? (
-                                    <>
-                                      <CheckSquare className="w-3 h-3 text-amber-300" />
-                                      <span>Đã chọn</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Square className="w-3 h-3" />
-                                      <span>+ Chọn thêm</span>
-                                    </>
-                                  )}
-                                </button>
+                                <div>
+                                  <p
+                                    className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug"
+                                    title={yt.title}
+                                  >
+                                    {yt.title}
+                                  </p>
+                                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                                    <p className="text-[10px] text-slate-400 truncate">
+                                      Kênh: {yt.channel} {yt.viewsLabel ? `· ${yt.viewsLabel}` : ''}
+                                    </p>
+                                    {externalLinkUrl && (
+                                      <a
+                                        href={externalLinkUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 shrink-0 underline"
+                                        title="Mở xem link gốc trên YouTube / TikTok / Instagram"
+                                      >
+                                        ↗ Link gốc
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
 
+                                {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Bất Kỳ Trên Timeline) */}
+                                {selectableScenes.length > 0 && (
+                                  <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                    <span className="text-sky-300 font-semibold shrink-0">
+                                      Vị trí chèn:
+                                    </span>
+                                    <select
+                                      value={chosenSceneId}
+                                      onChange={(e) => {
+                                        const nextSceneId = e.target.value;
+                                        const nextDur = getSceneDurationById(nextSceneId);
+                                        setYtTargetSceneIds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: nextSceneId,
+                                        }));
+                                        setYtTrimEnds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: startSec + nextDur,
+                                        }));
+                                      }}
+                                      className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-bold text-amber-300 truncate focus:outline-none focus:border-amber-400"
+                                    >
+                                      {selectableScenes.map((sc) => (
+                                        <option key={sc.id} value={sc.id}>
+                                          Phần #{String(sc.order).padStart(2, '0')} (
+                                          {Math.round(sc.durationSec || 8)}s) — {sc.title}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const pool =
+                                          selectableScenes.length > 1
+                                            ? selectableScenes.filter((s) => s.id !== chosenSceneId)
+                                            : selectableScenes;
+                                        const randSc =
+                                          pool[Math.floor(Math.random() * pool.length)] ||
+                                          selectableScenes[0];
+                                        if (!randSc) return;
+                                        const nextDur = getSceneDurationById(randSc.id);
+                                        const maxDurBound =
+                                          realYtTotalDur > 20 ? realYtTotalDur : yt.durationSec || 180;
+                                        const maxValidStart = Math.max(
+                                          6,
+                                          Math.min(600, maxDurBound - nextDur - 2)
+                                        );
+                                        const randStart =
+                                          12 + Math.floor(Math.random() * maxValidStart);
+                                        setYtTargetSceneIds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: randSc.id,
+                                        }));
+                                        setYtTrimStarts((prev) => ({
+                                          ...prev,
+                                          [yt.id]: randStart,
+                                        }));
+                                        setYtTrimEnds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: randStart + nextDur,
+                                        }));
+                                        const el = ytVideoRefs.current[yt.id];
+                                        if (el) {
+                                          try {
+                                            el.currentTime = randStart;
+                                          } catch {
+                                            // ignore
+                                          }
+                                        }
+                                      }}
+                                      title="Đổi ngẫu nhiên sang một vị trí Phần bất kỳ trên Timeline và chọn ngẫu nhiên giây cắt"
+                                      className="px-1.5 py-0.5 rounded bg-violet-500/20 hover:bg-violet-500/35 text-violet-200 border border-violet-500/40 text-[10px] font-bold shrink-0"
+                                    >
+                                      🎲 Ngẫu nhiên
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Independent Start -> End Second Controls */}
+                                <div className="flex items-center justify-between gap-1.5 bg-[#0B0F17] px-2.5 py-1.5 rounded border border-slate-800 text-[11px]">
+                                  <span className="text-slate-300 flex items-center gap-1 shrink-0">
+                                    <Scissors className="w-3 h-3 text-amber-400" />
+                                    <span>Đoạn cắt:</span>
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={
+                                        realYtTotalDur > 5
+                                          ? realYtTotalDur - 3
+                                          : Math.max(300, yt.durationSec - 4)
+                                      }
+                                      step={1}
+                                      value={startSec}
+                                      onChange={(e) => {
+                                        const val = Math.max(0, parseInt(e.target.value || '0', 10));
+                                        setYtTrimStarts((prev) => ({ ...prev, [yt.id]: val }));
+                                        setYtTrimEnds((prev) => ({
+                                          ...prev,
+                                          [yt.id]: val + cutDur,
+                                        }));
+                                        const el = ytVideoRefs.current[yt.id];
+                                        if (el) {
+                                          try {
+                                            el.currentTime = val;
+                                          } catch {
+                                            // ignore
+                                          }
+                                        }
+                                      }}
+                                      className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-amber-300"
+                                      title="Giây bắt đầu cắt (Start)"
+                                    />
+                                    <span className="text-slate-400 font-mono">s →</span>
+                                    <input
+                                      type="number"
+                                      min={startSec + 3}
+                                      max={
+                                        realYtTotalDur > 5
+                                          ? realYtTotalDur
+                                          : Math.max(startSec + 25, yt.durationSec, 7200)
+                                      }
+                                      step={1}
+                                      value={endSec}
+                                      onChange={(e) => {
+                                        const val = Math.max(
+                                          startSec + 3,
+                                          parseInt(e.target.value || String(startSec + 8), 10)
+                                        );
+                                        setYtTrimEnds((prev) => ({ ...prev, [yt.id]: val }));
+                                      }}
+                                      className="w-14 px-1 py-0.5 text-center font-mono font-bold bg-slate-900 border border-slate-700 rounded text-emerald-300"
+                                      title="Giây kết thúc cắt (End)"
+                                    />
+                                    <span className="text-slate-400 font-mono">
+                                      s ({cutDur}s)
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 1-Click Accept Cut & Replace Into Chosen Part */}
+                              <div className="space-y-1.5">
                                 <button
                                   type="button"
                                   disabled={isCuttingYouTube && cuttingCardId === yt.id}
                                   onClick={() => {
                                     if (isCuttingYouTube) return;
-                                    handleCutAndInsertYouTubeVideos(yt, true);
+                                    handleCutAndInsertYouTubeVideos(yt, false);
                                   }}
-                                  className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 transition-colors"
-                                  title="Cắt đoạn này, thay thế vào Phần đang chọn và đóng cửa sổ ngay"
+                                  className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-colors ${
+                                    isCuttingYouTube && cuttingCardId === yt.id
+                                      ? 'bg-emerald-500 text-slate-950 ring-2 ring-emerald-300'
+                                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow'
+                                  }`}
                                 >
-                                  <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
-                                  <span className="truncate">
-                                    ⚡ Cắt Thay Vào{' '}
-                                    {getSceneBadgeById(chosenSceneId)
-                                      .split(' (')[0]
-                                      .replace('Đoạn', 'Phần')}{' '}
-                                    &amp; Đóng
-                                  </span>
+                                  {isCuttingYouTube && cuttingCardId === yt.id ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                      <span>
+                                        Đang cắt ({startSec}s→{endSec}s) &amp; thay vào{' '}
+                                        {getSceneBadgeById(chosenSceneId)
+                                          .split(' (')[0]
+                                          .replace('Đoạn', 'Phần')}
+                                        ...
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Scissors className="w-3.5 h-3.5 shrink-0" />
+                                      <span className="truncate">
+                                        ✅ Chấp Nhận Cắt ({startSec}s→{endSec}s) &amp; Thay Vào{' '}
+                                        {getSceneBadgeById(chosenSceneId)
+                                          .split(' (')[0]
+                                          .replace('Đoạn', 'Phần')}
+                                      </span>
+                                    </>
+                                  )}
                                 </button>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleQueueSegment(yt)}
+                                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 border shrink-0 transition-colors ${
+                                      isThisSegmentQueued
+                                        ? 'bg-amber-500/25 text-amber-200 border-amber-400'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                    }`}
+                                    title="Thêm đoạn này vào danh sách cắt nhiều đoạn"
+                                  >
+                                    {isThisSegmentQueued ? (
+                                      <>
+                                        <CheckSquare className="w-3 h-3 text-amber-300" />
+                                        <span>Đã chọn</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Square className="w-3 h-3" />
+                                        <span>+ Chọn thêm</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={isCuttingYouTube && cuttingCardId === yt.id}
+                                    onClick={() => {
+                                      if (isCuttingYouTube) return;
+                                      handleCutAndInsertYouTubeVideos(yt, true);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 transition-colors"
+                                    title="Cắt đoạn này, thay thế vào Phần đang chọn và đóng cửa sổ ngay"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
+                                    <span className="truncate">
+                                      ⚡ Cắt Thay Vào{' '}
+                                      {getSceneBadgeById(chosenSceneId)
+                                        .split(' (')[0]
+                                        .replace('Đoạn', 'Phần')}{' '}
+                                      &amp; Đóng
+                                    </span>
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
                     </div>
                   )}
                 </div>

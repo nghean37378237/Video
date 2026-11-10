@@ -506,6 +506,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     if (!sourceW || !sourceH) return;
 
     ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    const isVideoSource = source instanceof HTMLVideoElement;
+    const isAlready34Video =
+      isVideoSource && Math.abs(sourceW / sourceH - canvasW / canvasH) < 0.08;
 
     const filterParts: string[] = [];
     if (filter === 'bw-vintage') {
@@ -529,38 +535,45 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     let translateX = 0;
     let translateY = 0;
 
-    if (motion === 'zoom-in') {
-      scale = 1.0 + smoothP * 0.125;
-      translateY = -smoothP * canvasH * 0.015;
-    } else if (motion === 'zoom-out') {
-      scale = 1.125 - smoothP * 0.125;
-      translateY = (smoothP - 0.5) * canvasH * 0.015;
-    } else if (motion === 'pan-left') {
-      scale = 1.1;
-      translateX = (0.5 - smoothP) * canvasW * 0.075;
-    } else if (motion === 'pan-right') {
-      scale = 1.1;
-      translateX = (smoothP - 0.5) * canvasW * 0.075;
+    // For real video clips (especially 720x960 3:4 HD cuts), avoid extra Ken Burns zoom so pixels map 1:1 with maximum sharpness
+    if (!isVideoSource) {
+      if (motion === 'zoom-in') {
+        scale = 1.0 + smoothP * 0.125;
+        translateY = -smoothP * canvasH * 0.015;
+      } else if (motion === 'zoom-out') {
+        scale = 1.125 - smoothP * 0.125;
+        translateY = (smoothP - 0.5) * canvasH * 0.015;
+      } else if (motion === 'pan-left') {
+        scale = 1.1;
+        translateX = (0.5 - smoothP) * canvasW * 0.075;
+      } else if (motion === 'pan-right') {
+        scale = 1.1;
+        translateX = (smoothP - 0.5) * canvasW * 0.075;
+      }
     }
 
     scale *= extraScale;
     translateX += extraOffsetX;
 
-    // Safe clean-frame crop: trim outer 3.5% sides/top and 8.5% bottom margin to eliminate studio publicity caption strips, copyright lines, or corner watermarks on archival media
-    const sx = sourceW * 0.035;
-    const sy = sourceH * 0.035;
-    const sw = Math.max(10, sourceW * 0.93);
-    const sh = Math.max(10, sourceH * 0.88);
+    if (isAlready34Video && Math.abs(scale - 1) < 0.01 && Math.abs(translateX) < 1) {
+      // Direct 1:1 pixel-perfect draw for 720x960 (3:4 HD) FFmpeg cuts — zero double-crop, zero blur!
+      ctx.drawImage(source, 0, 0, sourceW, sourceH, 0, 0, canvasW, canvasH);
+    } else {
+      // For still photos, trim outer 3.5% sides/top and 8.5% bottom margin to eliminate studio caption strips; for raw video streams keep full resolution
+      const sx = isVideoSource ? 0 : sourceW * 0.035;
+      const sy = isVideoSource ? 0 : sourceH * 0.035;
+      const sw = isVideoSource ? sourceW : Math.max(10, sourceW * 0.93);
+      const sh = isVideoSource ? sourceH : Math.max(10, sourceH * 0.88);
 
-    // Fill 100% of the canvas edge-to-edge and protect portrait heads/eyes with 0.14 vertical bias
-    const scaleCover = Math.max(canvasW / sw, canvasH / sh);
-    const drawW = sw * scaleCover * scale;
-    const drawH = sh * scaleCover * scale;
-    const drawX = (canvasW - drawW) / 2 + translateX;
-    const verticalBias = drawH > canvasH ? 0.14 : 0.5;
-    const drawY = (canvasH - drawH) * verticalBias + translateY;
+      const scaleCover = Math.max(canvasW / sw, canvasH / sh);
+      const drawW = sw * scaleCover * scale;
+      const drawH = sh * scaleCover * scale;
+      const drawX = (canvasW - drawW) / 2 + translateX;
+      const verticalBias = drawH > canvasH ? 0.18 : 0.5;
+      const drawY = (canvasH - drawH) * verticalBias + translateY;
 
-    ctx.drawImage(source, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+      ctx.drawImage(source, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+    }
 
     // Subtle 35mm cinema lens vignette so all frames feel unified like a theatrical documentary
     ctx.filter = 'none';

@@ -2304,6 +2304,25 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     ],
   };
 
+  // Helper: Build FFmpeg filter chain for crisp 720x960 (3:4 HD) output with Lanczos scaling + optical Unsharp mask
+  function buildSharp34VideoFilter(frameMode = "3:4-sharp", focusX = "center"): string {
+    const focusFactor =
+      focusX === "left" ? "0.18" : focusX === "right" ? "0.82" : "0.5";
+
+    if (frameMode === "3:4-full-wide") {
+      // Keep 100% of horizontal 16:9 scene sharp in center over a blurred 720x960 (3:4) cinema backdrop
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos,unsharp=5:5:1.0:3:3:0.55,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+    }
+
+    if (frameMode === "3:4-cinema") {
+      // Balanced 3:4 cinema framing: moderate zoom (height=760px inside 720x960) so faces/scenes aren't over-zoomed, sharp foreground over blurred 3:4 backdrop
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.2,unsharp=5:5:1.0:3:3:0.55,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+    }
+
+    // Default "3:4-sharp": Full edge-to-edge 3:4 (720x960 HD) crop with Lanczos resampling + optical sharpening
+    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.2,setsar=1,unsharp=5:5:0.95:3:3:0.5,eq=contrast=1.04:saturation=1.04`;
+  }
+
   // Helper: Physically cut a standalone fast-playing MP4 clip + extract a real video frame JPG thumbnail using FFmpeg (cached on disk)
   async function cutAndCacheRealVideoClip(
     rawOrProxyUrl: string,
@@ -2333,7 +2352,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .toString("base64")
         .replace(/[^a-zA-Z0-9]/g, "")
         .slice(-16);
-      const fileId = `real_cut_${urlSlug}_${safeStart}s_${safeEnd}s`;
+      const fileId = `real_cut34_${urlSlug}_${safeStart}s_${safeEnd}s`;
       const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
       const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
 
@@ -2349,13 +2368,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "-t",
             String(safeDur),
             "-vf",
-            "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+            buildSharp34VideoFilter("3:4-sharp", "center"),
             "-c:v",
             "libx264",
             "-preset",
-            "ultrafast",
+            "veryfast",
             "-crf",
-            "25",
+            "18",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
@@ -2363,7 +2382,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "-an",
             outMp4Path,
           ],
-          { timeout: 11500 }
+          { timeout: 14000 }
         );
       }
 
@@ -2918,13 +2937,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   "-t",
                   String(dur),
                   "-vf",
-                  "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+                  buildSharp34VideoFilter("3:4-sharp", "center"),
                   "-c:v",
                   "libx264",
                   "-preset",
-                  "ultrafast",
+                  "veryfast",
                   "-crf",
-                  "25",
+                  "18",
                   "-pix_fmt",
                   "yuv420p",
                   "-movflags",
@@ -2932,7 +2951,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   "-an",
                   outMp4Path,
                 ],
-                { timeout: 11000 }
+                { timeout: 14000 }
               );
               if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
                 cutSucceeded = true;
@@ -3218,7 +3237,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   // 2g-2. Get or Delete Persistently Saved Cut Video Clips
   app.get("/api/youtube/saved-cuts", (_req, res) => {
     const list = loadSavedCutsManifest();
-    res.json({ cuts: list });
+    res.json({ cuts: list, savedCuts: list });
   });
 
   app.delete("/api/youtube/saved-cuts/:id", (req, res) => {
@@ -3877,13 +3896,49 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         })(),
       ]);
 
-      const lowerChar = cleanChar.toLowerCase();
+      const lowerChar = `${rawQuery} ${cleanChar}`.toLowerCase();
       const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
-        (k) => lowerChar.includes(k) || k.includes(lowerChar)
+        (k) => lowerChar.includes(k) || cleanChar.toLowerCase().includes(k)
       );
-      const curatedReels = matchedCuratedKey
+      let curatedReels = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
-        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+        : [];
+
+      if (curatedReels.length === 0) {
+        try {
+          const dynVideos = await searchRealArchivalVideos(
+            cleanChar,
+            6,
+            new Set<string>(),
+            cleanChar,
+            new Set<string>(),
+            0
+          );
+          const dynReels = dynVideos
+            .map((dv) => {
+              const uMatch = dv.videoUrl.match(/[?&]url=([^&#]+)/);
+              const rawMp4Url = uMatch ? decodeURIComponent(uMatch[1]) : "";
+              return {
+                title: dv.title,
+                rawMp4Url,
+                year: dv.year || 1970,
+                trimStartSec: dv.trimStartSec || 24,
+                trimEndSec: dv.trimEndSec || 33,
+                width: dv.width || 640,
+                height: dv.height || 360,
+              };
+            })
+            .filter((r) => Boolean(r.rawMp4Url));
+          if (dynReels.length > 0) {
+            curatedReels = dynReels;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (curatedReels.length === 0) {
+        curatedReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
+      }
 
       const pickMatchedReelAndDm = (titleText: string, itemIdx: number) => {
         const lowerTitle = titleText.toLowerCase();
@@ -3907,6 +3962,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return { matchedReel, pairedDmId };
       };
 
+      const computeReelStartSec = (
+        reel: { rawMp4Url?: string; trimStartSec?: number } | undefined,
+        slotIdx: number
+      ): number => {
+        const base = reel?.trimStartSec ?? 22;
+        const rawUrl = (reel?.rawMp4Url || "").toLowerCase();
+        // Bullitt trailer is 164s long, Fist of Fury clip is ~120s long; keep startSec well within their duration
+        if (rawUrl.includes("bullitt") || rawUrl.includes("7mzzuljj6vu")) {
+          const shortOffsets = [16, 32, 48, 66, 84, 102, 118, 134];
+          return shortOffsets[slotIdx % shortOffsets.length];
+        }
+        const offsets = [0, 22, 46, 72, 98, 126, 158, 192, 230, 270];
+        return Math.max(12, base + offsets[slotIdx % offsets.length]);
+      };
+
       const seenYtIds = new Set<string>();
       const shortsItems: any[] = [];
       const tiktokItems: any[] = [];
@@ -3917,6 +3987,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (pastedYtId) {
         seenYtIds.add(pastedYtId);
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(cleanChar, 0);
+        const directStartSec = computeReelStartSec(matchedReel, 0);
         if (isPastedShort) {
           shortsItems.push({
             id: `yt-short-direct-${pastedYtId}`,
@@ -3932,7 +4003,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             viewsLabel: "Link trực tiếp",
             thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
             youtubeUrl: `https://www.youtube.com/shorts/${pastedYtId}`,
-            suggestedTrimStartSec: 4,
+            suggestedTrimStartSec: directStartSec,
             sourcePlatform: "shorts" as const,
             platformBadge: "📱 YouTube Short",
           });
@@ -3951,7 +4022,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             viewsLabel: "Link trực tiếp",
             thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
             youtubeUrl: `https://www.youtube.com/watch?v=${pastedYtId}`,
-            suggestedTrimStartSec: 15,
+            suggestedTrimStartSec: directStartSec,
             sourcePlatform: "youtube" as const,
             platformBadge: "🎬 YouTube",
           });
@@ -4032,7 +4103,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       // 1. Format YouTube Shorts items
       finalShortsRaw.forEach((s, idx) => {
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
-        const startSec = 3 + Math.floor(Math.random() * 20);
+        const startSec = computeReelStartSec(matchedReel, idx);
         shortsItems.push({
           id: `yt-short-${s.youtubeId}-${idx}`,
           youtubeId: s.youtubeId,
@@ -4042,7 +4113,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: s.title,
           channel: "YouTube Shorts",
-          durationSec: s.durationSec || 45,
+          durationSec: Math.max(180, s.durationSec || 45),
           durationLabel: "0:45 (Short)",
           viewsLabel: s.viewsLabel,
           thumbnailUrl: s.thumbnailUrl,
@@ -4061,7 +4132,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         if (!ytCand && !ttLink) continue;
         const titleText = ytCand?.title || `${cleanChar} — TikTok Edit (@${ttLink?.author || "tiktok"})`;
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 2);
-        const startSec = 2 + Math.floor(Math.random() * 18);
+        const startSec = computeReelStartSec(matchedReel, idx + 2);
         const cleanTitle = /tiktok/i.test(titleText) ? titleText : `${titleText} #TikTok`;
         tiktokItems.push({
           id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-${idx}`,
@@ -4073,7 +4144,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: cleanTitle,
           channel: ttLink?.author ? `@${ttLink.author} · TikTok` : "TikTok · Video Ngắn",
-          durationSec: ytCand?.durationSec || 42,
+          durationSec: Math.max(180, ytCand?.durationSec || 42),
           durationLabel: "0:42 (TikTok)",
           viewsLabel: ytCand?.viewsLabel || "TikTok",
           thumbnailUrl:
@@ -4098,7 +4169,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const titleText =
           ytCand?.title || `${cleanChar} — Instagram Reel (#${igLink?.code || idx + 1})`;
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 4);
-        const startSec = 2 + Math.floor(Math.random() * 18);
+        const startSec = computeReelStartSec(matchedReel, idx + 4);
         const cleanTitle = /instagram|reel/i.test(titleText)
           ? titleText
           : `${titleText} #InstagramReels`;
@@ -4114,7 +4185,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           channel: igLink?.code
             ? `Instagram Reels (@${cleanChar.toLowerCase().replace(/\s+/g, "")})`
             : "Instagram Reels",
-          durationSec: ytCand?.durationSec || 38,
+          durationSec: Math.max(180, ytCand?.durationSec || 38),
           durationLabel: "0:38 (Reels)",
           viewsLabel: ytCand?.viewsLabel || "Instagram Reels",
           thumbnailUrl:
@@ -4140,8 +4211,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             v.title,
             youtubeLongItems.length
           );
-          const maxValidStart = Math.max(16, Math.min(240, (v.durationSec || 120) - 14));
-          const suggestedStart = 12 + Math.floor(Math.random() * (maxValidStart - 10));
+          const suggestedStart = computeReelStartSec(matchedReel, youtubeLongItems.length + 1);
           youtubeLongItems.push({
             id: `yt-vid-${v.youtubeId}-${youtubeLongItems.length}`,
             youtubeId: v.youtubeId,
@@ -4151,7 +4221,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             archiveMp4Url: matchedReel?.rawMp4Url || "",
             title: v.title,
             channel: v.channel,
-            durationSec: v.durationSec,
+            durationSec: Math.max(180, v.durationSec || 180),
             durationLabel: v.durationLabel,
             viewsLabel: v.viewsLabel,
             thumbnailUrl: v.thumbnailUrl,
@@ -4167,8 +4237,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       dmResults.forEach((dm, idx) => {
         const isShortDm = dm.durationSec <= 75;
         const matchedReel = curatedReels[idx % curatedReels.length];
-        const maxStart = Math.max(8, Math.min(160, (dm.durationSec || 90) - 12));
-        const suggestedStart = 4 + Math.floor(Math.random() * maxStart);
+        const suggestedStart = computeReelStartSec(matchedReel, idx + 3);
         const mins = Math.floor(dm.durationSec / 60);
         const secs = dm.durationSec % 60;
         const fallbackYtId =
@@ -4182,7 +4251,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: dm.title,
           channel: `${dm.channel} · Kho Phim`,
-          durationSec: dm.durationSec,
+          durationSec: Math.max(180, dm.durationSec || 180),
           durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
           viewsLabel: isShortDm ? "Video Ngắn" : "Cảnh Phim",
           thumbnailUrl:
@@ -4245,24 +4314,41 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   // 2i. Cut Each Selected Video Segment Independently with FFmpeg and Return Separate MP4 Cuts + Unique Frame Thumbnails
   app.post("/api/youtube/cut-clips", async (req, res) => {
     try {
-      const { clips = [], characterName = "Will Sampson" } = req.body || {};
+      const {
+        clips = [],
+        characterName = "Clint Eastwood",
+        searchQuery = "",
+        frameMode: reqFrameMode = "3:4-sharp",
+        focusX: reqFocusX = "center",
+      } = req.body || {};
       if (!Array.isArray(clips) || clips.length === 0) {
         res.status(400).json({ error: "Vui lòng chọn ít nhất 1 đoạn video để cắt." });
         return;
       }
 
-      const cleanChar = String(characterName || "Will Sampson")
+      const rawCharInput = String(searchQuery || characterName || "Clint Eastwood")
         .replace(/[—–-].*$/, "")
         .trim();
-      const lowerChar = cleanChar.toLowerCase();
-      const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
-        (k) => lowerChar.includes(k) || k.includes(lowerChar)
-      );
+      const combinedHint = `${rawCharInput} ${clips.map((c: any) => c?.title || "").join(" ")} ${characterName}`.toLowerCase();
+
+      // Match against known actors in VERIFIED_ACTOR_REAL_VIDEO_REELS prioritizing searchQuery & clip title over a stale default characterName
+      const matchedCuratedKey =
+        Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find((k) =>
+          `${rawCharInput} ${clips[0]?.title || ""}`.toLowerCase().includes(k)
+        ) ||
+        Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find((k) => combinedHint.includes(k));
+
+      const cleanChar = matchedCuratedKey
+        ? matchedCuratedKey
+            .split(" ")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ")
+        : rawCharInput || "Clint Eastwood";
+
       const curatedReels = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
-        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+        : VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
 
-      const usedStreamSources = new Set<string>();
       const ytDlpBin = fs.existsSync(path.join(process.cwd(), "bin", "yt-dlp"))
         ? path.join(process.cwd(), "bin", "yt-dlp")
         : fs.existsSync("/tmp/yt-dlp")
@@ -4273,9 +4359,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       for (let idx = 0; idx < Math.min(8, clips.length); idx++) {
         const clip = clips[idx];
         const parsedStart = Number(clip?.trimStartSec);
-        const trimStartSec = Number.isFinite(parsedStart) && parsedStart >= 0
-          ? Math.round(parsedStart)
-          : 2;
+        const trimStartSec =
+          Number.isFinite(parsedStart) && parsedStart >= 0 ? Math.round(parsedStart) : 18;
         const rawEndSec = Number(clip?.trimEndSec);
         const durationSec =
           rawEndSec && rawEndSec > trimStartSec + 1
@@ -4287,14 +4372,25 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const tiktokUrl = String(clip?.tiktokUrl || "").trim();
         const instagramUrl = String(clip?.instagramUrl || "").trim();
         const socialDirectUrl = tiktokUrl || instagramUrl;
+        const explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
+        const preferArchiveMp4 = clip?.preferArchiveMp4 !== false && Boolean(explicitArchiveMp4);
+        const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
+        const clipFocusX = String(clip?.focusX || reqFocusX || "center");
+        const vf34Filter = buildSharp34VideoFilter(clipFrameMode, clipFocusX);
+        const modeTag =
+          clipFrameMode === "3:4-cinema"
+            ? "34cin"
+            : clipFrameMode === "3:4-full-wide"
+            ? "34wide"
+            : "34hd";
 
-        const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s`;
+        const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s_${modeTag}`;
         const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
         const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
         let cutSucceeded = false;
 
-        // 0. If this is a real TikTok or Instagram Reel URL and yt-dlp is available, download & cut it directly with FFmpeg!
-        if (socialDirectUrl && ytDlpBin) {
+        // 0. Only if no explicit archiveMp4Url was previewed on the card, try direct social URL via yt-dlp
+        if (!preferArchiveMp4 && socialDirectUrl && ytDlpBin) {
           const rawSocialPath = path.join(YT_CUTS_DIR, `${fileId}_raw_social.mp4`);
           try {
             await execFileAsync(
@@ -4308,19 +4404,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 [
                   "-y",
                   "-ss",
-                  String(Math.min(trimStartSec, 15)),
+                  String(trimStartSec),
                   "-i",
                   rawSocialPath,
                   "-t",
                   String(durationSec),
                   "-vf",
-                  "scale=640:-2",
+                  vf34Filter,
                   "-c:v",
                   "libx264",
                   "-preset",
-                  "ultrafast",
+                  "veryfast",
                   "-crf",
-                  "24",
+                  "18",
                   "-pix_fmt",
                   "yuv420p",
                   "-movflags",
@@ -4328,7 +4424,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   "-an",
                   outMp4Path,
                 ],
-                { timeout: 9000 }
+                { timeout: 12000 }
               );
               if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 10000) {
                 cutSucceeded = true;
@@ -4344,7 +4440,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                     "-frames:v",
                     "1",
                     "-q:v",
-                    "3",
+                    "2",
                     outJpgPath,
                   ],
                   { timeout: 3500 }
@@ -4362,60 +4458,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           }
         }
 
-        // 1. If clip already has a pre-paired Dailymotion ID, resolve its HLS stream immediately (fast ~1.2s)
-        let streamUrl: string | null = null;
-        if (!cutSucceeded && clip?.dmId && !usedStreamSources.has(`dm:${clip.dmId}`)) {
-          const resolved = await resolveDailymotionStreamUrl(String(clip.dmId));
-          if (resolved) {
-            usedStreamSources.add(`dm:${clip.dmId}`);
-            streamUrl = resolved;
-          }
-        }
-
-        // 2. Otherwise search Dailymotion by clip title OR actor name so every cut gets a distinct real video stream of this actor
-        if (!cutSucceeded && !streamUrl && title) {
-          try {
-            const cleanSearchTitle = title
-              .replace(/#[^\s]+/g, " ")
-              .replace(/[^\p{L}\p{N}\s']/gu, " ")
-              .replace(/\s+/g, " ")
-              .trim()
-              .slice(0, 48);
-            const searchQueriesToTry = [cleanSearchTitle, `${cleanChar} movie scene`];
-            for (const qTry of searchQueriesToTry) {
-              if (streamUrl) break;
-              const dmSearch = await fetch(
-                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                  qTry
-                )}&limit=6&fields=id,title,duration`,
-                {
-                  headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(2800),
-                }
-              );
-              if (dmSearch.ok) {
-                const dmData: any = await dmSearch.json();
-                const list = Array.isArray(dmData?.list) ? dmData.list : [];
-                for (const item of list) {
-                  if (!item?.id || (item.duration || 0) < trimEndSec + 2) continue;
-                  const candidateId = String(item.id);
-                  if (!usedStreamSources.has(`dm:${candidateId}`)) {
-                    const resolved = await resolveDailymotionStreamUrl(candidateId);
-                    if (resolved) {
-                      usedStreamSources.add(`dm:${candidateId}`);
-                      streamUrl = resolved;
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          } catch {
-            // fallback below
-          }
-        }
-
-        // Pick a matching or distinct Archive MP4 fallback reel for this clip
+        // 1. Choose the EXACT archive MP4 stream that the user previewed on the card!
         const lowerTitle = title.toLowerCase();
         let chosenReel = curatedReels.find(
           (r) =>
@@ -4426,25 +4469,39 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
             (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade"))
         );
-        if (!chosenReel || usedStreamSources.has(`ia:${chosenReel.rawMp4Url}`)) {
-          chosenReel =
-            curatedReels.find((r) => !usedStreamSources.has(`ia:${r.rawMp4Url}`)) ||
-            curatedReels[idx % curatedReels.length];
+        if (!chosenReel) {
+          chosenReel = curatedReels[idx % curatedReels.length];
         }
-        const archiveMp4 = String(clip?.archiveMp4Url || chosenReel.rawMp4Url);
-        usedStreamSources.add(`ia:${archiveMp4}`);
+        const archiveMp4 = explicitArchiveMp4 || chosenReel.rawMp4Url;
 
-        const sourceToCut = streamUrl || archiveMp4;
-        // For short clips cut from a long archive reel where trimStartSec was 0-6s, offset by 18s on the archive reel to skip opening studio logos
-        const effectiveArchiveSeek =
-          !streamUrl && trimStartSec < 12 ? trimStartSec + (chosenReel.trimStartSec || 18) : trimStartSec;
+        // 2. Only try Dailymotion if we do NOT have an explicitArchiveMp4 from the preview player
+        let streamUrl: string | null = null;
+        if (!cutSucceeded && !explicitArchiveMp4 && clip?.dmId) {
+          streamUrl = await resolveDailymotionStreamUrl(String(clip.dmId));
+        }
 
-        if (!cutSucceeded) {
+        const sourceToCut = explicitArchiveMp4 || streamUrl || archiveMp4;
+        // CRITICAL: Cut at the EXACT trimStartSec that the user previewed on the card (NO hidden offset!)
+        const effectiveArchiveSeek = trimStartSec;
+
+        if (!cutSucceeded && sourceToCut) {
           try {
             await execFileAsync(
               "ffmpeg",
               [
                 "-y",
+                "-user_agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "-reconnect",
+                "1",
+                "-reconnect_streamed",
+                "1",
+                "-reconnect_on_network_error",
+                "1",
+                "-reconnect_on_http_error",
+                "4xx,5xx",
+                "-reconnect_delay_max",
+                "5",
                 "-ss",
                 String(effectiveArchiveSeek),
                 "-i",
@@ -4452,13 +4509,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 "-t",
                 String(durationSec),
                 "-vf",
-                "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
+                vf34Filter,
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "veryfast",
                 "-crf",
-                "25",
+                "18",
                 "-pix_fmt",
                 "yuv420p",
                 "-movflags",
@@ -4466,12 +4523,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 "-an",
                 outMp4Path,
               ],
-              { timeout: 14000 }
+              { timeout: 18000 }
             );
 
-            if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
+            if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 10000) {
               cutSucceeded = true;
-              const thumbSeek = Math.min(2.5, Math.max(0.6, Number((durationSec * 0.35).toFixed(1))));
+              const thumbSeek = Math.min(2.0, Math.max(0.4, Number((durationSec * 0.3).toFixed(1))));
               await execFileAsync(
                 "ffmpeg",
                 [
@@ -4483,49 +4540,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   "-frames:v",
                   "1",
                   "-q:v",
-                  "3",
+                  "2",
                   outJpgPath,
                 ],
                 { timeout: 4000 }
               ).catch(() => {});
             }
           } catch {
-            if (streamUrl && archiveMp4) {
-              try {
-                await execFileAsync(
-                  "ffmpeg",
-                  [
-                    "-y",
-                    "-ss",
-                    String(effectiveArchiveSeek),
-                    "-i",
-                    archiveMp4,
-                    "-t",
-                    String(durationSec),
-                    "-vf",
-                    "crop=iw*0.88:ih*0.88:iw*0.06:ih*0.06,scale=640:-2",
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "ultrafast",
-                    "-crf",
-                    "25",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-movflags",
-                    "+faststart",
-                    "-an",
-                    outMp4Path,
-                  ],
-                  { timeout: 12000 }
-                );
-                if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
-                  cutSucceeded = true;
-                }
-              } catch {
-                // fallback below
-              }
-            }
+            // fallback below
           }
         }
 
@@ -4546,24 +4568,30 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           results.push({
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
+            characterName: cleanChar,
             title,
             videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
+            sourceVideoUrl: archiveMp4,
             thumbnailUrl,
             trimStartSec: 0,
             trimEndSec: durationSec,
             originalStartSec: trimStartSec,
             originalEndSec: trimEndSec,
             durationSec,
-            width: 640,
-            height: 360,
-            sourceLabel: `✂️ Đã cắt riêng đoạn ${trimStartSec}s → ${trimEndSec}s`,
+            width: 720,
+            height: 960,
+            frameMode: clipFrameMode,
+            focusX: clipFocusX,
+            sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
           });
         } else {
           results.push({
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
+            characterName: cleanChar,
             title,
-            videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(archiveMp4)}#cut=${idx + 1}&t=${trimStartSec},${trimEndSec}`,
+            videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(archiveMp4)}#t=${trimStartSec},${trimEndSec}`,
+            sourceVideoUrl: archiveMp4,
             thumbnailUrl,
             trimStartSec,
             trimEndSec,
