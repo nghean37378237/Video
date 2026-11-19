@@ -593,7 +593,8 @@ export default function App() {
     sceneId: string,
     videoOpt: SceneVideoOption,
     customTrimStartSec: number,
-    customTrimEndSec: number
+    customTrimEndSec: number,
+    skipServerCut = false
   ) => {
     const cleanStreamUrl = videoOpt.videoUrl.split('#')[0];
     let archiveMp4Url = cleanStreamUrl;
@@ -611,40 +612,43 @@ export default function App() {
       settings.projectTitle.split('—')[0].trim() ||
       'Will Sampson';
 
-    setStatusBanner(
-      `⏳ Đang cắt riêng đoạn ${customTrimStartSec}s → ${customTrimEndSec}s từ Video Thật "${videoOpt.title}" cho Cảnh #${String(targetScene?.order || 1).padStart(2, '0')}...`
-    );
+    if (!skipServerCut) {
+      setStatusBanner(
+        `⏳ Đang cắt riêng đoạn ${customTrimStartSec}s → ${customTrimEndSec}s từ Video Thật "${videoOpt.title}" cho Cảnh #${String(targetScene?.order || 1).padStart(2, '0')}...`
+      );
 
-    // Cut the exact segment into a fast standalone MP4 file + real video frame thumbnail via FFmpeg
-    try {
-      const cutRes = await fetch('/api/youtube/cut-clips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          characterName: rawTopic,
-          clips: [
-            {
-              title: videoOpt.title,
-              archiveMp4Url,
-              trimStartSec: customTrimStartSec,
-              trimEndSec: customTrimEndSec,
-              durationSec: dur,
-              thumbnailUrl: videoOpt.dataUrl,
-              targetSceneId: sceneId,
-            },
-          ],
-        }),
-      });
-      if (cutRes.ok) {
-        const cutData = await cutRes.json();
-        const cuts: CutYouTubeResultItem[] = Array.isArray(cutData?.cuts) ? cutData.cuts : [];
-        if (cuts.length > 0) {
-          handleInsertCutYouTubeClips(cuts, sceneId);
-          return;
+      // Cut the exact segment into a fast standalone MP4 file + real video frame thumbnail via FFmpeg
+      try {
+        const cutRes = await fetch('/api/youtube/cut-clips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(55000),
+          body: JSON.stringify({
+            characterName: rawTopic,
+            clips: [
+              {
+                title: videoOpt.title,
+                archiveMp4Url,
+                trimStartSec: customTrimStartSec,
+                trimEndSec: customTrimEndSec,
+                durationSec: dur,
+                thumbnailUrl: videoOpt.dataUrl,
+                targetSceneId: sceneId,
+              },
+            ],
+          }),
+        });
+        if (cutRes.ok) {
+          const cutData = await cutRes.json();
+          const cuts: CutYouTubeResultItem[] = Array.isArray(cutData?.cuts) ? cutData.cuts : [];
+          if (cuts.length > 0) {
+            handleInsertCutYouTubeClips(cuts, sceneId);
+            return;
+          }
         }
+      } catch {
+        // Fallback to direct stream below if cut endpoint fails
       }
-    } catch {
-      // Fallback to direct stream below if cut endpoint fails
     }
 
     const finalVideoUrl = `${cleanStreamUrl}#cut=${Date.now()}&t=${customTrimStartSec},${customTrimEndSec}`;

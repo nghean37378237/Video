@@ -3490,21 +3490,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     ],
   };
 
-  // Helper: Build FFmpeg filter chain for razor-sharp 720x960 (3:4 HD) output with Lanczos resampling + optical Unsharp mask
+  // Helper: Build FFmpeg filter chain for razor-sharp 720x960 (3:4 HD) output with fast Bicubic resampling + 3x3 Unsharp mask
   function buildSharp34VideoFilter(frameMode = "3:4-sharp", focusX = "center"): string {
     const focusFactor =
       focusX === "left" ? "0.18" : focusX === "right" ? "0.82" : "0.5";
 
     if (frameMode === "3:4-full-wide") {
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=bilinear,crop=720:960,boxblur=12:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=bicubic,unsharp=3:3:0.75:3:3:0.3,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
     if (frameMode === "3:4-cinema") {
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.18,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=bilinear,crop=720:960,boxblur=12:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=bicubic,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.18,unsharp=3:3:0.75:3:3:0.3,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
-    // Default "3:4-sharp": Razor-sharp full edge-to-edge 3:4 (720x960 HD) crop with Lanczos resampling + optical sharpening
-    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.16,setsar=1,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.04`;
+    // Default "3:4-sharp": Crisp full edge-to-edge 3:4 (720x960 HD) crop with fast Bicubic resampling + optical sharpening
+    return `scale=720:960:force_original_aspect_ratio=increase:flags=bicubic,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.16,setsar=1,unsharp=3:3:0.75:3:3:0.3,eq=contrast=1.04:saturation=1.04`;
   }
 
   let cachedYtDlpPromise: Promise<string | null> | null = null;
@@ -4590,9 +4590,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     return parts[0] || 120;
   }
 
-  // Helper: Resolve a Dailymotion video ID into a direct HLS .m3u8 stream URL that FFmpeg can cut in ~3s
+  // Helper: Resolve a Dailymotion video ID into a direct HLS .m3u8 stream URL that FFmpeg can cut in ~2-3s
+  const dmRejectedIdsCache = new Set<string>();
+  let lastYtDlpYouTubeBlockedAt = 0;
   async function resolveDailymotionStreamUrl(dmId: string): Promise<string | null> {
-    if (!dmId) return null;
+    if (!dmId || dmRejectedIdsCache.has(dmId)) return null;
     try {
       const metaRes = await fetch(
         `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(dmId)}`,
@@ -4601,7 +4603,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "User-Agent": BROWSER_USER_AGENT,
             Referer: "https://www.dailymotion.com/",
           },
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(3000),
         }
       );
       if (!metaRes.ok) return null;
@@ -4614,6 +4616,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               .join("; ")
           : "";
       const metaData: any = await metaRes.json();
+      if (metaData?.error) {
+        dmRejectedIdsCache.add(dmId);
+        return null;
+      }
       const masterUrl = metaData?.qualities?.auto?.[0]?.url;
       if (!masterUrl) return null;
 
@@ -4623,7 +4629,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           Referer: "https://www.dailymotion.com/",
           ...(cookies ? { Cookie: cookies } : {}),
         },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3000),
       });
       if (!mRes.ok) return null;
       const mText = await mRes.text();
@@ -4632,7 +4638,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .filter((line) => line.trim().startsWith("https://"))
         .map((line) => line.split("#")[0].trim());
       if (streamUrls.length === 0) return null;
-      // Pick 480p / 380p stream (index 1 or 0) for fast 3-second cutting
+      // Pick mid/480p-720p stream for ~2-3s cutting
       return streamUrls[Math.min(1, streamUrls.length - 1)];
     } catch {
       return null;
@@ -5375,7 +5381,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         seenStreamUrls.add(r.rawMp4Url);
         curatedReels.push(r);
       }
-      if (curatedReels.length === 0) {
+      if (curatedReels.length === 0 && dmResults.length === 0) {
         curatedReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
       }
 
@@ -5394,7 +5400,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             (lowerTitle.includes("fist of fury") && r.title.toLowerCase().includes("fist of fury")) ||
             (lowerTitle.includes("fistful") && r.title.toLowerCase().includes("fistful"))
         );
-        if (!matchedReel) {
+        if (!matchedReel && curatedReels.length > 0) {
           matchedReel = curatedReels[(itemIdx + pageIdx * 3) % curatedReels.length];
         }
         const pairedDmId =
@@ -5871,51 +5877,39 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         u.includes(".archive.org/") ||
         u.includes("wikimedia.org/");
 
-      const resolveFastDirectUrl = async (inputUrl: string): Promise<string> => {
-        let candidate = inputUrl;
-        if (/\.ogv(\?|#|$)/i.test(candidate)) {
-          candidate = candidate.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
-        }
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 2200);
-          const headRes = await fetch(candidate, {
-            method: "HEAD",
-            redirect: "follow",
-            headers: { "User-Agent": BROWSER_USER_AGENT },
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          if (headRes.ok && headRes.url && headRes.url.startsWith("http")) {
-            return headRes.url;
-          }
-        } catch {
-          // keep original candidate
-        }
-        return candidate;
-      };
-
       const resolveSocialOrDmStreamWithYtDlp = async (pageUrl: string): Promise<string | null> => {
         if (!ytDlpBin || !pageUrl) return null;
+        const isYtUrl = /youtube\.com|youtu\.be/i.test(pageUrl);
+        if (isYtUrl && Date.now() - lastYtDlpYouTubeBlockedAt < 5 * 60 * 1000) {
+          return null;
+        }
         try {
           const { stdout } = await execFileAsync(
             ytDlpBin,
             [
               "--no-warnings",
               "--no-playlist",
+              "--socket-timeout",
+              "3",
+              "--retries",
+              "0",
               "-f",
               "best[ext=mp4][height<=720]/best[height<=720]/best",
               "-g",
               pageUrl,
             ],
-            { timeout: 8500 }
+            { timeout: 4500 }
           );
           const lines = stdout
             .split(/\r?\n/)
             .map((l) => l.trim())
             .filter((l) => l.startsWith("http"));
           return lines[0] || null;
-        } catch {
+        } catch (err: any) {
+          const msg = `${err?.stderr || ""} ${err?.message || ""}`;
+          if (isYtUrl && /bot|Sign in|403|HTTP Error 429|timeout/i.test(msg)) {
+            lastYtDlpYouTubeBlockedAt = Date.now();
+          }
           return null;
         }
       };
@@ -5927,35 +5921,56 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         vfFilter: string,
         outMp4: string,
         outJpg: string,
-        timeoutMs = 15000
+        timeoutMs = 11000
       ): Promise<boolean> => {
         if (!srcUrl) return false;
+        const cleanSrc = /\.ogv(\?|#|$)/i.test(srcUrl)
+          ? srcUrl.replace(/\.ogv(\?|#|$)/i, ".mp4$1")
+          : srcUrl;
+        const isRemoteHttp = cleanSrc.startsWith("http://") || cleanSrc.startsWith("https://");
         try {
-          const directUrl = srcUrl.startsWith("http")
-            ? await resolveFastDirectUrl(srcUrl)
-            : srcUrl;
           await execFileAsync(
             "ffmpeg",
             [
               "-y",
-              "-rw_timeout",
-              "7000000",
-              "-user_agent",
-              BROWSER_USER_AGENT,
+              "-threads",
+              "2",
+              ...(isRemoteHttp
+                ? [
+                    "-rw_timeout",
+                    "5000000",
+                    "-reconnect",
+                    "1",
+                    "-reconnect_streamed",
+                    "1",
+                    "-reconnect_delay_max",
+                    "2",
+                    "-user_agent",
+                    BROWSER_USER_AGENT,
+                  ]
+                : []),
+              "-fflags",
+              "+fastseek",
               "-ss",
               String(Math.max(0, seekSec)),
               "-i",
-              directUrl,
+              cleanSrc,
               "-t",
               String(durSec),
               "-vf",
               vfFilter,
+              "-r",
+              "24",
+              "-g",
+              "24",
               "-c:v",
               "libx264",
               "-preset",
               "ultrafast",
+              "-tune",
+              "fastdecode",
               "-crf",
-              "20",
+              "22",
               "-pix_fmt",
               "yuv420p",
               "-movflags",
@@ -5966,7 +5981,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             { timeout: timeoutMs }
           );
           if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 15000) {
-            const thumbSeek = Math.min(1.6, Math.max(0.3, Number((durSec * 0.25).toFixed(1))));
+            const thumbSeek = Math.min(2.4, Math.max(0.8, Number((durSec * 0.35).toFixed(1))));
             await execFileAsync(
               "ffmpeg",
               [
@@ -5981,7 +5996,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 "3",
                 outJpg,
               ],
-              { timeout: 3000 }
+              { timeout: 2500 }
             ).catch(() => {});
             return true;
           }
@@ -5996,37 +6011,40 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return false;
       };
 
-      // Lazy live lookup of Dailymotion candidates for the active subject in case clip.dmId is missing or blocked
-      let liveSubjectDmIdsPromise: Promise<string[]> | null = null;
+      // Lazy live lookup of Dailymotion candidates (with duration >= 15s) for the active subject
+      let liveSubjectDmListPromise: Promise<Array<{ id: string; duration: number }>> | null = null;
       const getSubjectDmFallbacks = () => {
-        if (!liveSubjectDmIdsPromise) {
-          liveSubjectDmIdsPromise = (async () => {
+        if (!liveSubjectDmListPromise) {
+          liveSubjectDmListPromise = (async () => {
             try {
               const r = await fetch(
                 `https://api.dailymotion.com/videos?search=${encodeURIComponent(
                   cleanChar
-                )}&limit=8&fields=id,duration`,
+                )}&limit=10&fields=id,duration`,
                 {
                   headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3500),
+                  signal: AbortSignal.timeout(3000),
                 }
               );
               if (!r.ok) return [];
               const j: any = await r.json();
               return (j?.list || [])
-                .filter((it: any) => it?.id && (it?.duration || 0) >= 12)
-                .map((it: any) => String(it.id));
+                .filter((it: any) => it?.id && (it?.duration || 0) >= 15)
+                .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60 }));
             } catch {
               return [];
             }
           })();
         }
-        return liveSubjectDmIdsPromise;
+        return liveSubjectDmListPromise;
       };
 
+      // Limit concurrent FFmpeg cuts to 2 workers so batch requests never thrash container CPU
       const targetClips = clips.slice(0, 8);
-      const rawResults = await Promise.all(
-        targetClips.map(async (clip: any, idx: number) => {
+      const rawResults: Array<any> = new Array(targetClips.length).fill(null);
+      let nextClipCursor = 0;
+
+      const processSingleClip = async (clip: any, idx: number) => {
           const parsedStart = Number(clip?.trimStartSec);
           const trimStartSec =
             Number.isFinite(parsedStart) && parsedStart >= 0 ? Math.round(parsedStart) : 12;
@@ -6065,57 +6083,36 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           let cutSucceeded = false;
           let usedSourceUrl = "";
 
-          // 0. If user selected a social URL (TikTok, Instagram, YouTube, Dailymotion), try yt-dlp stream extraction first
-          const socialUrl = tiktokUrl || instagramUrl || youtubeUrl;
-          if (!cutSucceeded && ytDlpBin && socialUrl && isHtmlSocialPageUrl(socialUrl)) {
-            const extractedStream = await resolveSocialOrDmStreamWithYtDlp(socialUrl);
-            if (extractedStream) {
-              usedSourceUrl = extractedStream;
-              cutSucceeded = await runFastFfmpegCut(
-                extractedStream,
-                trimStartSec,
-                durationSec,
-                vf34Filter,
-                outMp4Path,
-                outJpgPath,
-                14500
-              );
-            }
-            // Also try full download fallback for TikTok/Instagram (some CDNs reject direct ffmpeg headers without yt-dlp download)
-            if (!cutSucceeded && /tiktok\.com|instagram\.com/i.test(socialUrl)) {
-              const rawDlPath = path.join(YT_CUTS_DIR, `${fileId}_raw_dl.mp4`);
-              try {
-                await execFileAsync(
-                  ytDlpBin,
-                  ["--no-warnings", "--no-playlist", "-f", "best[ext=mp4]/best", "-o", rawDlPath, socialUrl],
-                  { timeout: 12000 }
-                );
-                if (fs.existsSync(rawDlPath) && fs.statSync(rawDlPath).size > 15000) {
-                  usedSourceUrl = socialUrl;
-                  cutSucceeded = await runFastFfmpegCut(
-                    rawDlPath,
-                    trimStartSec,
-                    durationSec,
-                    vf34Filter,
-                    outMp4Path,
-                    outJpgPath,
-                    11000
-                  );
-                }
-              } catch {
-                // fall through
-              } finally {
-                try {
-                  if (fs.existsSync(rawDlPath)) fs.unlinkSync(rawDlPath);
-                } catch {}
-              }
-            }
-          }
-
-          // 1. Try direct playable MP4/WebM URL (Archive.org / Wikimedia / explicit videoUrl) ONCE (never pass HTML pages to ffmpeg!)
           const directCandidate = [explicitArchiveMp4, videoUrlOpt].find((u) =>
             isPlayableDirectMediaUrl(u)
           ) || "";
+          const socialUrl = tiktokUrl || instagramUrl || youtubeUrl;
+
+          // Resolve social yt-dlp stream + explicit Dailymotion stream IN PARALLEL to eliminate sequential waiting!
+          const explicitDmId = String(clip?.dmId || "").trim();
+          const [socialStream, explicitDmStream, subjectDmList] = await Promise.all([
+            ytDlpBin && socialUrl && isHtmlSocialPageUrl(socialUrl)
+              ? resolveSocialOrDmStreamWithYtDlp(socialUrl)
+              : Promise.resolve(null),
+            explicitDmId ? resolveDailymotionStreamUrl(explicitDmId) : Promise.resolve(null),
+            getSubjectDmFallbacks(),
+          ]);
+
+          // 0. Try live extracted social stream (TikTok / Instagram / YouTube) if resolved
+          if (!cutSucceeded && socialStream) {
+            usedSourceUrl = socialStream;
+            cutSucceeded = await runFastFfmpegCut(
+              socialStream,
+              trimStartSec,
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath,
+              11000
+            );
+          }
+
+          // 1. Try explicit direct MP4/WebM URL (Archive.org / Wikimedia)
           if (!cutSucceeded && directCandidate) {
             usedSourceUrl = directCandidate;
             cutSucceeded = await runFastFfmpegCut(
@@ -6125,7 +6122,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               vf34Filter,
               outMp4Path,
               outJpgPath,
-              15000
+              11500
             );
             if (!cutSucceeded && trimStartSec > 45) {
               cutSucceeded = await runFastFfmpegCut(
@@ -6135,28 +6132,37 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                12000
+                9500
               );
             }
           }
 
-          // 2. Try Dailymotion stream (via metadata API OR yt-dlp -g) on clip.dmId + live subject fallback IDs
+          // 2. Try Dailymotion HLS stream (super fast ~2-3s cuts!) using pre-resolved explicit dmId or live subject DM candidates
           if (!cutSucceeded) {
-            const subjectDmList = await getSubjectDmFallbacks();
-            const dmCandidates = Array.from(
-              new Set([String(clip?.dmId || "").trim(), ...subjectDmList].filter(Boolean))
-            ).slice(0, 3);
-            for (const dmCandidate of dmCandidates) {
+            if (explicitDmStream) {
+              usedSourceUrl = explicitDmStream;
+              const safeDmSeek = trimStartSec > 45 ? Math.min(16, trimStartSec % 30) : trimStartSec;
+              cutSucceeded = await runFastFfmpegCut(
+                explicitDmStream,
+                safeDmSeek,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                10500
+              );
+            }
+
+            const extraDmCandidates = subjectDmList
+              .filter((d) => d.id !== explicitDmId && !dmRejectedIdsCache.has(d.id))
+              .slice(0, 2);
+            for (const dmCand of extraDmCandidates) {
               if (cutSucceeded) break;
-              let dmStream = await resolveDailymotionStreamUrl(dmCandidate).catch(() => null);
-              if (!dmStream && ytDlpBin) {
-                dmStream = await resolveSocialOrDmStreamWithYtDlp(
-                  `https://www.dailymotion.com/video/${dmCandidate}`
-                );
-              }
+              const dmStream = await resolveDailymotionStreamUrl(dmCand.id);
               if (dmStream) {
                 usedSourceUrl = dmStream;
-                const safeDmSeek = trimStartSec > 60 ? Math.min(18, trimStartSec % 35) : trimStartSec;
+                const maxSafeStart = Math.max(2, dmCand.duration - durationSec - 2);
+                const safeDmSeek = Math.min(trimStartSec, maxSafeStart);
                 cutSucceeded = await runFastFfmpegCut(
                   dmStream,
                   safeDmSeek,
@@ -6164,28 +6170,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   vf34Filter,
                   outMp4Path,
                   outJpgPath,
-                  15000
+                  10500
                 );
-                if (!cutSucceeded && safeDmSeek > 4) {
-                  cutSucceeded = await runFastFfmpegCut(
-                    dmStream,
-                    2,
-                    Math.min(durationSec, 8),
-                    vf34Filter,
-                    outMp4Path,
-                    outJpgPath,
-                    12000
-                  );
-                }
               }
             }
           }
 
-          // 3. Final verified Archive.org MP4 fallback (only real MP4s, never curated unrelated actors unless no subject Archive exists)
+          // 3. Final verified Archive.org fallback (fast seek)
           if (!cutSucceeded) {
             const liveArch = await searchRealArchivalVideos(
               cleanChar,
-              3,
+              2,
               new Set<string>(),
               cleanChar
             ).catch(() => []);
@@ -6198,7 +6193,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             const finalMp4 = liveMp4 || curatedReels[idx % curatedReels.length]?.rawMp4Url || "";
             if (finalMp4 && isPlayableDirectMediaUrl(finalMp4)) {
               usedSourceUrl = finalMp4;
-              const safeSeek = Math.min(22, Math.max(4, trimStartSec % 40));
+              const safeSeek = Math.min(20, Math.max(2, trimStartSec % 35));
               cutSucceeded = await runFastFfmpegCut(
                 finalMp4,
                 safeSeek,
@@ -6206,7 +6201,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                14000
+                11000
               );
             }
           }
@@ -6271,6 +6266,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           }
 
           return null;
+      };
+
+      const workerCount = Math.min(2, targetClips.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          while (nextClipCursor < targetClips.length) {
+            const currentIdx = nextClipCursor++;
+            rawResults[currentIdx] = await processSingleClip(targetClips[currentIdx], currentIdx);
+          }
         })
       );
 

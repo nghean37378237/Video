@@ -108,7 +108,8 @@ interface SceneMediaSearchModalProps {
     sceneId: string,
     videoOpt: SceneVideoOption,
     customTrimStartSec: number,
-    customTrimEndSec: number
+    customTrimEndSec: number,
+    skipServerCut?: boolean
   ) => void;
   onSelectPhotoForScene: (
     sceneId: string,
@@ -855,7 +856,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     setIsCuttingYouTube(true);
     setCuttingCardId(vid.id);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 45000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 60000);
     try {
       const res = await fetch('/api/youtube/cut-clips', {
         method: 'POST',
@@ -921,11 +922,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           return;
         }
       }
-      // Fallback if cut endpoint didn't return cuts
-      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec);
+      // Fallback if cut endpoint didn't return cuts (skip second redundant server cut call!)
+      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec, true);
       if (closeAfter) onClose();
     } catch {
-      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec);
+      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec, true);
       if (closeAfter) onClose();
     } finally {
       clearTimeout(cutTimeout);
@@ -975,7 +976,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
     setIsCuttingYouTube(true);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 45000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 60000);
     try {
       const clipsPayload = segmentsToCut.map((seg) => ({
         id: seg.video.id,
@@ -2417,7 +2418,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                   <Download className="w-3 h-3" />
                                   <span>⬇ Lưu MP4</span>
                                 </a>
-                                <button
+                                  <button
                                   type="button"
                                   disabled={isCuttingThisCard}
                                   onClick={() =>
@@ -2429,13 +2430,22 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       true
                                     )
                                   }
-                                  className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 transition-colors"
+                                  className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 disabled:opacity-60 text-sky-200 border border-sky-400/50 transition-colors"
                                   title="Cắt đoạn này, thay thế vào Phần đang chọn và đóng cửa sổ để xem ngay trên Timeline"
                                 >
-                                  <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
-                                  <span className="truncate">
-                                    ⚡ Cắt Thay Vào {partBadgeLabel} &amp; Đóng
-                                  </span>
+                                  {isCuttingThisCard ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin shrink-0 text-sky-300" />
+                                      <span className="truncate">Đang cắt nhanh...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
+                                      <span className="truncate">
+                                        ⚡ Cắt Thay Vào {partBadgeLabel} &amp; Đóng
+                                      </span>
+                                    </>
+                                  )}
                                 </button>
                               </div>
                             </div>
@@ -3280,17 +3290,26 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       if (isCuttingYouTube) return;
                                       handleCutAndInsertYouTubeVideos(yt, true);
                                     }}
-                                    className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 transition-colors"
+                                    className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-sky-500/20 hover:bg-sky-500/35 disabled:opacity-60 text-sky-200 border border-sky-400/50 transition-colors"
                                     title="Cắt đoạn này, thay thế vào Phần đang chọn và đóng cửa sổ ngay"
                                   >
-                                    <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
-                                    <span className="truncate">
-                                      ⚡ Cắt Thay Vào{' '}
-                                      {getSceneBadgeById(chosenSceneId)
-                                        .split(' (')[0]
-                                        .replace('Đoạn', 'Phần')}{' '}
-                                      &amp; Đóng
-                                    </span>
+                                    {isCuttingYouTube && cuttingCardId === yt.id ? (
+                                      <>
+                                        <Loader2 className="w-3 h-3 animate-spin shrink-0 text-sky-300" />
+                                        <span className="truncate">Đang cắt nhanh...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-300" />
+                                        <span className="truncate">
+                                          ⚡ Cắt Thay Vào{' '}
+                                          {getSceneBadgeById(chosenSceneId)
+                                            .split(' (')[0]
+                                            .replace('Đoạn', 'Phần')}{' '}
+                                          &amp; Đóng
+                                        </span>
+                                      </>
+                                    )}
                                   </button>
                                 </div>
                               </div>
