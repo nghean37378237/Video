@@ -4312,6 +4312,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       return true;
     }
 
+    // Also allow matching when at least 2 meaningful tokens (>=3 chars) appear, or short single-word titles
+    if (charTokens.length === 1 && charTokens[0].length >= 3 && lowerTitle.includes(charTokens[0])) {
+      return true;
+    }
+    const matchedCharTokenCount = charTokens.filter((t) => lowerTitle.includes(t)).length;
+    if (charTokens.length >= 2 && matchedCharTokenCount >= 2) {
+      return true;
+    }
+
     // Also allow matching explicit custom keywords typed by the user
     const queryTokens = rawQuery
       .toLowerCase()
@@ -4344,7 +4353,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   // Helper: Fast YouTube InnerTube JSON Search (<700ms instead of 4.5s HTML scrape) with HTML fallback
   async function fetchYouTubeSearchDataFast(
     qStr: string,
-    cleanChar: string
+    cleanChar: string,
+    shortsOnlyFilter = false
   ): Promise<{
     shorts: Array<{
       youtubeId: string;
@@ -4366,6 +4376,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   }> {
     // 1. Primary: Official YouTube InnerTube JSON endpoint (~400-700ms, lightweight JSON)
     try {
+      const apiBody: Record<string, any> = {
+        context: {
+          client: {
+            clientName: "WEB",
+            clientVersion: "2.20240726.00.00",
+            hl: "en",
+            gl: "US",
+          },
+        },
+        query: qStr,
+      };
+      if (shortsOnlyFilter) {
+        // EgIYAQ== filters YouTube search to short videos (< 4 mins), unlocking full shortsLockupViewModel shelves
+        apiBody.params = "EgIYAQ==";
+      }
       const apiRes = await fetch(
         "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
         {
@@ -4375,17 +4400,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "User-Agent": BROWSER_USER_AGENT,
             "Accept-Language": "en-US,en;q=0.9",
           },
-          body: JSON.stringify({
-            context: {
-              client: {
-                clientName: "WEB",
-                clientVersion: "2.20240726.00.00",
-                hl: "en",
-                gl: "US",
-              },
-            },
-            query: qStr,
-          }),
+          body: JSON.stringify(apiBody),
           signal: AbortSignal.timeout(7500),
         }
       );
@@ -4513,7 +4528,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         `${cleanChar} television appearance rare video`,
       ];
       const deepShortsVariants = [
-        `${cleanChar} shorts`,
+        `${cleanChar} #shorts`,
         `${cleanChar} iconic edit #shorts`,
         `${cleanChar} legendary moments #shorts`,
         `${cleanChar} tribute #shorts`,
@@ -4537,8 +4552,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           : deepInterviewVariants[pageIdx % deepInterviewVariants.length];
 
       const shortsQ = deepShortsVariants[pageIdx % deepShortsVariants.length];
+      const isSocialFocused =
+        depthMode === "social" || wantsShortsFirst || wantsTikTokFirst || wantsInstagramFirst;
 
-      // Run 7 parallel fast InnerTube queries + Yahoo TikTok/Instagram discovery + Dailymotion deep search + Internet Archive deep MP4 search
+      // Run 7 parallel fast InnerTube queries (with EgIYAQ== short-form filter on Shorts/TikTok/Instagram) + Dailymotion + Internet Archive
       const [
         ytShortsPage,
         ytTikTokPage,
@@ -4551,23 +4568,30 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         dmResults,
         archivalDeepVideos,
       ] = await Promise.all([
-        fetchYouTubeSearchDataFast(shortsQ, cleanChar),
+        fetchYouTubeSearchDataFast(shortsQ, cleanChar, true),
         fetchYouTubeSearchDataFast(
-          pageIdx % 2 === 0 ? `${cleanChar} tiktok edit #shorts` : `${cleanChar} tiktok viral clip`,
-          cleanChar
+          pageIdx % 2 === 0 ? `${cleanChar} tiktok #shorts` : `${cleanChar} tiktok edit #shorts`,
+          cleanChar,
+          true
         ),
         fetchYouTubeSearchDataFast(
-          pageIdx % 2 === 0 ? `${cleanChar} instagram reels edit` : `${cleanChar} reels tribute`,
-          cleanChar
+          pageIdx % 2 === 0 ? `${cleanChar} instagram reels #shorts` : `${cleanChar} reels edit #shorts`,
+          cleanChar,
+          true
         ),
-        fetchYouTubeSearchDataFast(primaryMovieQ, cleanChar),
-        fetchYouTubeSearchDataFast(secondaryMovieQ, cleanChar),
-        fetchYouTubeSearchDataFast(interviewQ, cleanChar),
+        fetchYouTubeSearchDataFast(
+          isSocialFocused ? `${cleanChar} viral moments #shorts` : primaryMovieQ,
+          cleanChar,
+          isSocialFocused
+        ),
+        fetchYouTubeSearchDataFast(secondaryMovieQ, cleanChar, false),
+        fetchYouTubeSearchDataFast(interviewQ, cleanChar, false),
         fetchYouTubeSearchDataFast(
           depthMode === "rare"
             ? `${cleanChar} rare archive footage`
             : `${rotatingFilm.replace(/\s+trailer$/i, "")} movie clip`,
-          cleanChar
+          cleanChar,
+          false
         ),
 
         // Discover real TikTok (tiktok.com/@.../video/...) and Instagram Reels (instagram.com/reel/...) links via Yahoo Search
@@ -4939,29 +4963,29 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       };
 
       const rawShortsCandidates = [
-        ...collectFromPage(ytShortsPage, 75),
-        ...collectFromPage(ytMoviesPage, 70),
+        ...collectFromPage(ytShortsPage, 90),
+        ...collectFromPage(ytMoviesPage, 75),
       ];
       const rawTikTokCandidates = collectFromPage(ytTikTokPage, 120);
       const rawInstagramCandidates = collectFromPage(ytInstagramPage, 120);
 
-      // Expand per-platform caps up to 16 each for rich deep search results
+      // Expand per-platform caps up to 20 each for rich deep short-form results
       const overflowPool = [
-        ...rawShortsCandidates.slice(12),
-        ...rawTikTokCandidates.slice(12),
-        ...rawInstagramCandidates.slice(12),
+        ...rawShortsCandidates.slice(20),
+        ...rawTikTokCandidates.slice(20),
+        ...rawInstagramCandidates.slice(20),
       ];
-      const finalShortsRaw = rawShortsCandidates.slice(0, 16);
-      const finalTikTokRaw = rawTikTokCandidates.slice(0, 16);
-      const finalInstagramRaw = rawInstagramCandidates.slice(0, 16);
+      const finalShortsRaw = rawShortsCandidates.slice(0, 20);
+      const finalTikTokRaw = rawTikTokCandidates.slice(0, 20);
+      const finalInstagramRaw = rawInstagramCandidates.slice(0, 20);
 
-      while (finalTikTokRaw.length < 8 && overflowPool.length > 0) {
+      while (finalTikTokRaw.length < 14 && overflowPool.length > 0) {
         finalTikTokRaw.push(overflowPool.shift()!);
       }
-      while (finalInstagramRaw.length < 8 && overflowPool.length > 0) {
+      while (finalInstagramRaw.length < 14 && overflowPool.length > 0) {
         finalInstagramRaw.push(overflowPool.shift()!);
       }
-      while (finalShortsRaw.length < 8 && overflowPool.length > 0) {
+      while (finalShortsRaw.length < 14 && overflowPool.length > 0) {
         finalShortsRaw.push(overflowPool.shift()!);
       }
 
@@ -5166,7 +5190,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         });
       });
 
-      // Order & interleave results according to searchDepth or platform intent
+      // Order & interleave results: explicit short-form intent (TikTok/Instagram/Shorts/Social mode) ALWAYS wins over stale prior depthMode!
       const combinedVideos: any[] = [];
       const maxLen = Math.max(
         shortsItems.length,
@@ -5177,7 +5201,28 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       );
 
       for (let i = 0; i < maxLen; i++) {
-        if (depthMode === "archive") {
+        if (wantsTikTokFirst) {
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (depthMode !== "social" && i < youtubeLongItems.length) {
+            combinedVideos.push(youtubeLongItems[i]);
+          }
+        } else if (wantsInstagramFirst) {
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (depthMode !== "social" && i < youtubeLongItems.length) {
+            combinedVideos.push(youtubeLongItems[i]);
+          }
+        } else if (wantsShortsFirst || depthMode === "social") {
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (depthMode !== "social" && i < youtubeLongItems.length) {
+            combinedVideos.push(youtubeLongItems[i]);
+          }
+        } else if (depthMode === "archive") {
           if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
@@ -5187,24 +5232,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-        } else if (wantsTikTokFirst) {
-          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
-        } else if (wantsInstagramFirst) {
-          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
-        } else if (wantsShortsFirst || depthMode === "social") {
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
-          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
         } else {
           // Balanced deep interleaving across all external sources
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);

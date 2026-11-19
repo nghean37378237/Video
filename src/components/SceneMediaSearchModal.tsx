@@ -140,7 +140,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterTab, setFilterTab] = useState<'youtube' | 'all' | 'video' | 'image'>(initialTab);
   const [videoSourceSubFilter, setVideoSourceSubFilter] = useState<
-    'all' | 'shorts' | 'tiktok' | 'instagram' | 'youtube-long' | 'archive'
+    'all' | 'short-all' | 'shorts' | 'tiktok' | 'instagram' | 'youtube-long' | 'archive'
   >('all');
   const [searchDepth, setSearchDepth] = useState<
     'all' | 'cinema' | 'interview' | 'rare' | 'archive' | 'social'
@@ -346,9 +346,10 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         ? [
             `${cleanCharName} best scenes`,
             `${cleanCharName} cast then and now`,
-            `${cleanCharName} behind the scenes`,
             `${cleanCharName} shorts`,
-            `${cleanCharName} tóm tắt phim`,
+            `${cleanCharName} tiktok`,
+            `${cleanCharName} instagram reels`,
+            `${cleanCharName} behind the scenes`,
           ]
         : [
             `${cleanCharName} shorts`,
@@ -374,7 +375,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         list.push(`${cleanCharName} movie clips`, `${cleanCharName} interview`);
       }
     }
-    return Array.from(new Set(list)).slice(0, 7);
+    return Array.from(new Set(list)).slice(0, 8);
   }, [cleanCharName, sceneSpecificQuery, settings?.storyMode]);
 
   const handleSelectPartScene = (targetSc: StoryScene, runPartSearch = false) => {
@@ -673,7 +674,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       const defaultQuery = cleanCharName;
       setSearchQuery(defaultQuery);
       setFilterTab(initialTab);
+      setSearchDepth('all');
       setVideoSourceSubFilter('all');
+      setPreviewUseDirectMp4({});
       setCycleOffset(0);
       setQueuedSegments([]);
       setPreviewingYtId(null);
@@ -682,7 +685,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       setJustCutBanner(null);
       setShowSavedCutsDrawer(false);
       loadSavedCutsFromServer();
-      executeSearch(defaultQuery, 0, initSceneId);
+      executeSearch(defaultQuery, 0, initSceneId, false, 'all');
     }
   }, [isOpen, scene?.id, initialTab, cleanCharName]);
 
@@ -704,7 +707,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     const targetDur = getSceneDurationById(chosenSceneId);
     const eSec = Math.max(sSec + 3, ytTrimEnds[yt.id] ?? sSec + targetDur);
     const clipLen = Math.max(3, eSec - sSec);
-    setPreviewRemainingSec(clipLen);
+    const isSocialCard =
+      yt.sourcePlatform === 'shorts' ||
+      yt.sourcePlatform === 'tiktok' ||
+      yt.sourcePlatform === 'instagram';
+    setPreviewRemainingSec(isSocialCard ? Math.max(25, clipLen) : clipLen);
 
     const timer = setInterval(() => {
       setPreviewRemainingSec((prev) => {
@@ -1367,7 +1374,31 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              executeSearch(searchQuery, cycleOffset);
+              const qRaw = searchQuery.trim();
+              if (/\b(tiktok|titock)\b|tiktok\.com/i.test(qRaw)) {
+                setFilterTab('youtube');
+                setSearchDepth('social');
+                setVideoSourceSubFilter('tiktok');
+                setCycleOffset(0);
+                executeSearch(qRaw, 0, effectiveScene?.id, false, 'social');
+              } else if (/\b(instagram|ingram|reels|reel)\b|instagram\.com/i.test(qRaw)) {
+                setFilterTab('youtube');
+                setSearchDepth('social');
+                setVideoSourceSubFilter('instagram');
+                setCycleOffset(0);
+                executeSearch(qRaw, 0, effectiveScene?.id, false, 'social');
+              } else if (/\b(shorts|short)\b|youtube\.com\/shorts/i.test(qRaw)) {
+                setFilterTab('youtube');
+                setSearchDepth('social');
+                setVideoSourceSubFilter('shorts');
+                setCycleOffset(0);
+                executeSearch(qRaw, 0, effectiveScene?.id, false, 'social');
+              } else {
+                if (filterTab !== 'youtube' && filterTab !== 'all') {
+                  setFilterTab('youtube');
+                }
+                executeSearch(searchQuery, cycleOffset);
+              }
             }}
             className="flex items-center gap-2"
           >
@@ -1461,6 +1492,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                     setVideoSourceSubFilter('archive');
                   } else if (mode.id === 'cinema' || mode.id === 'interview' || mode.id === 'rare') {
                     setVideoSourceSubFilter('youtube-long');
+                  } else if (mode.id === 'social') {
+                    setVideoSourceSubFilter('short-all');
                   } else {
                     setVideoSourceSubFilter('all');
                   }
@@ -1494,15 +1527,26 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                     setSearchQuery(q);
                     setFilterTab('youtube');
                     if (/\b(tiktok|titock)\b/i.test(q)) {
+                      setSearchDepth('social');
                       setVideoSourceSubFilter('tiktok');
+                      setCycleOffset(0);
+                      executeSearch(q, 0, effectiveScene?.id, false, 'social');
                     } else if (/\b(instagram|ingram|reels|reel)\b/i.test(q)) {
+                      setSearchDepth('social');
                       setVideoSourceSubFilter('instagram');
+                      setCycleOffset(0);
+                      executeSearch(q, 0, effectiveScene?.id, false, 'social');
                     } else if (/\b(shorts|short)\b/i.test(q)) {
+                      setSearchDepth('social');
                       setVideoSourceSubFilter('shorts');
+                      setCycleOffset(0);
+                      executeSearch(q, 0, effectiveScene?.id, false, 'social');
                     } else {
+                      setSearchDepth('all');
                       setVideoSourceSubFilter('all');
+                      setCycleOffset(0);
+                      executeSearch(q, 0, effectiveScene?.id, false, 'all');
                     }
-                    executeSearch(q, cycleOffset);
                   }}
                   className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
                     searchQuery === q
@@ -2346,7 +2390,36 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setVideoSourceSubFilter('shorts')}
+                          onClick={() => setVideoSourceSubFilter('short-all')}
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                            videoSourceSubFilter === 'short-all'
+                              ? 'bg-gradient-to-r from-red-500 via-pink-500 to-fuchsia-500 text-white shadow'
+                              : 'bg-slate-900 text-amber-300 border border-pink-500/40 hover:bg-pink-500/20'
+                          }`}
+                        >
+                          📲 Tất Cả Video Ngắn (
+                          {
+                            youtubeVideos.filter(
+                              (v) =>
+                                v.sourcePlatform === 'shorts' ||
+                                v.sourcePlatform === 'tiktok' ||
+                                v.sourcePlatform === 'instagram'
+                            ).length
+                          }
+                          )
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hasShorts = youtubeVideos.some((v) => v.sourcePlatform === 'shorts');
+                            setVideoSourceSubFilter('shorts');
+                            if (!hasShorts) {
+                              setSearchDepth('social');
+                              const q = `${activeCharName} shorts`;
+                              setSearchQuery(q);
+                              executeSearch(q, 0, effectiveScene?.id, false, 'social');
+                            }
+                          }}
                           className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
                             videoSourceSubFilter === 'shorts'
                               ? 'bg-red-600 text-white'
@@ -2358,7 +2431,16 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setVideoSourceSubFilter('tiktok')}
+                          onClick={() => {
+                            const hasTt = youtubeVideos.some((v) => v.sourcePlatform === 'tiktok');
+                            setVideoSourceSubFilter('tiktok');
+                            if (!hasTt) {
+                              setSearchDepth('social');
+                              const q = `${activeCharName} tiktok`;
+                              setSearchQuery(q);
+                              executeSearch(q, 0, effectiveScene?.id, false, 'social');
+                            }
+                          }}
                           className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
                             videoSourceSubFilter === 'tiktok'
                               ? 'bg-pink-600 text-white'
@@ -2370,7 +2452,16 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setVideoSourceSubFilter('instagram')}
+                          onClick={() => {
+                            const hasIg = youtubeVideos.some((v) => v.sourcePlatform === 'instagram');
+                            setVideoSourceSubFilter('instagram');
+                            if (!hasIg) {
+                              setSearchDepth('social');
+                              const q = `${activeCharName} instagram reels`;
+                              setSearchQuery(q);
+                              executeSearch(q, 0, effectiveScene?.id, false, 'social');
+                            }
+                          }}
                           className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
                             videoSourceSubFilter === 'instagram'
                               ? 'bg-gradient-to-r from-fuchsia-600 to-amber-500 text-white'
@@ -2408,32 +2499,67 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                     </div>
                   </div>
 
-                  {youtubeVideos.length === 0 ? (
-                    <div className="p-4 rounded-lg bg-slate-900/70 border border-slate-800 text-xs text-slate-400">
-                      Không tìm thấy kết quả cho từ khóa này. Hãy thử bấm các nút từ khóa gợi ý phía trên!
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {youtubeVideos
-                        .filter((yt) => {
-                          if (videoSourceSubFilter === 'shorts') {
-                            return yt.sourcePlatform === 'shorts';
-                          }
-                          if (videoSourceSubFilter === 'tiktok') {
-                            return yt.sourcePlatform === 'tiktok';
-                          }
-                          if (videoSourceSubFilter === 'instagram') {
-                            return yt.sourcePlatform === 'instagram';
-                          }
-                          if (videoSourceSubFilter === 'youtube-long') {
-                            return yt.sourcePlatform === 'youtube';
-                          }
-                          if (videoSourceSubFilter === 'archive') {
-                            return yt.sourcePlatform === 'archive';
-                          }
-                          return true;
-                        })
-                        .map((yt, ytIdx) => {
+                  {(() => {
+                    const filteredYoutubeList = youtubeVideos.filter((yt) => {
+                      if (videoSourceSubFilter === 'short-all') {
+                        return (
+                          yt.sourcePlatform === 'shorts' ||
+                          yt.sourcePlatform === 'tiktok' ||
+                          yt.sourcePlatform === 'instagram'
+                        );
+                      }
+                      if (videoSourceSubFilter === 'shorts') {
+                        return yt.sourcePlatform === 'shorts';
+                      }
+                      if (videoSourceSubFilter === 'tiktok') {
+                        return yt.sourcePlatform === 'tiktok';
+                      }
+                      if (videoSourceSubFilter === 'instagram') {
+                        return yt.sourcePlatform === 'instagram';
+                      }
+                      if (videoSourceSubFilter === 'youtube-long') {
+                        return yt.sourcePlatform === 'youtube';
+                      }
+                      if (videoSourceSubFilter === 'archive') {
+                        return yt.sourcePlatform === 'archive';
+                      }
+                      return true;
+                    });
+
+                    if (filteredYoutubeList.length === 0) {
+                      return (
+                        <div className="p-5 rounded-lg bg-slate-900/70 border border-slate-800 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-3">
+                          <span>
+                            {youtubeVideos.length === 0
+                              ? 'Không tìm thấy kết quả cho từ khóa này. Hãy thử bấm các nút từ khóa gợi ý phía trên!'
+                              : 'Chưa có video thuộc mục đang lọc trong lô kết quả cũ. Bấm nút bên phải để tải ngay video Shorts / TikTok / Instagram!'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchDepth('social');
+                              const suffix =
+                                videoSourceSubFilter === 'tiktok'
+                                  ? 'tiktok'
+                                  : videoSourceSubFilter === 'instagram'
+                                  ? 'instagram reels'
+                                  : 'shorts';
+                              const q = `${activeCharName} ${suffix}`;
+                              setSearchQuery(q);
+                              setCycleOffset(0);
+                              executeSearch(q, 0, effectiveScene?.id, false, 'social');
+                            }}
+                            className="px-3 py-1.5 rounded-md bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-400 hover:to-pink-500 text-white font-bold text-xs shadow shrink-0"
+                          >
+                            📱 Tìm Ngay Video Ngắn ({activeCharName})
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {filteredYoutubeList.map((yt, ytIdx) => {
                           const startSec =
                             ytTrimStarts[yt.id] ?? yt.suggestedTrimStartSec ?? 18;
                           const chosenSceneId =
@@ -2450,7 +2576,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                           );
                           const cutDur = Math.max(3, endSec - startSec);
                           const isPreviewing = previewingYtId === yt.id;
-                          const showYoutubeEmbed = previewUseDirectMp4[yt.id] === true;
+                          const isShortFormPlatform =
+                            yt.sourcePlatform === 'shorts' ||
+                            yt.sourcePlatform === 'tiktok' ||
+                            yt.sourcePlatform === 'instagram';
+                          // CRITICAL: For Short/TikTok/Instagram cards, default to showing the real Short/TikTok/IG thumbnail & playable embed
+                          // instead of auto-loading horizontal Archive.org film frames! User can switch to MP4 scrubber anytime with 1 click.
+                          const useDirectMp4Scrubber = isShortFormPlatform
+                            ? previewUseDirectMp4[yt.id] === true
+                            : previewUseDirectMp4[yt.id] !== false;
                           const cleanYtDirectUrl = yt.archiveMp4Url
                             ? `/api/archival/video-stream?url=${encodeURIComponent(
                                 yt.archiveMp4Url
@@ -2477,13 +2611,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               className={`rounded-lg bg-[#111827] border p-3 flex flex-col justify-between gap-2.5 transition-all ${
                                 isThisSegmentQueued || queuedCountForThisVideo > 0
                                   ? 'border-amber-400 ring-2 ring-amber-400/40 bg-[#161F33]'
+                                  : isShortFormPlatform
+                                  ? 'border-slate-800 hover:border-pink-500/70'
                                   : 'border-slate-800 hover:border-slate-600'
                               }`}
                             >
                               <div className="space-y-2">
-                                {/* Video Preview Box: Plays the EXACT cuttable MP4 stream so preview & cut match 100%! */}
-                                <div className="relative h-40 rounded-md overflow-hidden bg-black border border-slate-800">
-                                  {!showYoutubeEmbed && cleanYtDirectUrl ? (
+                                {/* Video Preview Box: Short/TikTok/IG cards show real vertical thumbnail + real YouTube Short player; long/archive cards show direct MP4 scrubber */}
+                                <div
+                                  className={`relative ${
+                                    isShortFormPlatform ? 'h-48' : 'h-40'
+                                  } rounded-md overflow-hidden bg-black border border-slate-800`}
+                                >
+                                  {useDirectMp4Scrubber && cleanYtDirectUrl ? (
                                     <video
                                       ref={(el) => {
                                         ytVideoRefs.current[yt.id] = el;
@@ -2557,15 +2697,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       }`}
                                     />
                                   ) : isPreviewing && yt.youtubeId ? (
-                                    <div className="relative w-full h-full">
+                                    <div className="relative w-full h-full bg-black">
                                       <iframe
-                                        src={`https://www.youtube.com/embed/${yt.youtubeId}?start=${startSec}&end=${endSec}&autoplay=1&rel=0`}
+                                        src={`https://www.youtube.com/embed/${yt.youtubeId}?${
+                                          isShortFormPlatform
+                                            ? 'autoplay=1&rel=0&playsinline=1'
+                                            : `start=${startSec}&end=${endSec}&autoplay=1&rel=0`
+                                        }`}
                                         title={yt.title}
                                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                         allowFullScreen
                                         className="w-full h-full border-0"
                                       />
-                                      <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1">
+                                      <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1 pointer-events-auto">
                                         <button
                                           type="button"
                                           onClick={() => setPreviewingYtId(null)}
@@ -2576,42 +2720,97 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                         {cleanYtDirectUrl && (
                                           <button
                                             type="button"
-                                            onClick={() =>
+                                            onClick={() => {
+                                              setPreviewingYtId(null);
                                               setPreviewUseDirectMp4((prev) => ({
                                                 ...prev,
-                                                [yt.id]: false,
-                                              }))
-                                            }
+                                                [yt.id]: true,
+                                              }));
+                                            }}
                                             className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold shadow-lg"
                                           >
-                                            🔄 Quay lại Player Cắt MP4
+                                            🎛️ Mở Stream MP4 Cắt
                                           </button>
                                         )}
                                       </div>
                                     </div>
                                   ) : (
-                                    <>
+                                    <div className="relative w-full h-full flex items-center justify-center bg-slate-950 overflow-hidden">
+                                      {isShortFormPlatform && (
+                                        <img
+                                          src={yt.thumbnailUrl}
+                                          alt=""
+                                          aria-hidden="true"
+                                          referrerPolicy="no-referrer"
+                                          className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110"
+                                        />
+                                      )}
                                       <img
                                         src={yt.thumbnailUrl}
                                         alt={yt.title}
                                         referrerPolicy="no-referrer"
-                                        className="w-full h-full object-cover"
+                                        className={
+                                          isShortFormPlatform
+                                            ? 'relative z-[1] h-full aspect-[9/16] object-cover shadow-2xl border-x border-white/15'
+                                            : 'w-full h-full object-cover'
+                                        }
                                       />
                                       <button
                                         type="button"
-                                        onClick={() => setPreviewingYtId(yt.id)}
-                                        className="absolute inset-0 bg-black/45 hover:bg-black/25 flex items-center justify-center transition-colors group"
-                                        title="Bấm để xem trước đúng đoạn từ giây Start đến giây End"
+                                        onClick={() => {
+                                          if (yt.youtubeId) {
+                                            setPreviewingYtId(yt.id);
+                                          } else if (cleanYtDirectUrl) {
+                                            setPreviewUseDirectMp4((prev) => ({
+                                              ...prev,
+                                              [yt.id]: true,
+                                            }));
+                                          }
+                                        }}
+                                        className="absolute inset-0 z-[2] bg-black/35 hover:bg-black/20 flex items-center justify-center transition-colors group"
+                                        title={
+                                          isShortFormPlatform
+                                            ? 'Bấm để phát trực tiếp Video Ngắn (Shorts / TikTok / Reels)'
+                                            : 'Bấm để xem trước đoạn video'
+                                        }
                                       >
-                                        <div className="px-3 py-1.5 rounded-full bg-red-600 group-hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
+                                        <div
+                                          className={`px-3 py-1.5 rounded-full text-white text-xs font-bold flex items-center gap-1.5 shadow-xl ${
+                                            yt.sourcePlatform === 'tiktok'
+                                              ? 'bg-pink-600 group-hover:bg-pink-500'
+                                              : yt.sourcePlatform === 'instagram'
+                                              ? 'bg-fuchsia-600 group-hover:bg-fuchsia-500'
+                                              : 'bg-red-600 group-hover:bg-red-500'
+                                          }`}
+                                        >
                                           <Play className="w-3.5 h-3.5 fill-current" />
-                                          <span>Xem Thử Riêng Đoạn ({startSec}s→{endSec}s)</span>
+                                          <span>
+                                            {isShortFormPlatform
+                                              ? 'Xem Video Ngắn'
+                                              : `Xem Thử (${startSec}s→${endSec}s)`}
+                                          </span>
                                         </div>
                                       </button>
-                                    </>
+                                      {cleanYtDirectUrl && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPreviewUseDirectMp4((prev) => ({
+                                              ...prev,
+                                              [yt.id]: true,
+                                            }));
+                                          }}
+                                          className="absolute bottom-1.5 left-1.5 z-[3] px-2 py-0.5 rounded bg-black/80 hover:bg-sky-600 text-sky-200 hover:text-white border border-sky-500/40 text-[9px] font-bold"
+                                          title="Mở trình tua MP4 để căn giây cắt 3:4"
+                                        >
+                                          🎛️ Tua MP4 Cắt
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
 
-                                  {show34Guide && !showYoutubeEmbed && (
+                                  {show34Guide && useDirectMp4Scrubber && cleanYtDirectUrl && (
                                     <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 aspect-[3/4] h-full border-2 border-dashed border-emerald-400/80 shadow-[0_0_0_999px_rgba(0,0,0,0.45)] flex items-end justify-center pb-1">
                                       <span className="px-1.5 py-0.2 rounded bg-emerald-500/90 text-slate-950 text-[9px] font-extrabold">
                                         Khung 3:4 HD
@@ -2676,8 +2875,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                 </div>
 
                                 {/* 1-Click Sync Playhead From Scrubber + Preview Segment Button */}
-                                {cleanYtDirectUrl && !showYoutubeEmbed && (
-                                  <div className="flex items-center justify-between gap-1.5">
+                                {cleanYtDirectUrl && useDirectMp4Scrubber && (
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -2735,6 +2934,22 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                           : `Xem thử (${startSec}s→${endSec}s)`}
                                       </span>
                                     </button>
+
+                                    {isShortFormPlatform && yt.youtubeId && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPreviewUseDirectMp4((prev) => ({
+                                            ...prev,
+                                            [yt.id]: false,
+                                          }))
+                                        }
+                                        className="px-2 py-1 rounded text-[10px] font-bold bg-pink-500/20 hover:bg-pink-500/35 text-pink-200 border border-pink-400/50 shrink-0 transition-colors"
+                                        title="Quay lại xem Video Ngắn gốc (Shorts / TikTok / Reels)"
+                                      >
+                                        📱 Video Ngắn Gốc
+                                      </button>
+                                    )}
                                   </div>
                                 )}
 
@@ -2992,8 +3207,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                             </div>
                           );
                         })}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   {youtubeVideos.length > 0 && (
                     <div className="pt-2 flex items-center justify-center">
