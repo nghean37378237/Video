@@ -221,6 +221,59 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     return basePart;
   };
 
+  const buildDownloadMp4Href = (rawUrl: string, fileName: string): string => {
+    const cleanUrl = (rawUrl || '').split('#')[0];
+    if (!cleanUrl) return '';
+    if (cleanUrl.includes('/api/youtube/cut-file/')) {
+      return `${cleanUrl}?download=1&name=${encodeURIComponent(fileName)}`;
+    }
+    if (cleanUrl.includes('/api/archival/video-stream')) {
+      const sep = cleanUrl.includes('?') ? '&' : '?';
+      return `${cleanUrl}${sep}download=1&name=${encodeURIComponent(fileName)}`;
+    }
+    return cleanUrl;
+  };
+
+  const triggerMp4Download = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    rawUrl: string,
+    fileName: string
+  ) => {
+    const href = buildDownloadMp4Href(rawUrl, fileName);
+    if (!href) return;
+    e.preventDefault();
+    try {
+      const resp = await fetch(href);
+      const ct = (resp.headers.get('content-type') || '').toLowerCase();
+      if (!resp.ok || (!ct.includes('video') && !ct.includes('octet-stream'))) {
+        setJustCutBanner(
+          '⚠️ Đường dẫn này chưa có luồng MP4 hoàn chỉnh để tải xuống. Hãy bấm "✅ Chấp Nhận Cắt" để hệ thống tạo file MP4 3:4 HD trước!'
+        );
+        return;
+      }
+      const blob = await resp.blob();
+      if (blob.size < 10000) {
+        setJustCutBanner('⚠️ File video quá nhỏ hoặc chưa sẵn sàng. Vui lòng cắt lại đoạn này!');
+        return;
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const tmp = document.createElement('a');
+      tmp.href = blobUrl;
+      tmp.download = fileName.endsWith('.mp4') ? fileName : `${fileName}.mp4`;
+      document.body.appendChild(tmp);
+      tmp.click();
+      tmp.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 8000);
+    } catch {
+      const tmp = document.createElement('a');
+      tmp.href = href;
+      tmp.download = fileName.endsWith('.mp4') ? fileName : `${fileName}.mp4`;
+      document.body.appendChild(tmp);
+      tmp.click();
+      tmp.remove();
+    }
+  };
+
   const cleanCharName = characterName.split('—')[0].split('-')[0].trim() || 'Clint Eastwood';
 
   const activeCharName = React.useMemo(() => {
@@ -802,7 +855,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     setIsCuttingYouTube(true);
     setCuttingCardId(vid.id);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 15000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 45000);
     try {
       const res = await fetch('/api/youtube/cut-clips', {
         method: 'POST',
@@ -922,7 +975,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
     setIsCuttingYouTube(true);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 16000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 45000);
     try {
       const clipsPayload = segmentsToCut.map((seg) => ({
         id: seg.video.id,
@@ -1014,13 +1067,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         }
       } else {
+        const errData = await res.json().catch(() => null);
         setJustCutBanner(
-          '⚠️ Máy chủ nguồn video phản hồi chậm hoặc đang bận. Vui lòng thử cắt lại hoặc chọn video khác!'
+          errData?.error ||
+            '⚠️ Máy chủ nguồn video phản hồi chậm hoặc đang bận. Vui lòng thử cắt lại hoặc chọn video khác!'
         );
       }
     } catch {
       setJustCutBanner(
-        '⏱️ Quá thời gian chờ tải nguồn video (16s). Hệ thống đã tự ngắt để không bị treo — bạn hãy thử bấm cắt lại hoặc chọn đoạn ngắn hơn!'
+        '⏱️ Quá thời gian chờ tải nguồn video (45s). Hệ thống đã tự ngắt để không bị treo — bạn hãy thử bấm cắt lại hoặc chọn đoạn ngắn hơn!'
       );
     } finally {
       clearTimeout(cutTimeout);
@@ -1702,16 +1757,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </h4>
                       </div>
                       <a
-                        href={
-                          (latestAcceptedCut.videoUrl || '').split('#')[0].includes('/api/youtube/cut-file/')
-                            ? `${(latestAcceptedCut.videoUrl || '').split('#')[0]}?download=1&name=${encodeURIComponent(
-                                `Cut_${latestAcceptedCut.originalStartSec}s-${latestAcceptedCut.originalEndSec}s.mp4`
-                              )}`
-                            : (latestAcceptedCut.videoUrl || '').split('#')[0]
-                        }
+                        href={buildDownloadMp4Href(
+                          latestAcceptedCut.videoUrl || '',
+                          `Cut_${latestAcceptedCut.originalStartSec}s-${latestAcceptedCut.originalEndSec}s.mp4`
+                        )}
                         download={`Cut_${latestAcceptedCut.originalStartSec}s-${latestAcceptedCut.originalEndSec}s.mp4`}
-                        target="_blank"
-                        rel="noreferrer"
+                        onClick={(e) =>
+                          triggerMp4Download(
+                            e,
+                            latestAcceptedCut.videoUrl || '',
+                            `Cut_${latestAcceptedCut.originalStartSec}s-${latestAcceptedCut.originalEndSec}s.mp4`
+                          )
+                        }
                         className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/50 flex items-center gap-1 shrink-0"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -1836,15 +1893,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                       activeSceneId ||
                       selectableScenes[0]?.id ||
                       '';
-                    const cleanMp4Url = (cut.videoUrl || '').split('#')[0];
                     const safeDownloadName = `Cut_${cIdx + 1}_${cut.originalStartSec}s-${cut.originalEndSec}s_${(
                       cut.title || 'video'
                     )
                       .replace(/[^a-zA-Z0-9_-]+/g, '_')
                       .slice(0, 32)}.mp4`;
-                    const downloadHref = cleanMp4Url.includes('/api/youtube/cut-file/')
-                      ? `${cleanMp4Url}?download=1&name=${encodeURIComponent(safeDownloadName)}`
-                      : cleanMp4Url;
 
                     return (
                       <div
@@ -1912,10 +1965,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
                         <div className="grid grid-cols-2 gap-1.5">
                           <a
-                            href={downloadHref}
+                            href={buildDownloadMp4Href(cut.videoUrl || '', safeDownloadName)}
                             download={safeDownloadName}
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={(e) =>
+                              triggerMp4Download(e, cut.videoUrl || '', safeDownloadName)
+                            }
                             className="flex items-center justify-center gap-1 py-1.5 px-2 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 transition-colors"
                             title="Tải file video .MP4 đã cắt này về máy tính của bạn để lưu trữ hoặc upload lại bất cứ lúc nào"
                           >
@@ -2345,10 +2399,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
                               <div className="flex items-center gap-1.5">
                                 <a
-                                  href={cleanVidUrl}
+                                  href={buildDownloadMp4Href(
+                                    cleanVidUrl,
+                                    `Video_Thay_The_${idx + 1}.mp4`
+                                  )}
                                   download={`Video_Thay_The_${idx + 1}.mp4`}
-                                  target="_blank"
-                                  rel="noreferrer"
+                                  onClick={(e) =>
+                                    triggerMp4Download(
+                                      e,
+                                      cleanVidUrl,
+                                      `Video_Thay_The_${idx + 1}.mp4`
+                                    )
+                                  }
                                   className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0"
                                   title="Tải file MP4 gốc này về máy"
                                 >

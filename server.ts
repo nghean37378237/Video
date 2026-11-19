@@ -1506,7 +1506,7 @@ function registerRoutes() {
             : sType === "quote"
             ? `THẺ CHỮ ĐEN: ${beat.title}`
             : `CẦN ẢNH TĨNH: ${beat.title} (${cleanName})`,
-        imagePrompt: `Authentic archival documentary portrait of ${cleanName} (${beat.era}), classic cinema lighting, natural 35mm film grain, full-frame ${ratioDesc}, edge-to-edge full-bleed composition filling 100% of the canvas, no borders, no text.`,
+        imagePrompt: `Authentic full-body archival documentary photograph of ${cleanName} (${beat.era}), striking charismatic full-length pose, glamorous cinema lighting, natural 35mm film grain, full-frame ${ratioDesc}, edge-to-edge full-bleed composition filling 100% of the canvas, no borders, no text.`,
         videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from the uploaded reference frame of the subject in period attire, steady gaze and authentic atmosphere -> [2-4s Story Action & Speech]: Preserving 100% exact facial identity from the reference image, subtle natural head turn and expressive delivery matching "${primaryText.slice(0, 80)}" -> [4-6s Camera Control & Climax]: Smooth Kling dolly push-in, warm archival 35mm film grain, full-screen ${ratioDesc}.`,
         archivalKeywords: `${cleanName} ${beat.era}`,
         motionEffect: motions[idx % motions.length],
@@ -1817,92 +1817,92 @@ function registerRoutes() {
       {
         titleVi: `Tuổi Thơ & Xuất Phát Điểm: ${cleanSubject}`,
         era: "childhood early years",
-        kw: `${cleanSubject} young childhood solo portrait`,
+        kw: `${cleanSubject} young childhood full length solo photo`,
         beatEn: `${info.birthDate ? `Born on ${info.birthDate}, ` : ""}${cleanSubject} grew up with big dreams and an unmistakable spark for storytelling.`,
       },
       {
         titleVi: `Những Năm Tháng Tuổi Trẻ: ${cleanSubject}`,
-        era: "youth college years",
-        kw: `${cleanSubject} young actor 1990s portrait`,
+        era: "youth charismatic full body",
+        kw: `${cleanSubject} young attractive full body 1990s photoshoot`,
         beatEn: `During youthful early years, ${cleanSubject} quietly honed natural comedic timing and magnetic screen charm.`,
       },
       {
         titleVi: `Bước Ngoặt Khởi Nghiệp: ${cleanSubject}`,
-        era: "career debut breakthrough",
-        kw: `${cleanSubject} early film premiere portrait`,
+        era: "career debut full length red carpet",
+        kw: `${cleanSubject} early premiere full body glamorous outfit photo`,
         beatEn: `Everything changed when ${cleanSubject} stepped into Hollywood and immediately stood out with effortless authenticity.`,
       },
       {
         titleVi: `Tác Phẩm Đột Phá Đầu Tiên: ${cleanSubject}`,
-        era: "breakout movie milestone",
-        kw: `${cleanSubject} 1990s movie actor headshot`,
+        era: "breakout movie star full body",
+        kw: `${cleanSubject} full length fashion photoshoot gorgeous`,
         beatEn: `Critics quickly praised ${cleanSubject} for turning unconventional characters into deeply relatable human icons.`,
       },
       {
         titleVi: `Sự Kiện & Thảm Đỏ Nổi Tiếng: ${cleanSubject}`,
-        era: "red carpet premiere",
-        kw: `${cleanSubject} red carpet tuxedo suit solo`,
+        era: "glamorous red carpet full body",
+        kw: `${cleanSubject} red carpet full body glamorous outfit solo`,
         beatEn: `Soon, ${cleanSubject} became a beloved fixture at major premieres, capturing hearts across the global film industry.`,
       },
       {
         titleVi: `Thời Kỳ Đỉnh Cao Danh Vọng: ${cleanSubject}`,
-        era: "peak box office success",
-        kw: `${cleanSubject} 2000s actor solo portrait`,
+        era: "peak stardom magazine editorial",
+        kw: `${cleanSubject} magazine editorial full body hot photoshoot`,
         beatEn: `Hit after hit cemented ${cleanSubject} as one of cinema's most bankable and unforgettable stars.`,
       },
       {
         titleVi: `Giải Thưởng & Đề Cử Danh Giá: ${cleanSubject}`,
-        era: "awards ceremony milestone",
-        kw: `${cleanSubject} award ceremony portrait`,
+        era: "awards gala full body",
+        kw: `${cleanSubject} awards ceremony full length glamorous gown suit`,
         beatEn: `Prestigious nominations honored ${cleanSubject} for both sharp screenwriting brilliance and memorable dramatic depth.`,
       },
       {
-        titleVi: `Đời Tư Kín Tiếng & Gia Đình: ${cleanSubject}`,
-        era: "personal life candid",
-        kw: `${cleanSubject} candid casual outdoor portrait`,
-        beatEn: `Away from Hollywood spotlights, ${cleanSubject} fiercely protected family life, close friendships, and quiet moments.`,
+        titleVi: `Đời Tư & Khoảnh Khắc Quyến Rũ: ${cleanSubject}`,
+        era: "candid street style full body",
+        kw: `${cleanSubject} street style full body outfit attractive photo`,
+        beatEn: `Away from Hollywood spotlights, ${cleanSubject} radiated effortless style, close friendships, and charismatic presence.`,
       },
       {
         titleVi: `Những Vai Diễn Để Đời: ${cleanSubject}`,
-        era: "iconic film performance",
-        kw: `${cleanSubject} film festival press portrait`,
+        era: "iconic glamorous film appearance",
+        kw: `${cleanSubject} film festival full body stunning pose`,
         beatEn: `Whether leading comedies or heartfelt dramas, ${cleanSubject} brought warmth, humor, and genuine soul to every frame.`,
       },
       {
         titleVi: `Sự Kiện Quốc Tế & Tầm Ảnh Hưởng: ${cleanSubject}`,
-        era: "international festival appearance",
-        kw: `${cleanSubject} Cannes Venice film festival portrait`,
-        beatEn: `Across international festivals from Cannes to Hollywood, audiences cheered the unmistakable voice of ${cleanSubject}.`,
+        era: "international festival glamorous full length",
+        kw: `${cleanSubject} Cannes Venice red carpet full body photo`,
+        beatEn: `Across international festivals from Cannes to Hollywood, audiences cheered the unmistakable charisma of ${cleanSubject}.`,
       },
       {
         titleVi: `Hành Trình Bền Bỉ Qua Thập Kỷ: ${cleanSubject}`,
-        era: "mature career era",
-        kw: `${cleanSubject} recent solo portrait smiling`,
-        beatEn: `Decades into an extraordinary career, ${cleanSubject} keeps reinventing classic roles for whole new generations.`,
+        era: "mature star charismatic full body",
+        kw: `${cleanSubject} recent full body glamorous red carpet photo`,
+        beatEn: `Decades into an extraordinary career, ${cleanSubject} keeps turning heads with timeless allure for whole new generations.`,
       },
       {
         titleVi: `Dấu Ấn Văn Hóa Đại Chúng: ${cleanSubject}`,
-        era: "cultural legacy portrait",
-        kw: `${cleanSubject} studio portrait close up`,
-        beatEn: `Few performers match the timeless warmth and signature delivery that made ${cleanSubject} a household legend.`,
+        era: "editorial fashion cover photoshoot",
+        kw: `${cleanSubject} vogue gq vanity fair full body photoshoot`,
+        beatEn: `Few performers match the timeless allure and signature charisma that made ${cleanSubject} a household legend.`,
       },
       {
         titleVi: `Tình Cảm Khán Giả Toàn Cầu: ${cleanSubject}`,
-        era: "fan favorite appearance",
-        kw: `${cleanSubject} interview portrait candid`,
-        beatEn: `Fans around the world still celebrate the unforgettable laughter and comfort ${cleanSubject} brought to screens.`,
+        era: "charismatic premiere stage presence",
+        kw: `${cleanSubject} premiere full length smiling gorgeous photo`,
+        beatEn: `Fans around the world still celebrate the unforgettable warmth and magnetism ${cleanSubject} brought to screens.`,
       },
       {
         titleVi: `Vượt Qua Thử Thách Cuộc Đời: ${cleanSubject}`,
-        era: "resilience personal journey",
-        kw: `${cleanSubject} black and white portrait`,
-        beatEn: `Through life's quiet battles and triumphant comebacks, ${cleanSubject} showed remarkable strength, grace, and humility.`,
+        era: "bold editorial full length",
+        kw: `${cleanSubject} dramatic fashion full body photoshoot`,
+        beatEn: `Through life's quiet battles and triumphant comebacks, ${cleanSubject} showed remarkable strength, grace, and allure.`,
       },
       {
         titleVi: `Mừng Sinh Nhật Huyền Thoại: ${cleanSubject}`,
-        era: "celebrated milestone portrait",
-        kw: `${cleanSubject} smiling headshot portrait`,
-        beatEn: `Today, we celebrate ${info.ageText ? `the ${info.ageText} birthday of ` : ""}${cleanSubject}—an enduring star whose legacy shines brighter than ever.`,
+        era: "celebrated glamorous full body milestone",
+        kw: `${cleanSubject} red carpet full body stunning gorgeous photo`,
+        beatEn: `Today, we celebrate ${info.ageText ? `the ${info.ageText} birthday of ` : ""}${cleanSubject}—an enduring star whose radiance shines brighter than ever.`,
       },
     ];
 
@@ -1913,9 +1913,9 @@ function registerRoutes() {
         sceneType: idx === 0 || idx % 2 === 0 ? "video" : "image",
         narrationText: tpl.beatEn,
         translationText: tpl.beatEn,
-        visualPrompt: `CẦN ẢNH/VIDEO ĐƠN (SOLO): ${cleanSubject} (${tpl.era})`,
-        imagePrompt: `Solo single portrait photograph of ${cleanSubject} during ${tpl.era}, authentic single-person candid documentary photo, strictly one person only, no collage, no split panels, no text overlay, warm natural lighting, full-frame ${ratioDesc}.`,
-        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from single solo portrait of ${cleanSubject} (${tpl.era}) -> [2-4s Story Action & Speech]: Gentle warm smile and natural eye contact -> [4-6s Camera Control & Climax]: Smooth documentary push-in, ${ratioDesc}.`,
+        visualPrompt: `CẦN ẢNH/VIDEO ĐƠN CẢ NGƯỜI ĐẸP CUỐN HÚT (SOLO FULL-BODY): ${cleanSubject} (${tpl.era})`,
+        imagePrompt: `Full-body solo glamorous photograph of ${cleanSubject} during ${tpl.era}, striking attractive full-length pose from head to toe, confident charismatic beauty, designer red carpet or editorial fashion lighting, strictly one person only, no collage, no split panels, no text overlay, full-frame ${ratioDesc}.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from full-body glamorous photo of ${cleanSubject} (${tpl.era}) -> [2-4s Story Action & Speech]: Confident charismatic poise, subtle alluring smile and natural movement -> [4-6s Camera Control & Climax]: Smooth cinematic tilt-up push-in, ${ratioDesc}.`,
         archivalKeywords: tpl.kw,
         motionEffect: motions[idx % motions.length],
         colorFilter: idx % 2 === 0 ? "color-warm" : "original",
@@ -2712,52 +2712,81 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       year: number | null;
     }[] = [];
 
-    // Strictly ban any image with overlaid text, birthday greeting cards, or multi-photo collages
+    // Strictly ban any image with overlaid text, birthday greeting cards, PNG cutouts, or multi-photo collages
     const bannedTitleWords =
-      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|composite|split|before\s+and\s+after|then\s+and\s+now|evolution|transformation|happy\s*birthday|birthday\s*card|wishes|greeting|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy)\b/i;
+      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|composite|split|before\s+and\s+after|then\s+and\s+now|evolution|transformation|happy\s*birthday|birthday\s*card|wishes|greeting|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy|transparent\s+png|cutout|sticker|clipart|png)\b/i;
 
     const watermarkedStockDomains =
-      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com)\b/i;
+      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com|stickpng\.com|pngwing\.com|pngtree\.com|cleanpng\.com|pngitem\.com|klipartz\.com|kindpng\.com|nicepng\.com|seekpng\.com|favpng\.com)\b/i;
 
     for (const q of candidateQueries) {
       if (candidates.length >= limit) break;
 
-      // 1. Search Bing Web Images FIRST with explicit negative filters (-poster -cover -collage -birthday -card -split) for clean solo photography
+      // 1. Search Bing Web Images FIRST prioritizing full-body, glamorous, attractive tall-aspect photography (no close-up headshots, posters, or collages)
       try {
-        const cleanedQ = q.replace(/\b(happy|birthday|wishes|collage)\b/gi, " ").replace(/\s+/g, " ").trim();
-        const basePhotoQuery =
-          cleanedQ.toLowerCase().includes("photo") || cleanedQ.toLowerCase().includes("portrait")
-            ? cleanedQ
-            : `${cleanedQ} solo portrait photo`;
-        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text -collage -birthday -card -wishes -split -grid -meme`;
-        const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
-          bingQuery
-        )}&first=0&count=${Math.min(45, limit * 3 + 15)}&adlt=moderate`;
+        const cleanedQ = q
+          .replace(/\b(happy|birthday|wishes|collage|headshot|close[\s-]?up|closeup)\b/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const isYouthOrChildhood = /\b(childhood|kid|baby|young|teen)\b/i.test(cleanedQ);
+        const alreadyHasGlamourOrBody = /\b(full[\s-]?body|full[\s-]?length|glam|glamorous|red[\s-]?carpet|photoshoot|fashion|editorial|hot|sexy|stunning|gorgeous|bikini|outfit)\b/i.test(
+          cleanedQ
+        );
+        const basePhotoQuery = alreadyHasGlamourOrBody
+          ? cleanedQ
+          : isYouthOrChildhood
+          ? `${cleanedQ} full length photo`
+          : `${cleanedQ} full body glamorous red carpet photoshoot`;
+        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text -collage -birthday -card -wishes -split -grid -meme -headshot -mugshot`;
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3200);
-        const bingRes = await fetch(bingUrl, {
-          headers: {
-            "User-Agent": BROWSER_USER_AGENT,
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
+        const fetchBingBatch = async (extraQft: string) => {
+          const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
+            bingQuery
+          )}&first=0&count=${Math.min(45, limit * 3 + 15)}${extraQft}&adlt=moderate`;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3200);
+          try {
+            const bingRes = await fetch(bingUrl, {
+              headers: {
+                "User-Agent": BROWSER_USER_AGENT,
+                "Accept-Language": "en-US,en;q=0.9",
+              },
+              signal: controller.signal,
+            });
+            return bingRes.ok ? await bingRes.text() : "";
+          } finally {
+            clearTimeout(timeout);
+          }
+        };
 
-        if (bingRes.ok) {
-          const html = await bingRes.text();
-          const matches = [...html.matchAll(/m="([^"]+)"/g)];
+        const [tallHtml, generalHtml] = await Promise.all([
+          fetchBingBatch("&qft=+filterui:aspect-tall").catch(() => ""),
+          fetchBingBatch("").catch(() => ""),
+        ]);
 
-          const parsedItems: Array<{
-            title: string;
-            murl: string;
-            turl: string;
-            purl: string;
-            idKey: string;
-            cleanScore: number;
-          }> = [];
+        const htmlBatches: Array<{ html: string; isTallAspect: boolean }> = [
+          { html: tallHtml, isTallAspect: true },
+          { html: generalHtml, isTallAspect: false },
+        ];
 
+        const parsedItems: Array<{
+          title: string;
+          murl: string;
+          turl: string;
+          purl: string;
+          idKey: string;
+          cleanScore: number;
+          isTallAspect: boolean;
+        }> = [];
+
+        const fullBodyGlamourRegex =
+          /\b(full[\s-]?body|full[\s-]?length|red[\s-]?carpet|glam|glamor|glamorous|stunning|gorgeous|hot|sexy|attractive|handsome|bombshell|bikini|swimsuit|lingerie|gown|dress|outfit|fashion|runway|vogue|gq|esquire|vanity\s*fair|maxim|sports\s*illustrated|met\s*gala|premiere|photoshoot|editorial|standing|posing|fit|abs|physique|charismatic)\b/i;
+        const tightCloseUpPenaltyRegex =
+          /\b(headshot|close[\s-]?up|closeup|mugshot|passport|id\s*photo|face\s*crop)\b/i;
+
+        for (const batch of htmlBatches) {
+          if (!batch.html) continue;
+          const matches = [...batch.html.matchAll(/m="([^"]+)"/g)];
           for (const m of matches) {
             const decoded = m[1]
               .replace(/&quot;/g, '"')
@@ -2791,46 +2820,69 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 continue;
               }
 
-              // Score higher for clean still photography / candid portraits without text
-              const isCleanStill =
-                /\b(still|portrait|headshot|photograph|candid|scene|cropped|publicity)\b/i.test(
+              let score = 1;
+              if (fullBodyGlamourRegex.test(combinedText)) score += 6;
+              if (
+                /\b(full[\s-]?body|full[\s-]?length|bikini|swimsuit|lingerie|gown|vogue|gq|esquire|vanity\s*fair|maxim|sports\s*illustrated|bombshell|hot|sexy|glamorous|stunning|gorgeous|photoshoot|editorial)\b/i.test(
                   combinedText
-                );
+                )
+              ) {
+                score += 3;
+              }
+              if (batch.isTallAspect) score += 4;
+              if (/\b(still|photograph|candid|publicity|carpet|stage|concert|event|gala|award)\b/i.test(combinedText)) {
+                score += 2;
+              }
+              const isMultiSubjectQuery = /\b(and|with|cast|couple|wedding|anniversary|kids|family)\b|&/i.test(
+                q
+              );
+              if (
+                !isMultiSubjectQuery &&
+                (/\b(with|and|couple|husband|wife|boyfriend|girlfriend|spouse|cast|group|co-star|costar)\b|&|,\s*[A-Z][a-z]+\s+[A-Z]/i.test(
+                  title
+                ))
+              ) {
+                score -= 5;
+              }
+              if (tightCloseUpPenaltyRegex.test(combinedText)) score -= 5;
+              if (/\b(black\s+and\s+white|monochrome|grayscale)\b/i.test(combinedText)) score -= 2;
+
               parsedItems.push({
-                title: title || `${subjectAnchor} Portrait`,
+                title: title || `${subjectAnchor} Full Body`,
                 murl,
                 turl: turl ? `${turl}&w=720` : murl,
                 purl,
                 idKey,
-                cleanScore: isCleanStill ? 2 : 1,
+                cleanScore: score,
+                isTallAspect: batch.isTallAspect,
               });
             } catch {
               // Ignore malformed item
             }
           }
+        }
 
-          // Prioritize clean photographic stills and portraits
-          parsedItems.sort((a, b) => b.cleanScore - a.cleanScore);
+        // Prioritize full-body, tall-aspect, glamorous attractive photography
+        parsedItems.sort((a, b) => b.cleanScore - a.cleanScore);
 
-          for (const item of parsedItems) {
-            if (candidates.length >= limit) break;
-            const titleKey = normalizeTitleKey(item.title);
-            if (usedSourceUrls.has(item.idKey)) continue;
+        for (const item of parsedItems) {
+          if (candidates.length >= limit) break;
+          const titleKey = normalizeTitleKey(item.title);
+          if (usedSourceUrls.has(item.idKey)) continue;
 
-            usedSourceUrls.add(item.idKey);
-            if (item.murl) usedSourceUrls.add(item.murl);
-            if (item.turl) usedSourceUrls.add(item.turl);
-            if (titleKey) usedTitleKeys.add(titleKey);
+          usedSourceUrls.add(item.idKey);
+          if (item.murl) usedSourceUrls.add(item.murl);
+          if (item.turl) usedSourceUrls.add(item.turl);
+          if (titleKey) usedTitleKeys.add(titleKey);
 
-            candidates.push({
-              title: item.title.replace(/\s*\|\s*.*$/, "").slice(0, 48),
-              thumbUrl: item.murl || item.turl,
-              fallbackThumbUrl: item.turl,
-              width: 720,
-              height: 900,
-              year: extractPhotoYear(`${item.title} ${item.murl}`),
-            });
-          }
+          candidates.push({
+            title: item.title.replace(/\s*\|\s*.*$/, "").slice(0, 48),
+            thumbUrl: item.murl || item.turl,
+            fallbackThumbUrl: item.turl,
+            width: item.isTallAspect ? 720 : 800,
+            height: item.isTallAspect ? 960 : 900,
+            year: extractPhotoYear(`${item.title} ${item.murl}`),
+          });
         }
       } catch {
         // Continue to Wikipedia / Wikimedia Commons
@@ -3438,21 +3490,48 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     ],
   };
 
-  // Helper: Build FFmpeg filter chain for razor-sharp 720x960 (3:4 HD) output with accurate Lanczos resampling + optical Unsharp mask for maximum clarity
+  // Helper: Build FFmpeg filter chain for razor-sharp 720x960 (3:4 HD) output with Lanczos resampling + optical Unsharp mask
   function buildSharp34VideoFilter(frameMode = "3:4-sharp", focusX = "center"): string {
     const focusFactor =
       focusX === "left" ? "0.18" : focusX === "right" ? "0.82" : "0.5";
 
     if (frameMode === "3:4-full-wide") {
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos+accurate_rnd,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
     if (frameMode === "3:4-cinema") {
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.18,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.18,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
-    // Default "3:4-sharp": Razor-sharp full edge-to-edge 3:4 (720x960 HD) crop with accurate Lanczos resampling + optical sharpening
-    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd+full_chroma_int,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.16,setsar=1,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.04`;
+    // Default "3:4-sharp": Razor-sharp full edge-to-edge 3:4 (720x960 HD) crop with Lanczos resampling + optical sharpening
+    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.16,setsar=1,unsharp=5:5:0.95:3:3:0.45,eq=contrast=1.04:saturation=1.04`;
+  }
+
+  let cachedYtDlpPromise: Promise<string | null> | null = null;
+  async function ensureYtDlpBinary(): Promise<string | null> {
+    const localBin = path.join(process.cwd(), "bin", "yt-dlp");
+    if (fs.existsSync(localBin)) return localBin;
+    if (fs.existsSync("/tmp/yt-dlp")) return "/tmp/yt-dlp";
+    if (cachedYtDlpPromise) return cachedYtDlpPromise;
+    cachedYtDlpPromise = (async () => {
+      try {
+        const res = await fetch(
+          "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
+          { redirect: "follow", signal: AbortSignal.timeout(15000) }
+        );
+        if (!res.ok) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length < 1_000_000) return null;
+        fs.writeFileSync("/tmp/yt-dlp", buf);
+        fs.chmodSync("/tmp/yt-dlp", 0o755);
+        return "/tmp/yt-dlp";
+      } catch {
+        return null;
+      }
+    })();
+    const found = await cachedYtDlpPromise;
+    if (!found) cachedYtDlpPromise = null;
+    return found;
   }
 
   // Helper: Physically cut a standalone fast-playing MP4 clip + extract a real video frame JPG thumbnail using FFmpeg (cached on disk)
@@ -3524,6 +3603,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       }
 
       if (!fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 12000) {
+        try {
+          if (fs.existsSync(outMp4Path)) fs.unlinkSync(outMp4Path);
+        } catch {}
         return null;
       }
 
@@ -4009,6 +4091,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (contentLength) res.setHeader("Content-Length", contentLength);
       const contentRange = upstream.headers.get("content-range");
       if (contentRange) res.setHeader("Content-Range", contentRange);
+      if (req.query.download === "1") {
+        const customName = String(req.query.name || "video_clip.mp4")
+          .replace(/[^a-zA-Z0-9._-]/g, "_")
+          .replace(/_{2,}/g, "_");
+        const downloadFileName = customName.endsWith(".mp4") ? customName : `${customName}.mp4`;
+        res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName}"`);
+      }
 
       if (!upstream.body) {
         res.end();
@@ -4265,6 +4354,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const requestedVideoCount = Math.max(8, Math.min(18, Number(videoLimit) || 14));
 
+      const photoSearchPhrase = /\b(full\s*body|glamor|sexy|hot|red\s*carpet|photoshoot|fashion|childhood|young)\b/i.test(
+        rawSearch
+      )
+        ? rawSearch
+        : `${rawSearch} full body glamorous photoshoot`;
+
       const [videos, exactPhotos, contextualPhotos] = await Promise.all([
         searchRealArchivalVideos(
           rawSearch,
@@ -4275,7 +4370,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           Number(cycleOffset) || 0
         ),
         searchRealArchivalPhotos(
-          rawSearch,
+          photoSearchPhrase,
           Math.max(8, Number(limit) || 12),
           usedUrls,
           anchorForSearch,
@@ -5727,21 +5822,29 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
 
-      const ytDlpBin = fs.existsSync(path.join(process.cwd(), "bin", "yt-dlp"))
-        ? path.join(process.cwd(), "bin", "yt-dlp")
-        : fs.existsSync("/tmp/yt-dlp")
-        ? "/tmp/yt-dlp"
-        : null;
+      const ytDlpBin = await ensureYtDlpBinary();
+
+      const isHtmlSocialPageUrl = (u: string): boolean =>
+        /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|dailymotion\.com|dai\.ly)/i.test(u);
+
+      const isPlayableDirectMediaUrl = (u: string): boolean =>
+        Boolean(u) &&
+        u.startsWith("http") &&
+        (!isHtmlSocialPageUrl(u) || /\.(mp4|m3u8|webm|mov)(\?|#|$)/i.test(u));
+
+      const isSupportedArchivalProxyTarget = (u: string): boolean =>
+        u.startsWith("https://archive.org/") ||
+        u.includes(".archive.org/") ||
+        u.includes("wikimedia.org/");
 
       const resolveFastDirectUrl = async (inputUrl: string): Promise<string> => {
-        // Convert any slow .ogv Archive.org file directly to its .mp4 derivative
         let candidate = inputUrl;
         if (/\.ogv(\?|#|$)/i.test(candidate)) {
           candidate = candidate.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
         }
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 1800);
+          const timer = setTimeout(() => ctrl.abort(), 2200);
           const headRes = await fetch(candidate, {
             method: "HEAD",
             redirect: "follow",
@@ -5758,6 +5861,31 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return candidate;
       };
 
+      const resolveSocialOrDmStreamWithYtDlp = async (pageUrl: string): Promise<string | null> => {
+        if (!ytDlpBin || !pageUrl) return null;
+        try {
+          const { stdout } = await execFileAsync(
+            ytDlpBin,
+            [
+              "--no-warnings",
+              "--no-playlist",
+              "-f",
+              "best[ext=mp4][height<=720]/best[height<=720]/best",
+              "-g",
+              pageUrl,
+            ],
+            { timeout: 8500 }
+          );
+          const lines = stdout
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.startsWith("http"));
+          return lines[0] || null;
+        } catch {
+          return null;
+        }
+      };
+
       const runFastFfmpegCut = async (
         srcUrl: string,
         seekSec: number,
@@ -5765,20 +5893,23 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         vfFilter: string,
         outMp4: string,
         outJpg: string,
-        timeoutMs = 9500
+        timeoutMs = 15000
       ): Promise<boolean> => {
+        if (!srcUrl) return false;
         try {
-          const directUrl = await resolveFastDirectUrl(srcUrl);
+          const directUrl = srcUrl.startsWith("http")
+            ? await resolveFastDirectUrl(srcUrl)
+            : srcUrl;
           await execFileAsync(
             "ffmpeg",
             [
               "-y",
               "-rw_timeout",
-              "5500000",
+              "7000000",
               "-user_agent",
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+              BROWSER_USER_AGENT,
               "-ss",
-              String(seekSec),
+              String(Math.max(0, seekSec)),
               "-i",
               directUrl,
               "-t",
@@ -5800,7 +5931,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             ],
             { timeout: timeoutMs }
           );
-          if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 10000) {
+          if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 15000) {
             const thumbSeek = Math.min(1.6, Math.max(0.3, Number((durSec * 0.25).toFixed(1))));
             await execFileAsync(
               "ffmpeg",
@@ -5816,18 +5947,51 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 "3",
                 outJpg,
               ],
-              { timeout: 2500 }
+              { timeout: 3000 }
             ).catch(() => {});
             return true;
           }
+          try {
+            if (fs.existsSync(outMp4)) fs.unlinkSync(outMp4);
+          } catch {}
         } catch {
-          // fall through to fallback
+          try {
+            if (fs.existsSync(outMp4)) fs.unlinkSync(outMp4);
+          } catch {}
         }
         return false;
       };
 
+      // Lazy live lookup of Dailymotion candidates for the active subject in case clip.dmId is missing or blocked
+      let liveSubjectDmIdsPromise: Promise<string[]> | null = null;
+      const getSubjectDmFallbacks = () => {
+        if (!liveSubjectDmIdsPromise) {
+          liveSubjectDmIdsPromise = (async () => {
+            try {
+              const r = await fetch(
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                  cleanChar
+                )}&limit=8&fields=id,duration`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: AbortSignal.timeout(3500),
+                }
+              );
+              if (!r.ok) return [];
+              const j: any = await r.json();
+              return (j?.list || [])
+                .filter((it: any) => it?.id && (it?.duration || 0) >= 12)
+                .map((it: any) => String(it.id));
+            } catch {
+              return [];
+            }
+          })();
+        }
+        return liveSubjectDmIdsPromise;
+      };
+
       const targetClips = clips.slice(0, 8);
-      const results = await Promise.all(
+      const rawResults = await Promise.all(
         targetClips.map(async (clip: any, idx: number) => {
           const parsedStart = Number(clip?.trimStartSec);
           const trimStartSec =
@@ -5842,15 +6006,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
           const tiktokUrl = String(clip?.tiktokUrl || "").trim();
           const instagramUrl = String(clip?.instagramUrl || "").trim();
-          const youtubeUrl = String(clip?.youtubeUrl || (clip?.youtubeId ? `https://www.youtube.com/watch?v=${clip.youtubeId}` : "")).trim();
+          const youtubeUrl = String(
+            clip?.youtubeUrl || (clip?.youtubeId ? `https://www.youtube.com/watch?v=${clip.youtubeId}` : "")
+          ).trim();
           const videoUrlOpt = String(clip?.videoUrl || "").trim();
           let explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
           if (/\.ogv(\?|#|$)/i.test(explicitArchiveMp4)) {
             explicitArchiveMp4 = explicitArchiveMp4.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
           }
 
-          // Prioritize exact user-selected video source URL (YouTube, TikTok, Instagram, Archive, or direct videoUrl)
-          const userSelectedSourceUrl = explicitArchiveMp4 || videoUrlOpt || youtubeUrl || tiktokUrl || instagramUrl;
           const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
           const clipFocusX = String(clip?.focusX || reqFocusX || "center");
           const vf34Filter = buildSharp34VideoFilter(clipFrameMode, clipFocusX);
@@ -5865,91 +6029,152 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
           const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
           let cutSucceeded = false;
+          let usedSourceUrl = "";
 
-          // 0. If user selected a YouTube / TikTok / Instagram URL and yt-dlp is available, download/stream that exact video
-          if (!cutSucceeded && userSelectedSourceUrl && ytDlpBin && /youtube\.com|youtu\.be|tiktok\.com|instagram\.com/i.test(userSelectedSourceUrl)) {
-            const rawDlPath = path.join(YT_CUTS_DIR, `${fileId}_raw_dl.mp4`);
-            try {
-              await execFileAsync(
-                ytDlpBin,
-                ["--no-warnings", "-o", rawDlPath, userSelectedSourceUrl],
-                { timeout: 12000 }
-              );
-              if (fs.existsSync(rawDlPath) && fs.statSync(rawDlPath).size > 15000) {
-                cutSucceeded = await runFastFfmpegCut(
-                  rawDlPath,
-                  trimStartSec,
-                  durationSec,
-                  vf34Filter,
-                  outMp4Path,
-                  outJpgPath,
-                  9000
-                );
-              }
-            } catch {
-              // fallback below
-            } finally {
-              try {
-                if (fs.existsSync(rawDlPath)) fs.unlinkSync(rawDlPath);
-              } catch {}
-            }
-          }
-
-          // 1. If we have a direct archive/video stream URL, cut it directly
-          if (!cutSucceeded && userSelectedSourceUrl) {
-            cutSucceeded = await runFastFfmpegCut(
-              userSelectedSourceUrl,
-              trimStartSec,
-              durationSec,
-              vf34Filter,
-              outMp4Path,
-              outJpgPath,
-              9500
-            );
-          }
-
-          // 2. Only fall back to curated reels if user did not provide a specific source URL
-          const archiveMp4 = userSelectedSourceUrl || (curatedReels[idx % curatedReels.length]?.rawMp4Url || "");
-          if (!cutSucceeded && archiveMp4) {
-            cutSucceeded = await runFastFfmpegCut(
-              archiveMp4,
-              trimStartSec,
-              durationSec,
-              vf34Filter,
-              outMp4Path,
-              outJpgPath,
-              9500
-            );
-          }
-
-          // 3. If primary cut failed/timed out (e.g. seek > duration or slow host), fall back to Dailymotion HLS or safe-seek offset
-          if (!cutSucceeded && clip?.dmId) {
-            const dmStream = await resolveDailymotionStreamUrl(String(clip.dmId)).catch(() => null);
-            if (dmStream) {
-              const safeDmSeek = trimStartSec > 90 ? Math.min(28, trimStartSec % 45) : trimStartSec;
+          // 0. If user selected a social URL (TikTok, Instagram, YouTube, Dailymotion), try yt-dlp stream extraction first
+          const socialUrl = tiktokUrl || instagramUrl || youtubeUrl;
+          if (!cutSucceeded && ytDlpBin && socialUrl && isHtmlSocialPageUrl(socialUrl)) {
+            const extractedStream = await resolveSocialOrDmStreamWithYtDlp(socialUrl);
+            if (extractedStream) {
+              usedSourceUrl = extractedStream;
               cutSucceeded = await runFastFfmpegCut(
-                dmStream,
-                safeDmSeek,
+                extractedStream,
+                trimStartSec,
                 durationSec,
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                8500
+                14500
               );
+            }
+            // Also try full download fallback for TikTok/Instagram (some CDNs reject direct ffmpeg headers without yt-dlp download)
+            if (!cutSucceeded && /tiktok\.com|instagram\.com/i.test(socialUrl)) {
+              const rawDlPath = path.join(YT_CUTS_DIR, `${fileId}_raw_dl.mp4`);
+              try {
+                await execFileAsync(
+                  ytDlpBin,
+                  ["--no-warnings", "--no-playlist", "-f", "best[ext=mp4]/best", "-o", rawDlPath, socialUrl],
+                  { timeout: 12000 }
+                );
+                if (fs.existsSync(rawDlPath) && fs.statSync(rawDlPath).size > 15000) {
+                  usedSourceUrl = socialUrl;
+                  cutSucceeded = await runFastFfmpegCut(
+                    rawDlPath,
+                    trimStartSec,
+                    durationSec,
+                    vf34Filter,
+                    outMp4Path,
+                    outJpgPath,
+                    11000
+                  );
+                }
+              } catch {
+                // fall through
+              } finally {
+                try {
+                  if (fs.existsSync(rawDlPath)) fs.unlinkSync(rawDlPath);
+                } catch {}
+              }
             }
           }
 
-          if (!cutSucceeded && archiveMp4 && trimStartSec > 90) {
-            // Retry same MP4 at a safe earlier timestamp in case the video is shorter than trimStartSec
+          // 1. Try direct playable MP4/WebM URL (Archive.org / Wikimedia / explicit videoUrl) ONCE (never pass HTML pages to ffmpeg!)
+          const directCandidate = [explicitArchiveMp4, videoUrlOpt].find((u) =>
+            isPlayableDirectMediaUrl(u)
+          ) || "";
+          if (!cutSucceeded && directCandidate) {
+            usedSourceUrl = directCandidate;
             cutSucceeded = await runFastFfmpegCut(
-              archiveMp4,
-              Math.min(25, trimStartSec % 60),
+              directCandidate,
+              trimStartSec,
               durationSec,
               vf34Filter,
               outMp4Path,
               outJpgPath,
-              7500
+              15000
             );
+            if (!cutSucceeded && trimStartSec > 45) {
+              cutSucceeded = await runFastFfmpegCut(
+                directCandidate,
+                Math.min(18, trimStartSec % 30),
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                12000
+              );
+            }
+          }
+
+          // 2. Try Dailymotion stream (via metadata API OR yt-dlp -g) on clip.dmId + live subject fallback IDs
+          if (!cutSucceeded) {
+            const subjectDmList = await getSubjectDmFallbacks();
+            const dmCandidates = Array.from(
+              new Set([String(clip?.dmId || "").trim(), ...subjectDmList].filter(Boolean))
+            ).slice(0, 3);
+            for (const dmCandidate of dmCandidates) {
+              if (cutSucceeded) break;
+              let dmStream = await resolveDailymotionStreamUrl(dmCandidate).catch(() => null);
+              if (!dmStream && ytDlpBin) {
+                dmStream = await resolveSocialOrDmStreamWithYtDlp(
+                  `https://www.dailymotion.com/video/${dmCandidate}`
+                );
+              }
+              if (dmStream) {
+                usedSourceUrl = dmStream;
+                const safeDmSeek = trimStartSec > 60 ? Math.min(18, trimStartSec % 35) : trimStartSec;
+                cutSucceeded = await runFastFfmpegCut(
+                  dmStream,
+                  safeDmSeek,
+                  durationSec,
+                  vf34Filter,
+                  outMp4Path,
+                  outJpgPath,
+                  15000
+                );
+                if (!cutSucceeded && safeDmSeek > 4) {
+                  cutSucceeded = await runFastFfmpegCut(
+                    dmStream,
+                    2,
+                    Math.min(durationSec, 8),
+                    vf34Filter,
+                    outMp4Path,
+                    outJpgPath,
+                    12000
+                  );
+                }
+              }
+            }
+          }
+
+          // 3. Final verified Archive.org MP4 fallback (only real MP4s, never curated unrelated actors unless no subject Archive exists)
+          if (!cutSucceeded) {
+            const liveArch = await searchRealArchivalVideos(
+              cleanChar,
+              3,
+              new Set<string>(),
+              cleanChar
+            ).catch(() => []);
+            const liveMp4 = liveArch
+              .map((a) => {
+                const m = a.videoUrl.match(/[?&]url=([^&#]+)/);
+                return m ? decodeURIComponent(m[1]) : "";
+              })
+              .find((u) => isPlayableDirectMediaUrl(u) && u !== directCandidate);
+            const finalMp4 = liveMp4 || curatedReels[idx % curatedReels.length]?.rawMp4Url || "";
+            if (finalMp4 && isPlayableDirectMediaUrl(finalMp4)) {
+              usedSourceUrl = finalMp4;
+              const safeSeek = Math.min(22, Math.max(4, trimStartSec % 40));
+              cutSucceeded = await runFastFfmpegCut(
+                finalMp4,
+                safeSeek,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                14000
+              );
+            }
           }
 
           let thumbnailUrl = String(clip?.thumbnailUrl || "");
@@ -5963,14 +6188,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             }
           }
 
-          if (cutSucceeded) {
+          if (cutSucceeded && fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 15000) {
             return {
               id: `yt-cut-${Date.now()}-${idx}`,
               targetSceneId,
               characterName: cleanChar,
               title,
               videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
-              sourceVideoUrl: archiveMp4,
+              sourceVideoUrl: usedSourceUrl || directCandidate || socialUrl,
               thumbnailUrl,
               trimStartSec: 0,
               trimEndSec: durationSec,
@@ -5985,25 +6210,45 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             };
           }
 
-          return {
-            id: `yt-cut-${Date.now()}-${idx}`,
-            targetSceneId,
-            characterName: cleanChar,
-            title,
-            videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(archiveMp4)}#t=${trimStartSec},${trimEndSec}`,
-            sourceVideoUrl: archiveMp4,
-            thumbnailUrl,
-            trimStartSec,
-            trimEndSec,
-            originalStartSec: trimStartSec,
-            originalEndSec: trimEndSec,
-            durationSec,
-            width: 640,
-            height: 360,
-            sourceLabel: `✂️ Đã cắt riêng đoạn ${trimStartSec}s → ${trimEndSec}s`,
-          };
+          // Only fall back to archival proxy if we actually have a real Archive.org / Wikimedia MP4 (NEVER return an HTML URL!)
+          const verifiedArchivalStream = [directCandidate, usedSourceUrl].find((u) =>
+            isSupportedArchivalProxyTarget(u)
+          );
+          if (verifiedArchivalStream) {
+            return {
+              id: `yt-cut-${Date.now()}-${idx}`,
+              targetSceneId,
+              characterName: cleanChar,
+              title,
+              videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(
+                verifiedArchivalStream
+              )}#t=${trimStartSec},${trimEndSec}`,
+              sourceVideoUrl: verifiedArchivalStream,
+              thumbnailUrl,
+              trimStartSec,
+              trimEndSec,
+              originalStartSec: trimStartSec,
+              originalEndSec: trimEndSec,
+              durationSec,
+              width: 640,
+              height: 360,
+              sourceLabel: `✂️ Stream MP4 gốc (${trimStartSec}s → ${trimEndSec}s)`,
+            };
+          }
+
+          return null;
         })
       );
+
+      const results = rawResults.filter((r): r is NonNullable<typeof r> => Boolean(r));
+      if (results.length === 0) {
+        res.status(422).json({
+          error:
+            "Không thể tải luồng video MP4 từ liên kết này để cắt. Vui lòng chọn video Dailymotion / Archive.org hoặc thẻ video khác!",
+          cuts: [],
+        });
+        return;
+      }
 
       const savedManifest = saveCutsToManifest(results);
 
@@ -6030,9 +6275,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();
+      const glamourPhotoQuery = /\b(full\s*body|glamor|sexy|hot|red\s*carpet|photoshoot|fashion)\b/i.test(
+        query
+      )
+        ? query
+        : `${query} full body glamorous red carpet photoshoot`;
       const [videos, photos] = await Promise.all([
         searchRealArchivalVideos(query, 3, usedUrls, query, usedTitles),
-        searchRealArchivalPhotos(query, Number(limit) || 12, usedUrls, query, usedTitles),
+        searchRealArchivalPhotos(glamourPhotoQuery, Number(limit) || 12, usedUrls, query, usedTitles),
       ]);
 
       res.json({
@@ -6283,23 +6533,23 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (cleanTopic) {
         const eraQueries = isFilmCastMode
           ? [
-              `${cleanTopic} ${resolvedFilmMeta.year || ""} movie scene film still`.trim(),
-              `${cleanTopic} cast actors portrait photograph`,
-              `${cleanTopic} behind the scenes cast`,
-              `${cleanTopic} classic movie poster actors`,
+              `${cleanTopic} ${resolvedFilmMeta.year || ""} full body glamorous movie star photo`.trim(),
+              `${cleanTopic} cast actors full length red carpet photo`,
+              `${cleanTopic} behind the scenes cast full body`,
+              `${cleanTopic} classic movie photoshoot stars`,
             ]
           : secondaryPerson
           ? [
-              `${cleanTopic} ${secondaryPerson} wedding vintage portrait photo`,
-              `${cleanTopic} young 1960s candid portrait photograph`,
-              `${cleanTopic} ${secondaryPerson} anniversary portrait photo`,
-              `${cleanTopic} portrait documentary photograph`,
+              `${cleanTopic} ${secondaryPerson} full length red carpet glamorous outfit photo`,
+              `${cleanTopic} young full body glamorous photoshoot`,
+              `${cleanTopic} ${secondaryPerson} anniversary full length photo`,
+              `${cleanTopic} glamorous fashion editorial full body`,
             ]
           : [
-              `${cleanTopic} young early career candid portrait photo`,
-              `${cleanTopic} classic movie scene film still photograph`,
-              `${cleanTopic} 1970s actor portrait headshot photograph`,
-              `${cleanTopic} behind the scenes portrait photograph`,
+              `${cleanTopic} full body red carpet glamorous fashion photoshoot`,
+              `${cleanTopic} full length gorgeous stunning outfit premiere photo`,
+              `${cleanTopic} magazine editorial photoshoot hot charismatic`,
+              `${cleanTopic} young early career full length candid photo`,
             ];
 
         const [foundVideos, ...eraPhotoLists] = await Promise.all([
@@ -6346,7 +6596,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 .trim();
               const subjectHint = actorAnchor.split(" ").slice(0, 3).join(" ") || kw;
               const hits = await searchRealArchivalPhotos(
-                `${subjectHint} actor portrait photo`,
+                `${subjectHint} full body red carpet glamorous photoshoot`,
                 3,
                 usedUrls,
                 subjectHint,

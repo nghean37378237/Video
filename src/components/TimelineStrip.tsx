@@ -677,16 +677,21 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
 
                   {actualMediaKind === 'video' && scene.mediaUrl && (
                     <a
-                      href={
-                        scene.mediaUrl.split('#')[0].includes('/api/youtube/cut-file/')
-                          ? `${scene.mediaUrl.split('#')[0]}?download=1&name=${encodeURIComponent(
-                              `Canh_${String(idx + 1).padStart(2, '0')}_video_da_cat.mp4`
-                            )}`
-                          : scene.mediaUrl.split('#')[0]
-                      }
+                      href={(() => {
+                        const clean = scene.mediaUrl.split('#')[0];
+                        const dlName = encodeURIComponent(
+                          `Canh_${String(idx + 1).padStart(2, '0')}_video_da_cat.mp4`
+                        );
+                        if (clean.includes('/api/youtube/cut-file/')) {
+                          return `${clean}?download=1&name=${dlName}`;
+                        }
+                        if (clean.includes('/api/archival/video-stream')) {
+                          const sep = clean.includes('?') ? '&' : '?';
+                          return `${clean}${sep}download=1&name=${dlName}`;
+                        }
+                        return clean;
+                      })()}
                       download={`Canh_${String(idx + 1).padStart(2, '0')}_video_da_cat.mp4`}
-                      target="_blank"
-                      rel="noreferrer"
                       title={`Tải file Video MP4 đã cắt của Cảnh #${String(idx + 1).padStart(2, '0')} về máy tính của bạn`}
                       className="flex items-center gap-0.5 px-1.5 py-0.5 rounded font-sans font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 transition-colors shrink-0"
                     >
