@@ -801,10 +801,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
     setIsCuttingYouTube(true);
     setCuttingCardId(vid.id);
+    const cutCtrl = new AbortController();
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 15000);
     try {
       const res = await fetch('/api/youtube/cut-clips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: cutCtrl.signal,
         body: JSON.stringify({
           characterName: activeCharName,
           searchQuery: searchQuery || activeCharName,
@@ -827,6 +830,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           ],
         }),
       });
+      clearTimeout(cutTimeout);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data?.cuts) && data.cuts.length > 0 && onInsertCutYouTubeClips) {
@@ -871,6 +875,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       onSelectVideoForScene(chosenSceneId, vid, startSec, endSec);
       if (closeAfter) onClose();
     } finally {
+      clearTimeout(cutTimeout);
       setIsCuttingYouTube(false);
       setCuttingCardId(null);
     }
@@ -916,6 +921,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     if (segmentsToCut.length === 0) return;
 
     setIsCuttingYouTube(true);
+    const cutCtrl = new AbortController();
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 16000);
     try {
       const clipsPayload = segmentsToCut.map((seg) => ({
         id: seg.video.id,
@@ -938,6 +945,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       const res = await fetch('/api/youtube/cut-clips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: cutCtrl.signal,
         body: JSON.stringify({
           clips: clipsPayload,
           characterName: activeCharName,
@@ -946,6 +954,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           focusX: cutFocusX,
         }),
       });
+      clearTimeout(cutTimeout);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data?.cuts) && data.cuts.length > 0) {
@@ -1002,8 +1011,17 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           }
           resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         }
+      } else {
+        setJustCutBanner(
+          '⚠️ Máy chủ nguồn video phản hồi chậm hoặc đang bận. Vui lòng thử cắt lại hoặc chọn video khác!'
+        );
       }
+    } catch {
+      setJustCutBanner(
+        '⏱️ Quá thời gian chờ tải nguồn video (16s). Hệ thống đã tự ngắt để không bị treo — bạn hãy thử bấm cắt lại hoặc chọn đoạn ngắn hơn!'
+      );
     } finally {
+      clearTimeout(cutTimeout);
       setIsCuttingYouTube(false);
       setCuttingCardId(null);
     }
@@ -3019,14 +3037,22 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                           selectableScenes[0];
                                         if (!randSc) return;
                                         const nextDur = getSceneDurationById(randSc.id);
-                                        const maxDurBound =
-                                          realYtTotalDur > 20 ? realYtTotalDur : yt.durationSec || 180;
+                                        const isShortCard =
+                                          yt.sourcePlatform === 'shorts' ||
+                                          yt.sourcePlatform === 'tiktok' ||
+                                          yt.sourcePlatform === 'instagram';
+                                        const maxDurBound = isShortCard
+                                          ? Math.min(48, Math.max(24, yt.durationSec || 45))
+                                          : realYtTotalDur > 20
+                                          ? realYtTotalDur
+                                          : yt.durationSec || 180;
                                         const maxValidStart = Math.max(
-                                          6,
-                                          Math.min(600, maxDurBound - nextDur - 2)
+                                          4,
+                                          Math.min(isShortCard ? 30 : 240, maxDurBound - nextDur - 2)
                                         );
                                         const randStart =
-                                          12 + Math.floor(Math.random() * maxValidStart);
+                                          (isShortCard ? 2 : 12) +
+                                          Math.floor(Math.random() * maxValidStart);
                                         setYtTargetSceneIds((prev) => ({
                                           ...prev,
                                           [yt.id]: randSc.id,

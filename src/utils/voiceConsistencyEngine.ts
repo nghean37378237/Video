@@ -1,4 +1,4 @@
-import { ProjectSettings, StoryScene } from '../types';
+import { ProjectSettings, StoryScene, StoryTopicMode } from '../types';
 
 export type VoiceLanguage = 'vi' | 'en';
 export type VoiceEngineMode = 'consistent-locked' | 'gemini-single-pass';
@@ -576,7 +576,8 @@ export interface SavedAudioPreferences {
   bgMusicStyle: ProjectSettings['bgMusicStyle'];
   bgMusicVolume: number;
   storyTopic?: string;
-  storyMode?: 'biography' | 'film-cast';
+  storyMode?: StoryTopicMode;
+  customSummary?: string;
   sceneCount?: number;
   updatedAtLabel: string;
   history: SavedAudioSelectionEntry[];
@@ -690,7 +691,13 @@ export function loadSavedAudioPreferences(): SavedAudioPreferences {
       bgMusicStyle,
       bgMusicVolume,
       storyTopic: typeof parsed.storyTopic === 'string' ? parsed.storyTopic : fallback.storyTopic,
-      storyMode: parsed.storyMode === 'film-cast' ? 'film-cast' : 'biography',
+      storyMode:
+        parsed.storyMode === 'film-cast'
+          ? 'film-cast'
+          : parsed.storyMode === 'custom-story'
+          ? 'custom-story'
+          : 'biography',
+      customSummary: typeof parsed.customSummary === 'string' ? parsed.customSummary : '',
       sceneCount: typeof parsed.sceneCount === 'number' ? parsed.sceneCount : fallback.sceneCount,
       updatedAtLabel: parsed.updatedAtLabel || fallback.updatedAtLabel,
       history,
@@ -704,7 +711,14 @@ export function saveAudioPreferences(
   patch: Partial<
     Pick<
       SavedAudioPreferences,
-      'ttsVoice' | 'voiceLanguage' | 'bgMusicStyle' | 'bgMusicVolume' | 'storyTopic' | 'storyMode' | 'sceneCount'
+      | 'ttsVoice'
+      | 'voiceLanguage'
+      | 'bgMusicStyle'
+      | 'bgMusicVolume'
+      | 'storyTopic'
+      | 'storyMode'
+      | 'customSummary'
+      | 'sceneCount'
     >
   >
 ): SavedAudioPreferences {
@@ -716,6 +730,8 @@ export function saveAudioPreferences(
     patch.bgMusicVolume !== undefined ? patch.bgMusicVolume : current.bgMusicVolume;
   const nextTopic = patch.storyTopic !== undefined ? patch.storyTopic : current.storyTopic;
   const nextStoryMode = patch.storyMode ?? current.storyMode ?? 'biography';
+  const nextCustomSummary =
+    patch.customSummary !== undefined ? patch.customSummary : current.customSummary || '';
   const nextSceneCount = patch.sceneCount !== undefined ? patch.sceneCount : current.sceneCount;
   const nowLabel = formatNowTime();
 
@@ -767,6 +783,7 @@ export function saveAudioPreferences(
     bgMusicVolume: nextVol,
     storyTopic: nextTopic,
     storyMode: nextStoryMode,
+    customSummary: nextCustomSummary,
     sceneCount: nextSceneCount,
     updatedAtLabel: nowLabel,
     history: nextHistory,

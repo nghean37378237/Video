@@ -21,8 +21,18 @@ import {
   History,
   CheckCircle2,
   Search,
+  Scissors,
+  FileText,
+  X,
 } from 'lucide-react';
-import { PresetId, ProjectSettings, StoryScene, StoryTopicMode, VaultItem } from '../types';
+import {
+  CustomAttachedImage,
+  PresetId,
+  ProjectSettings,
+  StoryScene,
+  StoryTopicMode,
+  VaultItem,
+} from '../types';
 import {
   cleanDisplayFileName,
   detectMediaKindFromFile,
@@ -61,7 +71,9 @@ interface MediaVaultPanelProps {
     topic: string,
     lang: 'vi' | 'en',
     sceneCount: number,
-    overrideStoryMode?: StoryTopicMode
+    overrideStoryMode?: StoryTopicMode,
+    customSummary?: string,
+    customImages?: CustomAttachedImage[]
   ) => Promise<void>;
   isGeneratingStory: boolean;
   onRunFullAutoPilot: (
@@ -71,7 +83,9 @@ interface MediaVaultPanelProps {
     overrideVoice?: ProjectSettings['ttsVoice'],
     overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
     overrideMusicVolume?: number,
-    overrideStoryMode?: StoryTopicMode
+    overrideStoryMode?: StoryTopicMode,
+    customSummary?: string,
+    customImages?: CustomAttachedImage[]
   ) => Promise<void>;
   isRunningAutoPilot: boolean;
   autoPilotStepText: string;
@@ -147,6 +161,10 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
     settings.voiceLanguage || initialSaved.voiceLanguage || 'en'
   );
   const [sceneCount, setSceneCount] = useState<number>(initialSaved.sceneCount || 8);
+  const [customSummary, setCustomSummary] = useState<string>(initialSaved.customSummary || '');
+  const [customImages, setCustomImages] = useState<CustomAttachedImage[]>([]);
+  const [isSplittingCollage, setIsSplittingCollage] = useState<boolean>(false);
+  const customImageInputRef = useRef<HTMLInputElement | null>(null);
   const [savedPrefs, setSavedPrefs] = useState<SavedAudioPreferences>(initialSaved);
   const [voiceCloneDna, setVoiceCloneDna] = useState<VoiceCloneDNAProfile>(() =>
     loadActiveVoiceCloneDNA()
@@ -155,6 +173,128 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   const [isPreviewingVoice, setIsPreviewingVoice] = useState<boolean>(false);
   const [justSavedFlash, setJustSavedFlash] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  const DOLLY_CARL_SAMPLE_IMAGE_URL =
+    '/assets/aistudio/901279760_1272860051716596_7338143820151457037_n_b367a076.jfif';
+  const DOLLY_CARL_SAMPLE_SUMMARY = `When record label boss Fred Foster asked Dolly Parton to delay her wedding in 1966 to protect his investment in her career, she drove across the state line to Georgia and married Carl Dean anyway.
+On Memorial Day, May 30, 1966, the twenty-year-old singer and the twenty-three-year-old asphalt paver slipped into Ringgold, Georgia, so Nashville newspapers would not see their marriage license. Dolly wore a short white dress she had bought off the rack, and Carl wore a simple dark suit. Only Dolly's mother, Avie Lee Parton, accompanied them inside the Ringgold First Baptist Church, where Pastor Don Duvall officiated while his wife, Gladys, played the organ and stood in as the second witness.
+For the next fifty years, they kept that same distance from the music business. After attending a single industry dinner in 1966, Carl stayed out of the spotlight on their Brentwood property, Willow Lake Plantation, while Dolly built a global career.
+To mark their golden anniversary on May 30, 2016, they held the formal ceremony they had skipped five decades earlier. Inside the private chapel on their Nashville estate, Dolly finally walked down the aisle in a custom-made ivory lace gown designed by Steve Summers, while Carl traded his work jeans for a tailored suit and tie.
+Before the ceremony, Dolly offered to sell the official wedding photographs to the press so the proceeds could benefit her Imagination Library, which mails free books to children. Carl, who had avoided cameras for half a century, agreed to pose for the portraits to help fund his wife's literacy program.
+After the vows, the couple skipped a lavish reception and spent the afternoon eating lunch inside their RV in the driveway, enjoying the quiet marriage they had protected since Ringgold until Carl's passing in March 2025.`;
+
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Không thể đọc file ảnh'));
+      reader.readAsDataURL(file);
+    });
+
+  const handleCustomImagesSelected = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const loaded: CustomAttachedImage[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      if (!f.type.startsWith('image/') && !/\.(jpe?g|png|webp|jfif|gif|bmp)$/i.test(f.name)) {
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(f);
+        if (dataUrl) {
+          loaded.push({
+            id: `cimg-${Date.now()}-${i}`,
+            name: cleanDisplayFileName(f.name),
+            url: dataUrl,
+          });
+        }
+      } catch {
+        // ignore read error
+      }
+    }
+    if (loaded.length > 0) {
+      setCustomImages((prev) => [...prev, ...loaded]);
+    }
+  };
+
+  const handleSplitCollageImage = async (targetImg: CustomAttachedImage) => {
+    if (isSplittingCollage || !targetImg?.url) return;
+    setIsSplittingCollage(true);
+    try {
+      const res = await fetch('/api/media/split-collage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: targetImg.url }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.panels) && data.panels.length > 0) {
+          setCustomImages((prev) => [
+            ...prev.filter((p) => p.id !== targetImg.id),
+            ...data.panels.map((pn: any) => ({
+              id: pn.id,
+              name: pn.name,
+              url: pn.url,
+              width: pn.width,
+              height: pn.height,
+            })),
+          ]);
+        }
+      }
+    } catch {
+      // ignore split error
+    } finally {
+      setIsSplittingCollage(false);
+    }
+  };
+
+  const handleLoadDollyCarlSample = async () => {
+    setStoryMode('custom-story');
+    setStoryTopic('Dolly Parton & Carl Dean');
+    setCustomSummary(DOLLY_CARL_SAMPLE_SUMMARY);
+    onUpdateSettings({ storyMode: 'custom-story', projectTitle: 'Dolly Parton & Carl Dean' });
+    saveAudioPreferences({
+      storyMode: 'custom-story',
+      storyTopic: 'Dolly Parton & Carl Dean',
+      customSummary: DOLLY_CARL_SAMPLE_SUMMARY,
+    });
+
+    const fallbackImg: CustomAttachedImage = {
+      id: `cimg-dolly-${Date.now()}`,
+      name: 'Dolly Parton & Carl Dean (Ảnh ghép gốc)',
+      url: DOLLY_CARL_SAMPLE_IMAGE_URL,
+      width: 700,
+      height: 875,
+    };
+    setCustomImages([fallbackImg]);
+
+    setIsSplittingCollage(true);
+    try {
+      const res = await fetch('/api/media/split-collage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: DOLLY_CARL_SAMPLE_IMAGE_URL }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.panels) && data.panels.length > 0) {
+          setCustomImages(
+            data.panels.map((pn: any) => ({
+              id: pn.id,
+              name: pn.name,
+              url: pn.url,
+              width: pn.width,
+              height: pn.height,
+            }))
+          );
+        }
+      }
+    } catch {
+      // keep single fallbackImg
+    } finally {
+      setIsSplittingCollage(false);
+    }
+  };
 
   // Listen to global audio preference updates so Inspector, Modal, and Left Panel stay 100% synced
   useEffect(() => {
@@ -372,12 +512,12 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 CHỌN CHỦ ĐỀ · NHẬP TÊN &amp; CHẠY TỰ ĐỘNG
               </h3>
               <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                Chọn chủ đề <strong>Tiểu sử Nhân vật</strong> hoặc <strong>Tóm tắt Phim &amp; Diễn viên nổi tiếng</strong>, hệ thống sẽ tự dựng mạch kể chuyện + ghép ảnh/video thật!
+                Chọn <strong>Tiểu Sử</strong>, <strong>Tóm Tắt Phim &amp; Sao</strong>, hoặc <strong>Dán Tóm Tắt + Ảnh Đính Kèm</strong> để tự dựng video tiểu sử chuẩn kênh!
               </p>
             </div>
 
-            {/* Topic Mode Switcher: Biography vs Film Summary & Famous Cast */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-lg bg-[#111827] border border-slate-800">
+            {/* Topic Mode Switcher: Biography vs Film Summary & Famous Cast vs Custom Summary + Photos */}
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[#111827] border border-slate-800">
               <button
                 type="button"
                 onClick={() => {
@@ -397,13 +537,13 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                     saveAudioPreferences({ storyTopic: 'Clint Eastwood', storyMode: 'biography' });
                   }
                 }}
-                className={`px-2 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                   storyMode === 'biography'
                     ? 'bg-amber-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                <span>👤 Tiểu Sử Nhân Vật</span>
+                <span>👤 Tiểu Sử</span>
               </button>
               <button
                 type="button"
@@ -425,82 +565,229 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                     saveAudioPreferences({ storyTopic: 'Ở Nhà 1 Mình', storyMode: 'film-cast' });
                   }
                 }}
-                className={`px-2 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                   storyMode === 'film-cast'
                     ? 'bg-sky-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                <span>🎬 Tóm Tắt Phim &amp; Sao</span>
+                <span>🎬 Phim &amp; Sao</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStoryMode('custom-story');
+                  onUpdateSettings({ storyMode: 'custom-story' });
+                  saveAudioPreferences({ storyMode: 'custom-story' });
+                }}
+                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+                  storyMode === 'custom-story'
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>📝 Tóm Tắt + Ảnh</span>
               </button>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-200">
-                {storyMode === 'film-cast'
-                  ? '1. Nhập Tên Bộ Phim cần tóm tắt & điểm danh Dàn Diễn Viên:'
-                  : '1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):'}
-              </label>
-              <input
-                type="text"
-                value={storyTopic}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setStoryTopic(val);
-                  saveAudioPreferences({ storyTopic: val, storyMode });
-                  if (val.trim()) {
-                    onUpdateSettings({ projectTitle: val.trim(), storyMode });
-                  }
-                }}
-                placeholder={
-                  storyMode === 'film-cast'
-                    ? 'VD: Ở Nhà 1 Mình, Ngôi Nhà Nhỏ Trên Thảo Nguyên, Titanic, Bố Già...'
-                    : 'VD: Clint Eastwood, John Wayne, Audrey Hepburn...'
-                }
-                className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
-              />
-            </div>
+            {storyMode === 'custom-story' ? (
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold text-emerald-300">
+                    1A. Tiêu đề Nhân vật / Câu chuyện (có thể để trống, AI tự nhận diện):
+                  </label>
+                  <input
+                    type="text"
+                    value={storyTopic}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setStoryTopic(val);
+                      saveAudioPreferences({ storyTopic: val, storyMode: 'custom-story' });
+                      if (val.trim()) {
+                        onUpdateSettings({ projectTitle: val.trim(), storyMode: 'custom-story' });
+                      }
+                    }}
+                    placeholder="VD: Dolly Parton & Carl Dean (tự nhận diện nếu để trống)"
+                    className="w-full px-3 py-1.5 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
 
-            {/* Quick presets matching active Story Mode */}
-            <div className="flex flex-wrap gap-1.5">
-              {(storyMode === 'film-cast'
-                ? [
-                    'Ở Nhà 1 Mình',
-                    'Ngôi Nhà Nhỏ Trên Thảo Nguyên',
-                    'Titanic',
-                    'Bố Già (The Godfather)',
-                    'Tây Du Ký 1986',
-                    'Cuốn Theo Chiều Gió',
-                  ]
-                : [
-                    'Clint Eastwood',
-                    'John Wayne',
-                    'Steve McQueen',
-                    'Bruce Lee',
-                    'Elvis Presley',
-                    'Audrey Hepburn',
-                  ]
-              ).map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    setStoryTopic(name);
-                    saveAudioPreferences({ storyTopic: name, storyMode });
-                    onUpdateSettings({ projectTitle: name, storyMode });
-                  }}
-                  className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                    storyTopic === name
-                      ? storyMode === 'film-cast'
-                        ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-semibold'
-                        : 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
-                      : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {storyMode === 'film-cast' ? `🎬 ${name}` : name}
-                </button>
-              ))}
-            </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <label className="text-[11px] font-semibold text-emerald-300 flex items-center gap-1">
+                      <FileText className="w-3 h-3" />
+                      1B. Dán Tóm Tắt Nội Dung Tiểu Sử (Anh hoặc Việt):
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleLoadDollyCarlSample}
+                      disabled={isSplittingCollage}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/40 rounded transition-colors shrink-0"
+                    >
+                      ✨ Nạp Mẫu Dolly &amp; Carl + Ảnh
+                    </button>
+                  </div>
+                  <textarea
+                    rows={5}
+                    value={customSummary}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomSummary(val);
+                      saveAudioPreferences({ customSummary: val, storyMode: 'custom-story' });
+                    }}
+                    placeholder="Dán đoạn tóm tắt nội dung câu chuyện / tiểu sử vào đây (giữ nguyên tên riêng, năm tháng, sự kiện)... Hoặc bấm '✨ Nạp Mẫu Dolly & Carl + Ảnh' để thử ngay!"
+                    className="w-full px-2.5 py-2 text-[11px] leading-relaxed bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 resize-y"
+                  />
+                </div>
+
+                {/* Attached Images + Collage Splitter */}
+                <div className="p-2 rounded-lg bg-[#111827] border border-emerald-500/35 space-y-2">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-bold text-emerald-300">
+                      1C. Hình Ảnh Đính Kèm ({customImages.length} ảnh):
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        ref={customImageInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,.jfif"
+                        onChange={(e) => {
+                          handleCustomImagesSelected(e.target.files);
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => customImageInputRef.current?.click()}
+                        className="px-2 py-1 text-[10px] font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/40 rounded flex items-center gap-1 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Thêm Ảnh Đính Kèm
+                      </button>
+                    </div>
+                  </div>
+
+                  {customImages.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      Tải lên 1 hoặc nhiều ảnh thật của nhân vật/câu chuyện. Nếu ảnh của bạn là <strong>ảnh ghép 3 khung</strong>, bấm <strong>✂️ Tách 3 Khung</strong> để hệ thống cắt thành 3 ảnh 3:4 sắc nét ghép tự động vào các cảnh!
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {customImages.map((img) => (
+                          <div
+                            key={img.id}
+                            className="relative group rounded-md overflow-hidden border border-slate-700 bg-slate-900"
+                          >
+                            <img
+                              src={img.url}
+                              alt={img.name}
+                              className="w-full h-20 object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCustomImages((prev) => prev.filter((p) => p.id !== img.id))
+                              }
+                              title="Xóa ảnh này"
+                              className="absolute top-1 right-1 p-0.5 rounded bg-black/75 text-slate-200 hover:text-rose-400"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            {!img.id.startsWith('split-') && (
+                              <button
+                                type="button"
+                                disabled={isSplittingCollage}
+                                onClick={() => handleSplitCollageImage(img)}
+                                title="Tách ảnh ghép 3 khung thành 3 ảnh 3:4 riêng biệt"
+                                className="w-full py-0.5 text-[9px] font-bold bg-amber-500/90 hover:bg-amber-400 text-slate-950 flex items-center justify-center gap-0.5"
+                              >
+                                <Scissors className="w-2.5 h-2.5" />
+                                {isSplittingCollage ? 'Đang tách...' : 'Tách 3 Khung'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-emerald-300/90">
+                        ✓ Các ảnh trên sẽ được ưu tiên ghép đúng mạch truyện; cảnh còn lại tự tìm thêm ảnh/video thật &amp; tạo Prompt Kling AI.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-200">
+                    {storyMode === 'film-cast'
+                      ? '1. Nhập Tên Bộ Phim cần tóm tắt & điểm danh Dàn Diễn Viên:'
+                      : '1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):'}
+                  </label>
+                  <input
+                    type="text"
+                    value={storyTopic}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setStoryTopic(val);
+                      saveAudioPreferences({ storyTopic: val, storyMode });
+                      if (val.trim()) {
+                        onUpdateSettings({ projectTitle: val.trim(), storyMode });
+                      }
+                    }}
+                    placeholder={
+                      storyMode === 'film-cast'
+                        ? 'VD: Ở Nhà 1 Mình, Ngôi Nhà Nhỏ Trên Thảo Nguyên, Titanic, Bố Già...'
+                        : 'VD: Clint Eastwood, John Wayne, Audrey Hepburn...'
+                    }
+                    className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Quick presets matching active Story Mode */}
+                <div className="flex flex-wrap gap-1.5">
+                  {(storyMode === 'film-cast'
+                    ? [
+                        'Ở Nhà 1 Mình',
+                        'Ngôi Nhà Nhỏ Trên Thảo Nguyên',
+                        'Titanic',
+                        'Bố Già (The Godfather)',
+                        'Tây Du Ký 1986',
+                        'Cuốn Theo Chiều Gió',
+                      ]
+                    : [
+                        'Clint Eastwood',
+                        'John Wayne',
+                        'Steve McQueen',
+                        'Bruce Lee',
+                        'Elvis Presley',
+                        'Audrey Hepburn',
+                      ]
+                  ).map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        setStoryTopic(name);
+                        saveAudioPreferences({ storyTopic: name, storyMode });
+                        onUpdateSettings({ projectTitle: name, storyMode });
+                      }}
+                      className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                        storyTopic === name
+                          ? storyMode === 'film-cast'
+                            ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-semibold'
+                            : 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
+                          : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {storyMode === 'film-cast' ? `🎬 ${name}` : name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             {/* PRE-RUN VOICE & BACKGROUND MUSIC SELECTOR + SAVED SELECTION LOG */}
             <div className="p-2.5 rounded-lg bg-[#111827] border border-amber-500/40 space-y-2.5">
@@ -939,10 +1226,15 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                   settings.ttsVoice,
                   settings.bgMusicStyle,
                   settings.bgMusicVolume,
-                  storyMode
+                  storyMode,
+                  storyMode === 'custom-story' ? customSummary : undefined,
+                  storyMode === 'custom-story' ? customImages : undefined
                 )
               }
-              disabled={isRunningAutoPilot || !storyTopic.trim()}
+              disabled={
+                isRunningAutoPilot ||
+                (!storyTopic.trim() && !(storyMode === 'custom-story' && customSummary.trim()))
+              }
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs rounded-lg shadow-md transition-colors whitespace-nowrap shrink-0"
             >
               {isRunningAutoPilot ? (
@@ -953,7 +1245,9 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ) : (
                 <>
                   <Zap className="w-4 h-4 fill-current" />
-                  {storyMode === 'film-cast'
+                  {storyMode === 'custom-story'
+                    ? `Dựng Video Từ Tóm Tắt & Ảnh (${VOICE_SHORT_LABELS[settings.ttsVoice]})`
+                    : storyMode === 'film-cast'
                     ? `Dựng Phim & Dàn Sao A → Z (${VOICE_SHORT_LABELS[settings.ttsVoice]})`
                     : `Chạy Tự Động A → Z (${VOICE_SHORT_LABELS[settings.ttsVoice]} + Nhạc Đã Lưu)`}
                 </>
@@ -963,17 +1257,30 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             {/* Secondary actions: Only Script or Only Fetch Photos */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
-                onClick={() => onGenerateAIStory(storyTopic, storyLang, sceneCount, storyMode)}
-                disabled={isGeneratingStory || isRunningAutoPilot}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 transition-colors whitespace-nowrap shrink-0"
+                onClick={() =>
+                  onGenerateAIStory(
+                    storyTopic,
+                    storyLang,
+                    sceneCount,
+                    storyMode,
+                    storyMode === 'custom-story' ? customSummary : undefined,
+                    storyMode === 'custom-story' ? customImages : undefined
+                  )
+                }
+                disabled={
+                  isGeneratingStory ||
+                  isRunningAutoPilot ||
+                  (!storyTopic.trim() && !(storyMode === 'custom-story' && customSummary.trim()))
+                }
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-md border border-slate-700 transition-colors whitespace-nowrap shrink-0"
               >
                 <Wand2 className="w-3 h-3 text-amber-400" />
                 Chỉ Tạo Kịch Bản &amp; Prompt
               </button>
               <button
-                onClick={() => onFetchArchivalPhotos(storyTopic)}
-                disabled={isFetchingArchival || isRunningAutoPilot}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 transition-colors whitespace-nowrap shrink-0"
+                onClick={() => onFetchArchivalPhotos(storyTopic || customSummary.slice(0, 40))}
+                disabled={isFetchingArchival || isRunningAutoPilot || (!storyTopic.trim() && !customSummary.trim())}
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-md border border-slate-700 transition-colors whitespace-nowrap shrink-0"
               >
                 {isFetchingArchival ? (
                   <Loader2 className="w-3 h-3 animate-spin text-amber-400" />

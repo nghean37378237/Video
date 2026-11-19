@@ -14,6 +14,7 @@ import {
 } from './data/lorneGreenePreset';
 import {
   ColorFilter,
+  CustomAttachedImage,
   FrameStyle,
   MotionEffect,
   PresetId,
@@ -1823,7 +1824,8 @@ export default function App() {
   const matchAndAssignRealPhotosForScenes = async (
     targetScenes: StoryScene[],
     topicHint: string,
-    overrideStoryMode?: StoryTopicMode
+    overrideStoryMode?: StoryTopicMode,
+    customPrimaryRefUrl?: string
   ): Promise<{
     updatedScenes: StoryScene[];
     matchedCount: number;
@@ -1832,32 +1834,40 @@ export default function App() {
     missingCount: number;
   }> => {
     const activeMode = overrideStoryMode || settings.storyMode || 'biography';
+    const scenesNeedingSearch = targetScenes.filter(
+      (s) => !(s.mediaId && s.mediaId.startsWith('custom-attach-') && s.mediaUrl)
+    );
     try {
       let data: any = null;
-      try {
-        const res = await fetch('/api/archival/match-scenes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topic: topicHint,
-            storyMode: activeMode,
-            scenes: targetScenes.map((s) => ({
-              id: s.id,
-              title: s.title,
-              sceneType: s.sceneType,
-              archivalKeywords: s.archivalKeywords,
-            })),
-          }),
-        });
-        if (res.ok) {
-          data = await safeParseJsonResponse(res);
+      if (scenesNeedingSearch.length > 0) {
+        try {
+          const res = await fetch('/api/archival/match-scenes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              topic: topicHint,
+              storyMode: activeMode,
+              scenes: scenesNeedingSearch.map((s) => ({
+                id: s.id,
+                title: s.title,
+                sceneType: s.sceneType,
+                archivalKeywords: s.archivalKeywords,
+              })),
+            }),
+          });
+          if (res.ok) {
+            data = await safeParseJsonResponse(res);
+          }
+        } catch {
+          data = null;
         }
-      } catch {
-        data = null;
-      }
 
-      if (!data || !data.matchedBySceneId || Object.keys(data.matchedBySceneId).length === 0) {
-        data = await fetchArchivalMediaFromCommonsBrowserFallback(topicHint, targetScenes);
+        if (!data || !data.matchedBySceneId || Object.keys(data.matchedBySceneId).length === 0) {
+          data = await fetchArchivalMediaFromCommonsBrowserFallback(
+            topicHint,
+            scenesNeedingSearch
+          );
+        }
       }
 
       const matchedMap: Record<
@@ -1879,7 +1889,10 @@ export default function App() {
         (item) => item.mediaKind !== 'video' && item.dataUrl
       );
       const primaryCharacterPhotoUrl =
-        photoPoolOnly[0]?.dataUrl || allPoolItems[0]?.dataUrl || undefined;
+        customPrimaryRefUrl ||
+        photoPoolOnly[0]?.dataUrl ||
+        allPoolItems[0]?.dataUrl ||
+        undefined;
 
       // Track which photos were already assigned to 'image' scenes so remaining 'video' scenes get distinct reference photos for Grok/Kling drawing
       const assignedImageUrls = new Set<string>(
@@ -1912,6 +1925,22 @@ export default function App() {
           sceneType: sc.sceneType,
           ratio: settings.aspectRatio,
         });
+
+        // Preserve user-attached / split images so they stay locked onto their assigned scenes
+        if (sc.mediaId && sc.mediaId.startsWith('custom-attach-') && sc.mediaUrl) {
+          matchedCount++;
+          matchedPhotosCount++;
+          return {
+            ...sc,
+            hasRealPhoto: true,
+            characterRefPhotoUrl: sc.characterRefPhotoUrl || sc.mediaUrl,
+            imagePrompt: klingPack.klingImagePrompt,
+            videoMotionPrompt: klingPack.klingVideoPrompt,
+            klingStandardPrompt: klingPack.combinedBlock,
+            frameStyle: 'full-bleed' as FrameStyle,
+            showBottomSubtitles: true,
+          };
+        }
 
         const matched = matchedMap[sc.id];
         if (!matched || (!matched.dataUrl && !matched.videoUrl)) {
@@ -2509,6 +2538,69 @@ export default function App() {
     });
   };
 
+  const injectCustomAttachedImagesIntoScenes = (
+    targetScenes: StoryScene[],
+    customImages: CustomAttachedImage[] | undefined,
+    topicHint: string
+  ): StoryScene[] => {
+    if (!customImages || customImages.length === 0) return targetScenes;
+
+    const stamp = Date.now();
+    const attachedVaultItems: VaultItem[] = customImages.map((img, i) => ({
+      id: `custom-attach-${stamp}-${i}`,
+      name: img.name || `Ảnh Đính Kèm #${i + 1} (${topicHint})`,
+      type: 'image',
+      url: img.url,
+      thumbnailUrl: img.url,
+      width: img.width || 720,
+      height: img.height || 960,
+      durationSec: 8,
+      sourceTag: 'uploaded',
+      createdAt: 'Ảnh đính kèm của bạn',
+    }));
+
+    setVaultItems((prev) => [...attachedVaultItems, ...prev]);
+
+    const visualIndices = targetScenes
+      .map((sc, idx) => (sc.sceneType === 'video' || sc.sceneType === 'image' ? idx : -1))
+      .filter((idx) => idx >= 0);
+
+    if (visualIndices.length === 0) return targetScenes;
+
+    const nextScenes = [...targetScenes];
+    const totalVisual = visualIndices.length;
+    const countToPlace = Math.min(attachedVaultItems.length, totalVisual);
+
+    for (let i = 0; i < countToPlace; i++) {
+      const slotPos =
+        i === 0
+          ? 0
+          : countToPlace === 1
+          ? 0
+          : Math.min(
+              totalVisual - 1,
+              Math.round((i * (totalVisual - 1)) / Math.max(1, countToPlace - 1))
+            );
+      const sceneIdx = visualIndices[slotPos];
+      const vItem = attachedVaultItems[i];
+      if (sceneIdx !== undefined && vItem) {
+        nextScenes[sceneIdx] = {
+          ...nextScenes[sceneIdx],
+          mediaId: vItem.id,
+          mediaUrl: vItem.url,
+          mediaKind: 'image',
+          hasRealPhoto: true,
+          realPhotoTitle: `📎 Ảnh Đính Kèm: ${vItem.name}`,
+          characterRefPhotoUrl: vItem.url,
+          frameStyle: 'full-bleed',
+          showBottomSubtitles: true,
+        };
+      }
+    }
+
+    return nextScenes;
+  };
+
   // 1-CLICK FULL AUTO-PILOT PIPELINE (Script + Per-Scene Real Archival Photos + 100% TTS Voiceover + Auto-Play)
   const handleRunFullAutoPilot = async (
     characterOrTopic: string,
@@ -2517,14 +2609,22 @@ export default function App() {
     overrideVoice?: ProjectSettings['ttsVoice'],
     overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
     overrideMusicVolume?: number,
-    overrideStoryMode?: StoryTopicMode
+    overrideStoryMode?: StoryTopicMode,
+    customSummary?: string,
+    customImages?: CustomAttachedImage[]
   ) => {
-    if (isRunningAutoPilot || !characterOrTopic.trim()) return;
+    const cleanSummary = (customSummary || '').trim();
+    const chosenMode: StoryTopicMode = overrideStoryMode || settings.storyMode || 'biography';
+    if (
+      isRunningAutoPilot ||
+      (!characterOrTopic.trim() && !(chosenMode === 'custom-story' && cleanSummary))
+    ) {
+      return;
+    }
     setIsRunningAutoPilot(true);
     setIsPlaying(false);
     setStatusBanner(null);
 
-    const chosenMode: StoryTopicMode = overrideStoryMode || settings.storyMode || 'biography';
     const chosenVoice = overrideVoice || settings.ttsVoice || 'Charon';
     const chosenMusic = overrideMusicStyle || settings.bgMusicStyle || 'western-acoustic';
     const chosenVol =
@@ -2538,25 +2638,31 @@ export default function App() {
       bgMusicVolume: chosenVol,
       storyTopic: characterOrTopic,
       storyMode: chosenMode,
+      ...(cleanSummary ? { customSummary: cleanSummary } : {}),
       sceneCount,
     });
 
     try {
       // Step 1: Generate Storyboard & Prompts
       setAutoPilotStepText(
-        chosenMode === 'film-cast'
+        chosenMode === 'custom-story'
+          ? `Bước 1/4: Đang chuyển thể tóm tắt nội dung & ${customImages?.length || 0} ảnh đính kèm thành ${sceneCount} phân cảnh tiểu sử...`
+          : chosenMode === 'film-cast'
           ? `Bước 1/4: Đang tổng hợp tóm tắt phim & tiểu sử dàn diễn viên "${characterOrTopic}" (${sceneCount} cảnh)...`
           : `Bước 1/4: Đang viết kịch bản ${sceneCount} cảnh (Đã khóa ${VOICE_SHORT_LABELS[chosenVoice]} + ${BG_MUSIC_STYLE_LABELS[chosenMusic]})...`
       );
       let rawScenesList: any[] | null = null;
       let resolvedModeFromServer: StoryTopicMode = chosenMode;
+      let effectiveTopic = characterOrTopic.trim();
+
       try {
         const storyRes = await fetch('/api/story/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            topic: characterOrTopic,
+            topic: effectiveTopic,
             storyMode: chosenMode,
+            customSummary: cleanSummary,
             language: lang,
             sceneCount,
             includeQuotes: true,
@@ -2568,8 +2674,15 @@ export default function App() {
           }),
         });
         const storyData = await safeParseJsonResponse(storyRes);
-        if (storyData?.storyMode === 'film-cast' || storyData?.storyMode === 'biography') {
+        if (
+          storyData?.storyMode === 'film-cast' ||
+          storyData?.storyMode === 'biography' ||
+          storyData?.storyMode === 'custom-story'
+        ) {
           resolvedModeFromServer = storyData.storyMode;
+        }
+        if (!effectiveTopic && typeof storyData?.inferredSubject === 'string' && storyData.inferredSubject.trim()) {
+          effectiveTopic = storyData.inferredSubject.trim();
         }
         if (storyRes.ok && Array.isArray(storyData?.scenes) && storyData.scenes.length > 0) {
           rawScenesList = storyData.scenes;
@@ -2578,28 +2691,41 @@ export default function App() {
         // Will use client-side chronological builder below
       }
 
-      if (!rawScenesList || rawScenesList.length === 0) {
-        rawScenesList = buildClientFallbackScenesForTopic(
-          characterOrTopic,
-          lang,
-          sceneCount,
-          resolvedModeFromServer
-        );
+      if (!effectiveTopic) {
+        effectiveTopic =
+          cleanSummary.split(/[.!?\n]/)[0]?.slice(0, 45).trim() || 'Life Legends Story';
       }
 
-      const initialScenes = mapApiScenesToStoryScenes(
+      if (!rawScenesList || rawScenesList.length === 0) {
+        rawScenesList =
+          chosenMode === 'custom-story' && cleanSummary
+            ? buildClientFallbackScenesFromRawScript(cleanSummary, sceneCount)
+            : buildClientFallbackScenesForTopic(
+                effectiveTopic,
+                lang,
+                sceneCount,
+                resolvedModeFromServer
+              );
+      }
+
+      const mappedScenes = mapApiScenesToStoryScenes(
         rawScenesList,
         lang,
         [],
-        characterOrTopic,
+        effectiveTopic,
         sceneCount
+      );
+      const initialScenes = injectCustomAttachedImagesIntoScenes(
+        mappedScenes,
+        customImages,
+        effectiveTopic
       );
 
       setScenes(initialScenes);
       setActiveSceneId(initialScenes[0]?.id || '');
       setSettings((prev) => ({
         ...prev,
-        projectTitle: characterOrTopic.slice(0, 45),
+        projectTitle: effectiveTopic.slice(0, 45),
         storyMode: resolvedModeFromServer,
         subtitleLanguage: lang,
         voiceLanguage: lang,
@@ -2611,9 +2737,11 @@ export default function App() {
 
       // Step 2: Automatically match & attach ONLY verified real historical photos AND videos per scene in chronological order!
       setAutoPilotStepText(
-        resolvedModeFromServer === 'film-cast'
-          ? `Bước 2/4: Đang tìm Video Phim & Chân Dung từng Diễn Viên trong "${characterOrTopic}"...`
-          : `Bước 2/4: Đang tìm Ảnh Thật & Video Thật của "${characterOrTopic}" + cấp Ảnh Mẫu & Prompt Kling AI cho cảnh thiếu...`
+        resolvedModeFromServer === 'custom-story'
+          ? `Bước 2/4: Đang giữ ảnh đính kèm & tìm thêm ảnh/video thật của "${effectiveTopic}" cho các cảnh còn lại...`
+          : resolvedModeFromServer === 'film-cast'
+          ? `Bước 2/4: Đang tìm Video Phim & Chân Dung từng Diễn Viên trong "${effectiveTopic}"...`
+          : `Bước 2/4: Đang tìm Ảnh Thật & Video Thật của "${effectiveTopic}" + cấp Ảnh Mẫu & Prompt Kling AI cho cảnh thiếu...`
       );
       const {
         updatedScenes: scenesWithRealPhotos,
@@ -2622,8 +2750,9 @@ export default function App() {
         missingCount,
       } = await matchAndAssignRealPhotosForScenes(
         initialScenes,
-        characterOrTopic,
-        resolvedModeFromServer
+        effectiveTopic,
+        resolvedModeFromServer,
+        customImages?.[0]?.url
       );
       setScenes(scenesWithRealPhotos);
 
@@ -2640,8 +2769,14 @@ export default function App() {
       setAutoPilotStepText('Bước 4/4: Hoàn tất! Đang phát video hoàn chỉnh...');
       setCurrentTimeSec(0);
       setIsPlaying(true);
+      const modeBadge =
+        resolvedModeFromServer === 'custom-story'
+          ? '📝 Tóm Tắt + Ảnh Đính Kèm'
+          : resolvedModeFromServer === 'film-cast'
+          ? '🎬 Phim & Dàn Diễn Viên'
+          : '👤 Tiểu Sử';
       setStatusBanner(
-        `⚡ Đã dựng ${finalScenes.length} cảnh "${characterOrTopic}" (${resolvedModeFromServer === 'film-cast' ? '🎬 Phim & Dàn Diễn Viên' : '👤 Tiểu Sử'}) với Giọng ${VOICE_SHORT_LABELS[chosenVoice]} (${lang.toUpperCase()}) + Nhạc ${BG_MUSIC_STYLE_LABELS[chosenMusic]}: Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Bộ Prompt Kling AI!`
+        `⚡ Đã dựng ${finalScenes.length} cảnh "${effectiveTopic}" (${modeBadge}) với Giọng ${VOICE_SHORT_LABELS[chosenVoice]} (${lang.toUpperCase()}) + Nhạc ${BG_MUSIC_STYLE_LABELS[chosenMusic]}: ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Bộ Prompt Kling AI!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Lỗi khi chạy tự động A-Z.');
@@ -2656,29 +2791,38 @@ export default function App() {
     topic: string,
     lang: 'vi' | 'en',
     sceneCount: number,
-    overrideStoryMode?: StoryTopicMode
+    overrideStoryMode?: StoryTopicMode,
+    customSummary?: string,
+    customImages?: CustomAttachedImage[]
   ) => {
+    const cleanSummary = (customSummary || '').trim();
+    const chosenMode: StoryTopicMode = overrideStoryMode || settings.storyMode || 'biography';
+    if (!topic.trim() && !(chosenMode === 'custom-story' && cleanSummary)) return;
+
     setIsGeneratingStory(true);
     setStatusBanner(null);
 
-    const chosenMode: StoryTopicMode = overrideStoryMode || settings.storyMode || 'biography';
     saveAudioPreferences({
       voiceLanguage: lang,
       storyTopic: topic,
       storyMode: chosenMode,
+      ...(cleanSummary ? { customSummary: cleanSummary } : {}),
       sceneCount,
     });
 
     try {
       let rawScenesList: any[] | null = null;
       let resolvedModeFromServer: StoryTopicMode = chosenMode;
+      let effectiveTopic = topic.trim();
+
       try {
         const response = await fetch('/api/story/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            topic,
+            topic: effectiveTopic,
             storyMode: chosenMode,
+            customSummary: cleanSummary,
             language: lang,
             sceneCount,
             includeQuotes: true,
@@ -2691,8 +2835,15 @@ export default function App() {
         });
 
         const data = await safeParseJsonResponse(response);
-        if (data?.storyMode === 'film-cast' || data?.storyMode === 'biography') {
+        if (
+          data?.storyMode === 'film-cast' ||
+          data?.storyMode === 'biography' ||
+          data?.storyMode === 'custom-story'
+        ) {
           resolvedModeFromServer = data.storyMode;
+        }
+        if (!effectiveTopic && typeof data?.inferredSubject === 'string' && data.inferredSubject.trim()) {
+          effectiveTopic = data.inferredSubject.trim();
         }
         if (response.ok && Array.isArray(data?.scenes) && data.scenes.length > 0) {
           rawScenesList = data.scenes;
@@ -2701,27 +2852,41 @@ export default function App() {
         // Fallback below
       }
 
-      if (!rawScenesList || rawScenesList.length === 0) {
-        rawScenesList = buildClientFallbackScenesForTopic(
-          topic,
-          lang,
-          sceneCount,
-          resolvedModeFromServer
-        );
+      if (!effectiveTopic) {
+        effectiveTopic =
+          cleanSummary.split(/[.!?\n]/)[0]?.slice(0, 45).trim() || 'Life Legends Story';
       }
 
-      const initialScenes = mapApiScenesToStoryScenes(
+      if (!rawScenesList || rawScenesList.length === 0) {
+        rawScenesList =
+          chosenMode === 'custom-story' && cleanSummary
+            ? buildClientFallbackScenesFromRawScript(cleanSummary, sceneCount)
+            : buildClientFallbackScenesForTopic(
+                effectiveTopic,
+                lang,
+                sceneCount,
+                resolvedModeFromServer
+              );
+      }
+
+      const mappedScenes = mapApiScenesToStoryScenes(
         rawScenesList,
         lang,
         [],
-        topic,
+        effectiveTopic,
         sceneCount
       );
+      const initialScenes = injectCustomAttachedImagesIntoScenes(
+        mappedScenes,
+        customImages,
+        effectiveTopic
+      );
+
       setScenes(initialScenes);
       setActiveSceneId(initialScenes[0]?.id || '');
       setSettings((prev) => ({
         ...prev,
-        projectTitle: topic.slice(0, 45),
+        projectTitle: effectiveTopic.slice(0, 45),
         storyMode: resolvedModeFromServer,
         subtitleLanguage: lang,
         voiceLanguage: lang,
@@ -2735,11 +2900,22 @@ export default function App() {
         matchedVideosCount,
         matchedPhotosCount,
         missingCount,
-      } = await matchAndAssignRealPhotosForScenes(initialScenes, topic, resolvedModeFromServer);
+      } = await matchAndAssignRealPhotosForScenes(
+        initialScenes,
+        effectiveTopic,
+        resolvedModeFromServer,
+        customImages?.[0]?.url
+      );
       setScenes(updatedScenes);
       setIsPromptStudioOpen(true);
+      const modeBadge =
+        resolvedModeFromServer === 'custom-story'
+          ? '📝 Tóm Tắt + Ảnh Đính Kèm'
+          : resolvedModeFromServer === 'film-cast'
+          ? '🎬 Tóm Tắt Phim & Diễn Viên'
+          : '👤 Tiểu Sử';
       setStatusBanner(
-        `Đã sắp xếp mượt mà ${updatedScenes.length} phân cảnh (${resolvedModeFromServer === 'film-cast' ? '🎬 Tóm Tắt Phim & Diễn Viên' : '👤 Tiểu Sử'}): Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Bộ Prompt Kling AI!`
+        `Đã sắp xếp mượt mà ${updatedScenes.length} phân cảnh (${modeBadge}): Tìm được ${matchedVideosCount} Video Thật & ${matchedPhotosCount} Ảnh Thật + ${missingCount} Bộ Prompt Kling AI!`
       );
     } catch (err: any) {
       setStatusBanner(err?.message || 'Có lỗi khi tạo kịch bản AI.');

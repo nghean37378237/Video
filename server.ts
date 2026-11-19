@@ -1587,11 +1587,168 @@ function registerRoutes() {
     return scenes;
   }
 
-  // 1. Generate Documentary Storyboard & Prompts (Supports both Biography & Film Summary + Famous Cast modes)
+  function inferSubjectFromSummary(summaryText: string, explicitTopic?: string): string {
+    const cleanExplicit = String(explicitTopic || "").trim();
+    if (cleanExplicit && cleanExplicit.length >= 3 && cleanExplicit.length <= 65 && !/^(tóm tắt|custom|câu chuyện)/i.test(cleanExplicit)) {
+      return cleanExplicit;
+    }
+    const text = String(summaryText || "").trim();
+    if (!text) return "Biography Legend";
+
+    const stopSet = new Set([
+      "When", "Memorial", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+      "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+      "Ringgold", "Georgia", "Nashville", "Tennessee", "Brentwood", "Willow", "Lake", "Plantation", "First", "Baptist", "Church",
+      "Imagination", "Library", "After", "Before", "Inside", "More", "Only", "Pastor", "For", "While", "Their", "During",
+      "Steve", "Summers", "Avie", "Lee", "Don", "Duvall", "Gladys",
+    ]);
+    const nameMatches = text.match(/\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})\b/g) || [];
+    const fullCounts = new Map<string, number>();
+    for (const nm of nameMatches) {
+      const parts = nm.split(/\s+/);
+      if (parts.some((p) => stopSet.has(p))) continue;
+      fullCounts.set(nm, (fullCounts.get(nm) || 0) + 1);
+    }
+
+    // Score each candidate two-word person name by full-name occurrences AND standalone first-name occurrences
+    // (e.g., "Dolly" appears 5 times and "Carl" appears 4 times -> "Dolly Parton" & "Carl Dean" outrank minor names like "Fred Foster")
+    const scores = new Map<string, number>();
+    for (const [fullName, cnt] of fullCounts.entries()) {
+      const firstName = fullName.split(/\s+/)[0];
+      const firstRegex = new RegExp(`\\b${firstName}\\b`, "g");
+      const firstHits = (text.match(firstRegex) || []).length;
+      scores.set(fullName, cnt * 3 + firstHits * 2);
+    }
+
+    const ranked = Array.from(scores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([n]) => n);
+    if (ranked.length >= 2) {
+      return `${ranked[0]} & ${ranked[1]}`;
+    }
+    if (ranked.length === 1) {
+      return ranked[0];
+    }
+    return text.split(/[.!?\n]/)[0]?.slice(0, 48).trim() || "Biography Legend";
+  }
+
+  function buildFallbackCustomSummaryScenes(
+    rawSummary: string,
+    subjectName: string,
+    language: string,
+    targetSceneCount: number,
+    ratioDesc: string,
+    channelTitle: string,
+    channelSubtitle: string
+  ) {
+    const cleanSubject = subjectName.trim() || "Biography Legend";
+    const narrativeCount = Math.max(3, targetSceneCount - 1);
+    const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
+
+    const paragraphs = rawSummary
+      .split(/\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    const sentences = rawSummary
+      .replace(/\n+/g, " ")
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    let beats: string[] = [];
+    if (sentences.length >= narrativeCount) {
+      const perBeat = sentences.length / narrativeCount;
+      for (let i = 0; i < narrativeCount; i++) {
+        const start = Math.floor(i * perBeat);
+        const end = Math.max(start + 1, Math.floor((i + 1) * perBeat));
+        beats.push(sentences.slice(start, end).join(" "));
+      }
+    } else if (paragraphs.length > 0) {
+      for (let i = 0; i < narrativeCount; i++) {
+        beats.push(paragraphs[i % paragraphs.length]);
+      }
+    } else {
+      beats = [rawSummary.trim() || cleanSubject];
+    }
+
+    const extractBeatKeywords = (text: string): string => {
+      const yr = text.match(/\b(19\d{2}|20\d{2})\b/)?.[1] || "";
+      const names = (text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g) || [])
+        .filter((w) => !/^(When|On|After|Before|Inside|Only|More|For|The|While|And|Memorial|May|March)$/i.test(w))
+        .slice(0, 3)
+        .join(" ");
+      return `${cleanSubject.split(/[&,]/)[0].trim()} ${names} ${yr}`.replace(/\s+/g, " ").trim();
+    };
+
+    const quoteIdx = narrativeCount >= 6 ? Math.floor(narrativeCount * 0.55) : -1;
+
+    const scenes: any[] = beats.slice(0, narrativeCount).map((beatText, idx) => {
+      const isQuote = idx === quoteIdx;
+      const isVideo =
+        !isQuote && (idx === 0 || idx === narrativeCount - 1 || idx % 2 === 0);
+      const sType = isQuote ? "quote" : isVideo ? "video" : "image";
+      const kw = extractBeatKeywords(beatText);
+      const yrMatch = beatText.match(/\b(19\d{2}|20\d{2})\b/)?.[1];
+      const titleLabel =
+        idx === 0
+          ? `Mở màn: ${cleanSubject}${yrMatch ? ` (${yrMatch})` : ""}`
+          : isQuote
+          ? "Khoảnh khắc lắng đọng"
+          : yrMatch
+          ? `Dấu mốc ${yrMatch} — Phân cảnh #${idx + 1}`
+          : `Chương #${idx + 1}: ${cleanSubject}`;
+
+      return {
+        title: titleLabel,
+        sceneType: sType,
+        narrationText: beatText,
+        translationText: beatText,
+        visualPrompt:
+          sType === "video"
+            ? `CẦN VIDEO: ${titleLabel}`
+            : sType === "quote"
+            ? `THẺ CHỮ ĐEN: ${titleLabel}`
+            : `CẦN ẢNH TĨNH: ${titleLabel}`,
+        imagePrompt: `Authentic documentary biography photograph depicting "${beatText.slice(
+          0,
+          110
+        )}" featuring ${cleanSubject}, warm vintage film grain, natural editorial lighting, full-frame ${ratioDesc}, edge-to-edge composition, no text.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from the uploaded reference portrait of ${cleanSubject}, warm historical lighting -> [2-4s Story Action & Speech]: Natural lifelike smile and subtle emotional gaze matching "${beatText.slice(
+          0,
+          85
+        )}" -> [4-6s Camera Control & Climax]: Slow cinematic documentary push-in, ${ratioDesc}.`,
+        archivalKeywords: kw || cleanSubject,
+        motionEffect: motions[idx % motions.length],
+        colorFilter: idx % 3 === 0 ? "color-warm" : idx % 3 === 1 ? "original" : "bw-vintage",
+        frameStyle: "full-bleed",
+        durationSec: Math.max(6, Math.min(11, Math.round(beatText.split(/\s+/).length * 0.42))),
+      };
+    });
+
+    scenes.push({
+      title: `Logo Kết Cố Định: ${channelTitle} (HM)`,
+      sceneType: "outro",
+      narrationText: "Life Legends. Their Legacy. Your Inspiration.",
+      translationText: "Huyền Thoại Cuộc Đời. Di sản của họ. Cảm hứng của bạn.",
+      visualPrompt: `LOGO KẾT CỐ ĐỊNH: ${channelTitle} — ${channelSubtitle}`,
+      imagePrompt: "Fixed Outro Logo",
+      videoMotionPrompt: "Fixed Outro Logo",
+      archivalKeywords: cleanSubject,
+      motionEffect: "zoom-in",
+      colorFilter: "original",
+      frameStyle: "full-bleed",
+      durationSec: 4,
+    });
+
+    return scenes;
+  }
+
+  // 1. Generate Documentary Storyboard & Prompts (Supports Biography, Film+Cast, AND Custom Summary + Attached Photos)
   app.post("/api/story/generate", async (req, res) => {
     const {
       topic = "Clint Eastwood",
       storyMode = "biography",
+      customSummary = "",
       language = "en",
       sceneCount = 10,
       includeQuotes = true,
@@ -1603,18 +1760,28 @@ function registerRoutes() {
       preferProxy = true,
     } = req.body || {};
 
-    if (!topic || typeof topic !== "string") {
-      res.status(400).json({ error: "Vui lòng nhập tên nhân vật, tên phim hoặc kịch bản." });
+    const cleanSummary = typeof customSummary === "string" ? customSummary.trim() : "";
+    const cleanTopicRaw = typeof topic === "string" ? topic.trim() : "";
+
+    if (!cleanTopicRaw && !cleanSummary) {
+      res.status(400).json({ error: "Vui lòng nhập tên nhân vật, tên phim hoặc tóm tắt nội dung." });
       return;
     }
 
-    const filmMeta = resolveFilmTopicMeta(topic);
-    const effectiveMode: "biography" | "film-cast" =
-      storyMode === "film-cast" ||
-      filmMeta.isKnownFilm ||
-      /^(phim|bộ phim|film|movie|tóm tắt phim)\b/i.test(topic.trim())
+    const filmMeta = resolveFilmTopicMeta(cleanTopicRaw);
+    const effectiveMode: "biography" | "film-cast" | "custom-story" =
+      storyMode === "custom-story" || cleanSummary.length >= 60
+        ? "custom-story"
+        : storyMode === "film-cast" ||
+          filmMeta.isKnownFilm ||
+          /^(phim|bộ phim|film|movie|tóm tắt phim)\b/i.test(cleanTopicRaw)
         ? "film-cast"
         : "biography";
+
+    const effectiveTopic =
+      effectiveMode === "custom-story"
+        ? inferSubjectFromSummary(cleanSummary || cleanTopicRaw, cleanTopicRaw)
+        : cleanTopicRaw;
 
     const ratioDesc =
       aspectRatio === "9:16"
@@ -1644,33 +1811,43 @@ function registerRoutes() {
           ? "6 or 7"
           : "4 or 5";
       const quoteSceneQuota = includeQuotes
-        ? targetSceneCount >= 18
-          ? "2 or 3 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
-          : targetSceneCount >= 14
+        ? targetSceneCount >= 14
           ? "2 or 3 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
           : "1 or 2 'quote' intertitle scenes (pitch-black screen with centered white italic text at major turning points in the story)"
         : "visual scenes";
       const imageSceneQuota =
         targetSceneCount >= 20
           ? "4 or 5"
-          : targetSceneCount >= 18
-          ? "3 or 4"
           : targetSceneCount >= 16
-          ? "3"
-          : targetSceneCount >= 14
-          ? "2 or 3"
+          ? "3 or 4"
           : targetSceneCount >= 10
-          ? "2"
+          ? "2 or 3"
           : "1 or 2";
 
       const prompt =
-        effectiveMode === "film-cast"
-          ? `Create an EXACTLY ${targetSceneCount}-scene viral documentary FILM SUMMARY & FAMOUS CAST BIOGRAPHY script about the film/series: "${topic}" (canonical English title: "${filmMeta.englishTitle}"${filmMeta.year ? `, released ${filmMeta.year}` : ""}) — return a JSON array with exactly ${targetSceneCount} scene objects.
+        effectiveMode === "custom-story"
+          ? `Create an EXACTLY ${targetSceneCount}-scene viral "Life Legends" documentary BIOGRAPHY video script strictly adapting this user-provided story summary about "${effectiveTopic}":
+"""
+${cleanSummary || effectiveTopic}
+"""
+${langInstruction}
+
+STRICT RULES FOR CUSTOM SUMMARY BIOGRAPHY:
+1. Stay 100% faithful to EVERY real fact, person, date, year, church/location, detail, and milestone in the user's summary above (DO NOT invent fictional events). Cover the ENTIRE arc smoothly in chronological order from Scene #01 to Scene #${targetSceneCount - 1}, ending with Scene #${targetSceneCount} as the 'outro' ("${channelTitle} — ${channelSubtitle}").
+2. Make every scene feel like a polished "Life Legends" narrated biographical short/reel (smooth hook in Scene #01, emotional pacing, natural bridges between scenes).
+3. Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes (>60% duration), ${imageSceneQuota} 'image' scenes, and ${quoteSceneQuota} (reflecting the deepest emotional message of the user's story).
+4. CRITICAL FOR PHOTO/VIDEO MATCHING & KLING AI:
+   - 'frameStyle': "full-bleed".
+   - 'archivalKeywords': For each scene, start with the exact main person/couple's English name (e.g. "${effectiveTopic.split(/[&,]/)[0].trim()}") + exact year/era/event from that scene (e.g. "Dolly Parton Carl Dean 1966 wedding", "Dolly Parton young 1966", "Dolly Parton 2016", "Dolly Parton Imagination Library").
+   - 'imagePrompt': Concise English prompt (25-40 words) accurately visualizing that exact biographical moment in ${ratioDesc}, full-bleed composition, no text.
+   - 'videoMotionPrompt': Concise 3-beat English Kling AI I2V prompt preserving exact reference facial identity: "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: ... -> [2-4s Story Action & Speech]: ... -> [4-6s Camera Control & Climax]: ..." in ${ratioDesc}.`
+          : effectiveMode === "film-cast"
+          ? `Create an EXACTLY ${targetSceneCount}-scene viral documentary FILM SUMMARY & FAMOUS CAST BIOGRAPHY script about the film/series: "${effectiveTopic}" (canonical English title: "${filmMeta.englishTitle}"${filmMeta.year ? `, released ${filmMeta.year}` : ""}) — return a JSON array with exactly ${targetSceneCount} scene objects.
 ${langInstruction}
 
 Follow the exact emotional "Life Legends" documentary style adapted for CLASSIC FILM + CAST SPOTLIGHT:
 1. Smooth Documentary Film & Cast Arc (#01 -> #${targetSceneCount}) — IMPORTANT: 'video' scenes MUST account for >60% of the total duration:
-   - Scene #1 MUST be 'video': Emotional nostalgic hook introducing the film "${topic}" (${filmMeta.englishTitle}) and why millions still love it decades later (7-9s).
+   - Scene #1 MUST be 'video': Emotional nostalgic hook introducing the film "${effectiveTopic}" (${filmMeta.englishTitle}) and why millions still love it decades later (7-9s).
    - Scenes #2–#3: Concise, gripping PLOT SUMMARY & setting of the film (what the story is about, why it became iconic), plus 1 memorable 'quote' scene reflecting the soul of the film.
    - Middle & Main Spotlight Scenes (majority of scenes): Profile **3 to 5 of the MOST FAMOUS ACTORS/ACTRESSES** in this exact film in biographical storytelling style! For EACH actor: name the actor + iconic character they played -> share fascinating biographical highlights, struggles or behind-the-scenes trivia -> reveal what happened to their career/life after the film ("Where are they now / Legacy"). Give each featured actor their own dedicated scene title like "Diễn viên: [Actor Name] ([Role Name])".
    - Penultimate scene(s): Film behind-the-scenes legacy & cast reunion reflection.
@@ -1681,7 +1858,7 @@ Follow the exact emotional "Life Legends" documentary style adapted for CLASSIC 
    - 'archivalKeywords': For plot/film scenes, use "${filmMeta.englishTitle} ${filmMeta.year || ""} movie scene". For EACH specific actor biography scene, MUST begin with that actor's exact FULL ENGLISH NAME + film/year (e.g. "Macaulay Culkin Home Alone 1990", "Michael Landon Little House on the Prairie") so our archival matcher fetches that exact actor's real portrait/video!
    - 'imagePrompt': Concise English prompt (25-40 words) for ${ratioDesc}, full-bleed composition.
    - 'videoMotionPrompt': Concise 3-beat English Kling AI I2V prompt: "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: ... -> [2-4s Story Action & Speech]: ... -> [4-6s Camera Control & Climax]: ..." in ${ratioDesc}.`
-          : `Create an EXACTLY ${targetSceneCount}-scene documentary story video script & production prompt sheet about: "${topic}" (return a JSON array with exactly ${targetSceneCount} scene objects).
+          : `Create an EXACTLY ${targetSceneCount}-scene documentary story video script & production prompt sheet about: "${effectiveTopic}" (return a JSON array with exactly ${targetSceneCount} scene objects).
 ${langInstruction}
 
 Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scenes with SMOOTH CHRONOLOGICAL & EMOTIONAL ORDERING:
@@ -1692,7 +1869,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
    - Final scene (#${targetSceneCount}) MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
 2. CRITICAL FOR FULL-FRAME KLING AI VIDEO & IMAGE PROMPTS: Every 'video' and 'image' scene MUST have:
    - 'frameStyle': "full-bleed" (filling 100% of the frame edge-to-edge).
-   - 'archivalKeywords': MUST begin with the exact full name of the main character "${topic}" followed by the specific year/era or role of that scene (e.g. "${topic} 1955 portrait", "${topic} 1966 film").
+   - 'archivalKeywords': MUST begin with the exact full name of the main character "${effectiveTopic}" followed by the specific year/era or role of that scene (e.g. "${effectiveTopic} 1955 portrait", "${effectiveTopic} 1966 film").
    - 'imagePrompt': Concise English prompt (25-40 words) for Kling AI / ChatGPT Pro to draw the character accurately at that exact life stage in ${ratioDesc}, full-bleed composition.
    - 'videoMotionPrompt': Concise 3-beat English director's motion prompt for KLING AI Image-to-Video (I2V): "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: ... -> [2-4s Story Action & Speech]: ... -> [4-6s Camera Control & Climax]: ..." in ${ratioDesc}.`;
 
@@ -1709,6 +1886,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
           res.json({
             scenes: proxyResult.scenes,
             storyMode: effectiveMode,
+            inferredSubject: effectiveTopic,
             resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
             usedProvider: `API Trung Gian (${proxyResult.usedModel})`,
             usedModel: proxyResult.usedModel,
@@ -1738,6 +1916,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
         res.json({
           scenes: extracted,
           storyMode: effectiveMode,
+          inferredSubject: effectiveTopic,
           resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
           usedProvider: "Gemini AI",
         });
@@ -1748,9 +1927,19 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
     }
 
     const fallbackScenes =
-      effectiveMode === "film-cast"
+      effectiveMode === "custom-story"
+        ? buildFallbackCustomSummaryScenes(
+            cleanSummary || effectiveTopic,
+            effectiveTopic,
+            language,
+            targetSceneCount,
+            ratioDesc,
+            channelTitle,
+            channelSubtitle
+          )
+        : effectiveMode === "film-cast"
         ? buildFallbackFilmCastScenes(
-            topic,
+            effectiveTopic,
             language,
             targetSceneCount,
             ratioDesc,
@@ -1758,7 +1947,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
             channelSubtitle
           )
         : buildFallbackDocumentaryScenes(
-            topic,
+            effectiveTopic,
             language,
             targetSceneCount,
             ratioDesc,
@@ -1768,6 +1957,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
     res.json({
       scenes: fallbackScenes,
       storyMode: effectiveMode,
+      inferredSubject: effectiveTopic,
       resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
       usedProvider: "LegendCut Chronological Studio Engine",
     });
@@ -3069,14 +3259,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
 
       if (!fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 12000) {
+        const fastSource = /\.ogv(\?|#|$)/i.test(cleanSource)
+          ? cleanSource.replace(/\.ogv(\?|#|$)/i, ".mp4$1")
+          : cleanSource;
         await execFileAsync(
           "ffmpeg",
           [
             "-y",
+            "-rw_timeout",
+            "6000000",
             "-ss",
             String(safeStart),
             "-i",
-            cleanSource,
+            fastSource,
             "-t",
             String(safeDur),
             "-vf",
@@ -3084,9 +3279,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "-c:v",
             "libx264",
             "-preset",
-            "veryfast",
+            "ultrafast",
             "-crf",
-            "18",
+            "20",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
@@ -3094,7 +3289,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "-an",
             outMp4Path,
           ],
-          { timeout: 14000 }
+          { timeout: 10500 }
         );
       }
 
@@ -3398,25 +3593,25 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   const name = String(f?.name || "").toLowerCase();
                   const size = Number(f?.size || 0);
                   const len = parseFloat(String(f?.length || "60")) || 60;
+                  // Strictly require .mp4 (or .webm if no .mp4 exists); NEVER allow .ogv because Ogg Theora stalls HTTP seeking in FFmpeg!
                   return (
-                    (name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".ogv")) &&
+                    (name.endsWith(".mp4") || name.endsWith(".webm")) &&
                     !bannedVideoWords.test(name) &&
                     len >= 25 &&
-                    size > 1_000_000 &&
-                    size < 1200 * 1024 * 1024
+                    size > 800_000 &&
+                    size < 900 * 1024 * 1024
                   );
                 })
                 .sort((a, b) => {
+                  const aName = String(a?.name || "").toLowerCase();
+                  const bName = String(b?.name || "").toLowerCase();
+                  const aIsMp4 = aName.endsWith(".mp4") ? 0 : 1;
+                  const bIsMp4 = bName.endsWith(".mp4") ? 0 : 1;
+                  if (aIsMp4 !== bIsMp4) return aIsMp4 - bIsMp4;
                   const aFast =
-                    String(a?.name || "").includes(".ia.mp4") ||
-                    String(a?.name || "").includes("512kb")
-                      ? 0
-                      : 1;
+                    aName.includes("512kb.mp4") || aName.includes(".ia.mp4") ? 0 : 1;
                   const bFast =
-                    String(b?.name || "").includes(".ia.mp4") ||
-                    String(b?.name || "").includes("512kb")
-                      ? 0
-                      : 1;
+                    bName.includes("512kb.mp4") || bName.includes(".ia.mp4") ? 0 : 1;
                   if (aFast !== bFast) return aFast - bFast;
                   return Number(a?.size || 0) - Number(b?.size || 0);
                 });
@@ -4850,16 +5045,22 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const computeReelStartSec = (
         reel: { rawMp4Url?: string; trimStartSec?: number } | undefined,
-        slotIdx: number
+        slotIdx: number,
+        isShortForm = false
       ): number => {
-        const base = reel?.trimStartSec ?? 22;
+        if (isShortForm) {
+          // Short-form clips (Shorts / TikTok / IG Reels) should start quickly inside 2s–26s, never 302s!
+          const shortFormOffsets = [2, 6, 10, 14, 18, 22, 26];
+          return shortFormOffsets[(slotIdx + pageIdx * 2) % shortFormOffsets.length];
+        }
+        const base = Math.min(90, reel?.trimStartSec ?? 22);
         const rawUrl = (reel?.rawMp4Url || "").toLowerCase();
         if (rawUrl.includes("bullitt") || rawUrl.includes("7mzzuljj6vu")) {
           const shortOffsets = [16, 32, 48, 66, 84, 102, 118, 134];
           return shortOffsets[(slotIdx + pageIdx * 2) % shortOffsets.length];
         }
-        const offsets = [0, 22, 46, 72, 98, 126, 158, 192, 230, 270, 315, 360];
-        return Math.max(12, base + offsets[(slotIdx + pageIdx * 3) % offsets.length]);
+        const offsets = [0, 18, 36, 54, 72, 95, 118, 142];
+        return Math.max(10, base + offsets[(slotIdx + pageIdx * 3) % offsets.length]);
       };
 
       const seenYtIds = new Set<string>();
@@ -4873,7 +5074,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (pastedYtId) {
         seenYtIds.add(pastedYtId);
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(cleanChar, 0);
-        const directStartSec = computeReelStartSec(matchedReel, 0);
+        const directStartSec = computeReelStartSec(matchedReel, 0, isPastedShort);
         if (isPastedShort) {
           shortsItems.push({
             id: `yt-short-direct-${pastedYtId}`,
@@ -4992,7 +5193,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       // 1. Format YouTube Shorts items
       finalShortsRaw.forEach((s, idx) => {
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
-        const startSec = computeReelStartSec(matchedReel, idx);
+        const startSec = computeReelStartSec(matchedReel, idx, true);
         shortsItems.push({
           id: `yt-short-${s.youtubeId}-p${pageIdx}-${idx}`,
           youtubeId: s.youtubeId,
@@ -5002,7 +5203,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: s.title,
           channel: "YouTube Shorts",
-          durationSec: Math.max(180, s.durationSec || 45),
+          durationSec: Math.max(30, Math.min(90, s.durationSec || 45)),
           durationLabel: "0:45 (Short)",
           viewsLabel: s.viewsLabel,
           thumbnailUrl: s.thumbnailUrl,
@@ -5021,7 +5222,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         if (!ytCand && !ttLink) continue;
         const titleText = ytCand?.title || `${cleanChar} — TikTok Edit (@${ttLink?.author || "tiktok"})`;
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 2);
-        const startSec = computeReelStartSec(matchedReel, idx + 2);
+        const startSec = computeReelStartSec(matchedReel, idx + 2, true);
         const cleanTitle = /tiktok/i.test(titleText) ? titleText : `${titleText} #TikTok`;
         tiktokItems.push({
           id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-p${pageIdx}-${idx}`,
@@ -5033,7 +5234,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: cleanTitle,
           channel: ttLink?.author ? `@${ttLink.author} · TikTok` : "TikTok · Video Ngắn",
-          durationSec: Math.max(180, ytCand?.durationSec || 42),
+          durationSec: Math.max(30, Math.min(90, ytCand?.durationSec || 42)),
           durationLabel: "0:42 (TikTok)",
           viewsLabel: ytCand?.viewsLabel || "TikTok",
           thumbnailUrl:
@@ -5058,7 +5259,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const titleText =
           ytCand?.title || `${cleanChar} — Instagram Reel (#${igLink?.code || idx + 1})`;
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 4);
-        const startSec = computeReelStartSec(matchedReel, idx + 4);
+        const startSec = computeReelStartSec(matchedReel, idx + 4, true);
         const cleanTitle = /instagram|reel/i.test(titleText)
           ? titleText
           : `${titleText} #InstagramReels`;
@@ -5074,7 +5275,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           channel: igLink?.code
             ? `Instagram Reels (@${cleanChar.toLowerCase().replace(/\s+/g, "")})`
             : "Instagram Reels",
-          durationSec: Math.max(180, ytCand?.durationSec || 38),
+          durationSec: Math.max(30, Math.min(90, ytCand?.durationSec || 38)),
           durationLabel: "0:38 (Reels)",
           viewsLabel: ytCand?.viewsLabel || "Instagram Reels",
           thumbnailUrl:
@@ -5302,237 +5503,260 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? "/tmp/yt-dlp"
         : null;
 
-      const results: any[] = [];
-      for (let idx = 0; idx < Math.min(8, clips.length); idx++) {
-        const clip = clips[idx];
-        const parsedStart = Number(clip?.trimStartSec);
-        const trimStartSec =
-          Number.isFinite(parsedStart) && parsedStart >= 0 ? Math.round(parsedStart) : 18;
-        const rawEndSec = Number(clip?.trimEndSec);
-        const durationSec =
-          rawEndSec && rawEndSec > trimStartSec + 1
-            ? Math.max(3, Math.min(25, Math.round(rawEndSec - trimStartSec)))
-            : Math.max(3, Math.min(25, Math.round(Number(clip?.durationSec) || 9)));
-        const trimEndSec = trimStartSec + durationSec;
-        const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
-        const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
-        const tiktokUrl = String(clip?.tiktokUrl || "").trim();
-        const instagramUrl = String(clip?.instagramUrl || "").trim();
-        const socialDirectUrl = tiktokUrl || instagramUrl;
-        const explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
-        const preferArchiveMp4 = clip?.preferArchiveMp4 !== false && Boolean(explicitArchiveMp4);
-        const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
-        const clipFocusX = String(clip?.focusX || reqFocusX || "center");
-        const vf34Filter = buildSharp34VideoFilter(clipFrameMode, clipFocusX);
-        const modeTag =
-          clipFrameMode === "3:4-cinema"
-            ? "34cin"
-            : clipFrameMode === "3:4-full-wide"
-            ? "34wide"
-            : "34hd";
-
-        const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s_${modeTag}`;
-        const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
-        const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
-        let cutSucceeded = false;
-
-        // 0. Only if no explicit archiveMp4Url was previewed on the card, try direct social URL via yt-dlp
-        if (!preferArchiveMp4 && socialDirectUrl && ytDlpBin) {
-          const rawSocialPath = path.join(YT_CUTS_DIR, `${fileId}_raw_social.mp4`);
-          try {
-            await execFileAsync(
-              ytDlpBin,
-              ["--no-warnings", "-o", rawSocialPath, socialDirectUrl],
-              { timeout: 10000 }
-            );
-            if (fs.existsSync(rawSocialPath) && fs.statSync(rawSocialPath).size > 15000) {
-              await execFileAsync(
-                "ffmpeg",
-                [
-                  "-y",
-                  "-ss",
-                  String(trimStartSec),
-                  "-i",
-                  rawSocialPath,
-                  "-t",
-                  String(durationSec),
-                  "-vf",
-                  vf34Filter,
-                  "-c:v",
-                  "libx264",
-                  "-preset",
-                  "veryfast",
-                  "-crf",
-                  "18",
-                  "-pix_fmt",
-                  "yuv420p",
-                  "-movflags",
-                  "+faststart",
-                  "-an",
-                  outMp4Path,
-                ],
-                { timeout: 12000 }
-              );
-              if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 10000) {
-                cutSucceeded = true;
-                const thumbSeek = Math.min(2.0, Math.max(0.5, Number((durationSec * 0.35).toFixed(1))));
-                await execFileAsync(
-                  "ffmpeg",
-                  [
-                    "-y",
-                    "-ss",
-                    String(thumbSeek),
-                    "-i",
-                    outMp4Path,
-                    "-frames:v",
-                    "1",
-                    "-q:v",
-                    "2",
-                    outJpgPath,
-                  ],
-                  { timeout: 3500 }
-                ).catch(() => {});
-              }
-            }
-          } catch {
-            // fallback to stream cutter below
-          } finally {
-            try {
-              if (fs.existsSync(rawSocialPath)) fs.unlinkSync(rawSocialPath);
-            } catch {
-              // ignore
-            }
+      const resolveFastDirectUrl = async (inputUrl: string): Promise<string> => {
+        // Convert any slow .ogv Archive.org file directly to its .mp4 derivative
+        let candidate = inputUrl;
+        if (/\.ogv(\?|#|$)/i.test(candidate)) {
+          candidate = candidate.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
+        }
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 1800);
+          const headRes = await fetch(candidate, {
+            method: "HEAD",
+            redirect: "follow",
+            headers: { "User-Agent": BROWSER_USER_AGENT },
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (headRes.ok && headRes.url && headRes.url.startsWith("http")) {
+            return headRes.url;
           }
+        } catch {
+          // keep original candidate
         }
+        return candidate;
+      };
 
-        // 1. Choose the EXACT archive MP4 stream that the user previewed on the card!
-        const lowerTitle = title.toLowerCase();
-        let chosenReel = curatedReels.find(
-          (r) =>
-            (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
-            (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
-            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
-            (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
-            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
-            (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade"))
-        );
-        if (!chosenReel) {
-          chosenReel = curatedReels[idx % curatedReels.length];
-        }
-        const archiveMp4 = explicitArchiveMp4 || chosenReel.rawMp4Url;
-
-        // 2. Only try Dailymotion if we do NOT have an explicitArchiveMp4 from the preview player
-        let streamUrl: string | null = null;
-        if (!cutSucceeded && !explicitArchiveMp4 && clip?.dmId) {
-          streamUrl = await resolveDailymotionStreamUrl(String(clip.dmId));
-        }
-
-        const sourceToCut = explicitArchiveMp4 || streamUrl || archiveMp4;
-        // CRITICAL: Cut at the EXACT trimStartSec that the user previewed on the card (NO hidden offset!)
-        const effectiveArchiveSeek = trimStartSec;
-
-        if (!cutSucceeded && sourceToCut) {
-          try {
+      const runFastFfmpegCut = async (
+        srcUrl: string,
+        seekSec: number,
+        durSec: number,
+        vfFilter: string,
+        outMp4: string,
+        outJpg: string,
+        timeoutMs = 9500
+      ): Promise<boolean> => {
+        try {
+          const directUrl = await resolveFastDirectUrl(srcUrl);
+          await execFileAsync(
+            "ffmpeg",
+            [
+              "-y",
+              "-rw_timeout",
+              "5500000",
+              "-user_agent",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+              "-ss",
+              String(seekSec),
+              "-i",
+              directUrl,
+              "-t",
+              String(durSec),
+              "-vf",
+              vfFilter,
+              "-c:v",
+              "libx264",
+              "-preset",
+              "ultrafast",
+              "-crf",
+              "20",
+              "-pix_fmt",
+              "yuv420p",
+              "-movflags",
+              "+faststart",
+              "-an",
+              outMp4,
+            ],
+            { timeout: timeoutMs }
+          );
+          if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 10000) {
+            const thumbSeek = Math.min(1.6, Math.max(0.3, Number((durSec * 0.25).toFixed(1))));
             await execFileAsync(
               "ffmpeg",
               [
                 "-y",
-                "-user_agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "-reconnect",
-                "1",
-                "-reconnect_streamed",
-                "1",
-                "-reconnect_on_network_error",
-                "1",
-                "-reconnect_on_http_error",
-                "4xx,5xx",
-                "-reconnect_delay_max",
-                "5",
                 "-ss",
-                String(effectiveArchiveSeek),
+                String(thumbSeek),
                 "-i",
-                sourceToCut,
-                "-t",
-                String(durationSec),
-                "-vf",
-                vf34Filter,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                "-an",
-                outMp4Path,
+                outMp4,
+                "-frames:v",
+                "1",
+                "-q:v",
+                "3",
+                outJpg,
               ],
-              { timeout: 18000 }
-            );
+              { timeout: 2500 }
+            ).catch(() => {});
+            return true;
+          }
+        } catch {
+          // fall through to fallback
+        }
+        return false;
+      };
 
-            if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 10000) {
-              cutSucceeded = true;
-              const thumbSeek = Math.min(2.0, Math.max(0.4, Number((durationSec * 0.3).toFixed(1))));
+      const targetClips = clips.slice(0, 8);
+      const results = await Promise.all(
+        targetClips.map(async (clip: any, idx: number) => {
+          const parsedStart = Number(clip?.trimStartSec);
+          const trimStartSec =
+            Number.isFinite(parsedStart) && parsedStart >= 0 ? Math.round(parsedStart) : 12;
+          const rawEndSec = Number(clip?.trimEndSec);
+          const durationSec =
+            rawEndSec && rawEndSec > trimStartSec + 1
+              ? Math.max(3, Math.min(25, Math.round(rawEndSec - trimStartSec)))
+              : Math.max(3, Math.min(25, Math.round(Number(clip?.durationSec) || 8)));
+          const trimEndSec = trimStartSec + durationSec;
+          const title = String(clip?.title || `${cleanChar} — Đoạn Cắt #${idx + 1}`);
+          const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
+          const tiktokUrl = String(clip?.tiktokUrl || "").trim();
+          const instagramUrl = String(clip?.instagramUrl || "").trim();
+          const socialDirectUrl = tiktokUrl || instagramUrl;
+          let explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
+          if (/\.ogv(\?|#|$)/i.test(explicitArchiveMp4)) {
+            explicitArchiveMp4 = explicitArchiveMp4.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
+          }
+          const preferArchiveMp4 = clip?.preferArchiveMp4 !== false && Boolean(explicitArchiveMp4);
+          const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
+          const clipFocusX = String(clip?.focusX || reqFocusX || "center");
+          const vf34Filter = buildSharp34VideoFilter(clipFrameMode, clipFocusX);
+          const modeTag =
+            clipFrameMode === "3:4-cinema"
+              ? "34cin"
+              : clipFrameMode === "3:4-full-wide"
+              ? "34wide"
+              : "34hd";
+
+          const fileId = `yt_cut_${Date.now()}_${idx}_${trimStartSec}s_${trimEndSec}s_${modeTag}`;
+          const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+          const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+          let cutSucceeded = false;
+
+          // 0. If no explicit MP4 URL was attached and we have a direct social URL + yt-dlp, try yt-dlp quickly
+          if (!preferArchiveMp4 && socialDirectUrl && ytDlpBin) {
+            const rawSocialPath = path.join(YT_CUTS_DIR, `${fileId}_raw_social.mp4`);
+            try {
               await execFileAsync(
-                "ffmpeg",
-                [
-                  "-y",
-                  "-ss",
-                  String(thumbSeek),
-                  "-i",
+                ytDlpBin,
+                ["--no-warnings", "-o", rawSocialPath, socialDirectUrl],
+                { timeout: 8000 }
+              );
+              if (fs.existsSync(rawSocialPath) && fs.statSync(rawSocialPath).size > 15000) {
+                cutSucceeded = await runFastFfmpegCut(
+                  rawSocialPath,
+                  Math.min(20, trimStartSec),
+                  durationSec,
+                  vf34Filter,
                   outMp4Path,
-                  "-frames:v",
-                  "1",
-                  "-q:v",
-                  "2",
                   outJpgPath,
-                ],
-                { timeout: 4000 }
-              ).catch(() => {});
+                  8000
+                );
+              }
+            } catch {
+              // fallback below
+            } finally {
+              try {
+                if (fs.existsSync(rawSocialPath)) fs.unlinkSync(rawSocialPath);
+              } catch {
+                // ignore
+              }
             }
-          } catch {
-            // fallback below
           }
-        }
 
-        let thumbnailUrl = String(clip?.thumbnailUrl || "");
-        if (fs.existsSync(outJpgPath)) {
-          const jpgBuf = fs.readFileSync(outJpgPath);
-          thumbnailUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
-          try {
-            fs.unlinkSync(outJpgPath);
-          } catch {
-            // ignore
+          // 1. Choose the matched archive MP4 stream (strictly .mp4, never .ogv)
+          const lowerTitle = title.toLowerCase();
+          let chosenReel = curatedReels.find(
+            (r) =>
+              (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
+              (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
+              (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
+              (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
+              (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
+              (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade"))
+          );
+          if (!chosenReel) {
+            chosenReel = curatedReels[idx % curatedReels.length];
           }
-        } else if (thumbnailUrl.startsWith("http")) {
-          thumbnailUrl = await resolveImageToDataUrlOrDirect(thumbnailUrl);
-        }
+          const archiveMp4 = explicitArchiveMp4 || chosenReel.rawMp4Url;
 
-        if (cutSucceeded) {
-          results.push({
-            id: `yt-cut-${Date.now()}-${idx}`,
-            targetSceneId,
-            characterName: cleanChar,
-            title,
-            videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
-            sourceVideoUrl: archiveMp4,
-            thumbnailUrl,
-            trimStartSec: 0,
-            trimEndSec: durationSec,
-            originalStartSec: trimStartSec,
-            originalEndSec: trimEndSec,
-            durationSec,
-            width: 720,
-            height: 960,
-            frameMode: clipFrameMode,
-            focusX: clipFocusX,
-            sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
-          });
-        } else {
-          results.push({
+          // 2. Attempt ultra-fast FFmpeg cut on the primary MP4 stream (timeout 9.5s max)
+          if (!cutSucceeded && archiveMp4) {
+            cutSucceeded = await runFastFfmpegCut(
+              archiveMp4,
+              trimStartSec,
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath,
+              9500
+            );
+          }
+
+          // 3. If primary cut failed/timed out (e.g. seek > duration or slow host), fall back to Dailymotion HLS or safe-seek offset
+          if (!cutSucceeded && clip?.dmId) {
+            const dmStream = await resolveDailymotionStreamUrl(String(clip.dmId)).catch(() => null);
+            if (dmStream) {
+              const safeDmSeek = trimStartSec > 90 ? Math.min(28, trimStartSec % 45) : trimStartSec;
+              cutSucceeded = await runFastFfmpegCut(
+                dmStream,
+                safeDmSeek,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                8500
+              );
+            }
+          }
+
+          if (!cutSucceeded && archiveMp4 && trimStartSec > 90) {
+            // Retry same MP4 at a safe earlier timestamp in case the video is shorter than trimStartSec
+            cutSucceeded = await runFastFfmpegCut(
+              archiveMp4,
+              Math.min(25, trimStartSec % 60),
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath,
+              7500
+            );
+          }
+
+          let thumbnailUrl = String(clip?.thumbnailUrl || "");
+          if (fs.existsSync(outJpgPath)) {
+            const jpgBuf = fs.readFileSync(outJpgPath);
+            thumbnailUrl = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
+            try {
+              fs.unlinkSync(outJpgPath);
+            } catch {
+              // ignore
+            }
+          }
+
+          if (cutSucceeded) {
+            return {
+              id: `yt-cut-${Date.now()}-${idx}`,
+              targetSceneId,
+              characterName: cleanChar,
+              title,
+              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
+              sourceVideoUrl: archiveMp4,
+              thumbnailUrl,
+              trimStartSec: 0,
+              trimEndSec: durationSec,
+              originalStartSec: trimStartSec,
+              originalEndSec: trimEndSec,
+              durationSec,
+              width: 720,
+              height: 960,
+              frameMode: clipFrameMode,
+              focusX: clipFocusX,
+              sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
+            };
+          }
+
+          return {
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
             characterName: cleanChar,
@@ -5548,9 +5772,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             width: 640,
             height: 360,
             sourceLabel: `✂️ Đã cắt riêng đoạn ${trimStartSec}s → ${trimEndSec}s`,
-          });
-        }
-      }
+          };
+        })
+      );
 
       const savedManifest = saveCutsToManifest(results);
 
@@ -5597,6 +5821,154 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         error: error?.message || "Không thể tự động tải ảnh/video tư liệu lịch sử.",
         photos: [],
       });
+    }
+  });
+
+  // 3a. Split a multi-panel collage photo (e.g. 3-panel left + top-right + bottom-right) into 3 clean 3:4 portrait frames via FFmpeg
+  app.post("/api/media/split-collage", async (req, res) => {
+    const tempFiles: string[] = [];
+    try {
+      const { imageUrl } = req.body || {};
+      if (!imageUrl || typeof imageUrl !== "string") {
+        res.status(400).json({ error: "Thiếu dữ liệu ảnh để tách khung.", panels: [] });
+        return;
+      }
+
+      const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const inputTemp = path.join(YT_CUTS_DIR, `tmp_collage_in_${stamp}.jpg`);
+      tempFiles.push(inputTemp);
+
+      if (imageUrl.startsWith("data:image/")) {
+        const commaIdx = imageUrl.indexOf(",");
+        const base64Part = commaIdx >= 0 ? imageUrl.slice(commaIdx + 1) : "";
+        fs.writeFileSync(inputTemp, Buffer.from(base64Part, "base64"));
+      } else if (imageUrl.startsWith("/")) {
+        const cleanRel = imageUrl.replace(/^\/+/, "").split("?")[0];
+        const candidatePath = path.resolve(process.cwd(), "public", cleanRel);
+        if (!fs.existsSync(candidatePath)) {
+          res.status(404).json({ error: "Không tìm thấy file ảnh trên máy chủ.", panels: [] });
+          return;
+        }
+        fs.copyFileSync(candidatePath, inputTemp);
+      } else {
+        res.status(400).json({ error: "Định dạng đường dẫn ảnh không được hỗ trợ.", panels: [] });
+        return;
+      }
+
+      // Probe image dimensions
+      let imgW = 700;
+      let imgH = 875;
+      try {
+        const { stdout } = await execFileAsync("ffprobe", [
+          "-v",
+          "error",
+          "-select_streams",
+          "v:0",
+          "-show_entries",
+          "stream=width,height",
+          "-of",
+          "csv=p=0",
+          inputTemp,
+        ]);
+        const [wStr, hStr] = stdout.trim().split(",");
+        const pw = parseInt(wStr, 10);
+        const ph = parseInt(hStr, 10);
+        if (pw > 0 && ph > 0) {
+          imgW = pw;
+          imgH = ph;
+        }
+      } catch {
+        // Use defaults
+      }
+
+      const specs =
+        imgW >= imgH * 1.2
+          ? [
+              // Wide 3-column collage
+              { label: "Khung Trái (1/3)", x: 0, y: 0, w: Math.round(imgW * 0.34), h: imgH },
+              { label: "Khung Giữa (2/3)", x: Math.round(imgW * 0.33), y: 0, w: Math.round(imgW * 0.34), h: imgH },
+              { label: "Khung Phải (3/3)", x: Math.round(imgW * 0.66), y: 0, w: Math.round(imgW * 0.34), h: imgH },
+            ]
+          : [
+              // Classic 3-panel portrait collage: full-height left + top-right + bottom-right
+              {
+                label: "Ảnh 1 — Góc Trái (Chân dung chính)",
+                x: 0,
+                y: 0,
+                w: Math.round(imgW * 0.52),
+                h: imgH,
+              },
+              {
+                label: "Ảnh 2 — Góc Phải Trên (Khoảnh khắc xưa)",
+                x: Math.round(imgW * 0.54),
+                y: 0,
+                w: Math.round(imgW * 0.46),
+                h: Math.round(imgH * 0.51),
+              },
+              {
+                label: "Ảnh 3 — Góc Phải Dưới (Năm tháng sau này)",
+                x: Math.round(imgW * 0.49),
+                y: Math.round(imgH * 0.53),
+                w: Math.round(imgW * 0.51),
+                h: Math.round(imgH * 0.47),
+              },
+            ];
+
+      const panels: {
+        id: string;
+        name: string;
+        url: string;
+        width: number;
+        height: number;
+      }[] = [];
+
+      for (let i = 0; i < specs.length; i++) {
+        const sp = specs[i];
+        const outTemp = path.join(YT_CUTS_DIR, `tmp_collage_out_${stamp}_${i}.jpg`);
+        tempFiles.push(outTemp);
+
+        await execFileAsync("ffmpeg", [
+          "-y",
+          "-i",
+          inputTemp,
+          "-vf",
+          `crop=${Math.max(40, sp.w)}:${Math.max(40, sp.h)}:${Math.max(0, sp.x)}:${Math.max(0, sp.y)},scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,unsharp=5:5:0.45:5:5:0.0`,
+          "-q:v",
+          "2",
+          outTemp,
+        ]);
+
+        if (fs.existsSync(outTemp)) {
+          const b64 = fs.readFileSync(outTemp).toString("base64");
+          panels.push({
+            id: `split-${stamp}-${i}`,
+            name: sp.label,
+            url: `data:image/jpeg;base64,${b64}`,
+            width: 720,
+            height: 960,
+          });
+        }
+      }
+
+      res.json({
+        panels,
+        sourceWidth: imgW,
+        sourceHeight: imgH,
+      });
+    } catch (error: any) {
+      console.error("Split collage error:", error);
+      res.status(500).json({
+        error: error?.message || "Không thể tách ảnh ghép.",
+        panels: [],
+      });
+    } finally {
+      for (const tf of tempFiles) {
+        try {
+          if (fs.existsSync(tf)) fs.unlinkSync(tf);
+        } catch {
+          // ignore cleanup failure
+        }
+      }
     }
   });
 
@@ -5648,10 +6020,16 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const resolvedFilmMeta = resolveFilmTopicMeta(rawTopicStr);
       const isFilmCastMode =
         storyMode === "film-cast" || resolvedFilmMeta.isKnownFilm;
+      // Handle couple/multi-person topics like "Dolly Parton & Carl Dean" by extracting primary person for strict archival matching
+      const splitCoupleNames = rawTopicStr
+        .split(/\s*(?:&|\band\b|,|\+)\s*/i)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 3);
       const cleanTopic =
         isFilmCastMode && resolvedFilmMeta.isKnownFilm
           ? resolvedFilmMeta.englishTitle
-          : rawTopicStr;
+          : splitCoupleNames[0] || rawTopicStr;
+      const secondaryPerson = splitCoupleNames[1] || "";
 
       // Step 1: Search in parallel across chronological eras on Bing Web Images + Wikipedia + Wikimedia Commons
       const verifiedVideos: {
@@ -5680,6 +6058,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               `${cleanTopic} cast actors portrait photograph`,
               `${cleanTopic} behind the scenes cast`,
               `${cleanTopic} classic movie poster actors`,
+            ]
+          : secondaryPerson
+          ? [
+              `${cleanTopic} ${secondaryPerson} wedding vintage portrait photo`,
+              `${cleanTopic} young 1960s candid portrait photograph`,
+              `${cleanTopic} ${secondaryPerson} anniversary portrait photo`,
+              `${cleanTopic} portrait documentary photograph`,
             ]
           : [
               `${cleanTopic} young early career candid portrait photo`,

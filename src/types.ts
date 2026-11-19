@@ -8,7 +8,15 @@ export type FrameStyle = 'full-bleed' | 'rounded-frame' | 'cinema-letterbox';
 
 export type AspectRatioOption = '3:4' | '9:16' | '16:9';
 
-export type StoryTopicMode = 'biography' | 'film-cast';
+export type StoryTopicMode = 'biography' | 'film-cast' | 'custom-story';
+
+export interface CustomAttachedImage {
+  id: string;
+  name: string;
+  url: string;
+  width?: number;
+  height?: number;
+}
 
 export type PresetId = 'will-sampson' | 'lorne-greene' | 'clayton-moore' | 'yul-brynner';
 
