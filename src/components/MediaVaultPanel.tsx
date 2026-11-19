@@ -516,28 +516,16 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
               </p>
             </div>
 
-            {/* Topic Mode Switcher: Biography vs Film Summary & Famous Cast vs Custom Summary + Photos */}
-            <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[#111827] border border-slate-800">
+            {/* Topic Mode Switcher: Biography vs Film Summary vs Custom Summary vs Birthday Tribute */}
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-[#111827] border border-slate-800">
               <button
                 type="button"
                 onClick={() => {
                   setStoryMode('biography');
                   onUpdateSettings({ storyMode: 'biography' });
                   saveAudioPreferences({ storyMode: 'biography' });
-                  const filmSamples = [
-                    'Ở Nhà 1 Mình',
-                    'Ngôi Nhà Nhỏ Trên Thảo Nguyên',
-                    'Titanic',
-                    'Bố Già (The Godfather)',
-                    'Tây Du Ký 1986',
-                    'Cuốn Theo Chiều Gió',
-                  ];
-                  if (filmSamples.includes(storyTopic.trim())) {
-                    setStoryTopic('Clint Eastwood');
-                    saveAudioPreferences({ storyTopic: 'Clint Eastwood', storyMode: 'biography' });
-                  }
                 }}
-                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+                className={`px-1 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-0.5 whitespace-nowrap ${
                   storyMode === 'biography'
                     ? 'bg-amber-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:bg-slate-800'
@@ -551,21 +539,8 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                   setStoryMode('film-cast');
                   onUpdateSettings({ storyMode: 'film-cast' });
                   saveAudioPreferences({ storyMode: 'film-cast' });
-                  const actorSamples = [
-                    'Clint Eastwood',
-                    'John Wayne',
-                    'Steve McQueen',
-                    'Bruce Lee',
-                    'Elvis Presley',
-                    'Audrey Hepburn',
-                    'Will Sampson',
-                  ];
-                  if (actorSamples.includes(storyTopic.trim())) {
-                    setStoryTopic('Ở Nhà 1 Mình');
-                    saveAudioPreferences({ storyTopic: 'Ở Nhà 1 Mình', storyMode: 'film-cast' });
-                  }
                 }}
-                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+                className={`px-1 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-0.5 whitespace-nowrap ${
                   storyMode === 'film-cast'
                     ? 'bg-sky-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:bg-slate-800'
@@ -580,13 +555,30 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                   onUpdateSettings({ storyMode: 'custom-story' });
                   saveAudioPreferences({ storyMode: 'custom-story' });
                 }}
-                className={`px-1.5 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+                className={`px-1 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-0.5 whitespace-nowrap ${
                   storyMode === 'custom-story'
                     ? 'bg-emerald-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                <span>📝 Tóm Tắt + Ảnh</span>
+                <span>📝 Tóm Tắt</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStoryMode('birthday-tribute');
+                  onUpdateSettings({ storyMode: 'birthday-tribute' });
+                  saveAudioPreferences({ storyMode: 'birthday-tribute' });
+                  setStoryTopic('Happy 58th Birthday to Owen Wilson! 🎉🎬 (Born November 18, 1968)');
+                  saveAudioPreferences({ storyTopic: 'Happy 58th Birthday to Owen Wilson! 🎉🎬 (Born November 18, 1968)', storyMode: 'birthday-tribute' });
+                }}
+                className={`px-1 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center justify-center gap-0.5 whitespace-nowrap ${
+                  storyMode === 'birthday-tribute'
+                    ? 'bg-rose-500 text-slate-950 shadow'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>🎂 Sinh Nhật</span>
               </button>
             </div>
 
@@ -724,6 +716,8 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                   <label className="block text-xs font-semibold text-slate-200">
                     {storyMode === 'film-cast'
                       ? '1. Nhập Tên Bộ Phim cần tóm tắt & điểm danh Dàn Diễn Viên:'
+                      : storyMode === 'birthday-tribute'
+                      ? '1. Nhập Nội Dung Mừng Sinh Nhật / Tên Diễn Viên:'
                       : '1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):'}
                   </label>
                   <input
@@ -740,6 +734,8 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                     placeholder={
                       storyMode === 'film-cast'
                         ? 'VD: Ở Nhà 1 Mình, Ngôi Nhà Nhỏ Trên Thảo Nguyên, Titanic, Bố Già...'
+                        : storyMode === 'birthday-tribute'
+                        ? 'VD: Happy 58th Birthday to Owen Wilson! 🎉🎬 (Born November 18, 1968)'
                         : 'VD: Clint Eastwood, John Wayne, Audrey Hepburn...'
                     }
                     className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
@@ -756,6 +752,13 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                         'Bố Già (The Godfather)',
                         'Tây Du Ký 1986',
                         'Cuốn Theo Chiều Gió',
+                      ]
+                    : storyMode === 'birthday-tribute'
+                    ? [
+                        'Happy 58th Birthday to Owen Wilson! 🎉🎬 (Born November 18, 1968)',
+                        'Happy 71st Birthday to Whoopi Goldberg! 🎉🎬 (Born November 13, 1955)',
+                        'Leonardo DiCaprio',
+                        'Keanu Reeves',
                       ]
                     : [
                         'Clint Eastwood',
@@ -778,11 +781,17 @@ After the vows, the couple skipped a lavish reception and spent the afternoon ea
                         storyTopic === name
                           ? storyMode === 'film-cast'
                             ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-semibold'
+                            : storyMode === 'birthday-tribute'
+                            ? 'bg-rose-500/20 border-rose-400 text-rose-200 font-semibold'
                             : 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
                           : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      {storyMode === 'film-cast' ? `🎬 ${name}` : name}
+                      {storyMode === 'film-cast'
+                        ? `🎬 ${name}`
+                        : storyMode === 'birthday-tribute'
+                        ? `🎂 ${name.includes('Birthday') ? name.split('to ')[1]?.split('!')[0] || name : name}`
+                        : name}
                     </button>
                   ))}
                 </div>

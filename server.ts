@@ -1743,7 +1743,78 @@ function registerRoutes() {
     return scenes;
   }
 
-  // 1. Generate Documentary Storyboard & Prompts (Supports Biography, Film+Cast, AND Custom Summary + Attached Photos)
+  function buildFallbackBirthdayTributeScenes(
+    topic: string,
+    language: string,
+    targetSceneCount: number,
+    ratioDesc: string,
+    channelTitle: string,
+    channelSubtitle: string
+  ) {
+    const cleanSubject = topic.replace(/^(happy|sinh nhật|birthday)\s*/i, "").trim() || "Whoopi Goldberg";
+    const narrativeCount = Math.max(3, targetSceneCount - 1);
+    const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
+
+    const beats = [
+      `Happy Birthday to the legendary ${cleanSubject}! Today we celebrate a phenomenal talent whose brilliant performances, infectious laughter, and timeless cinematic masterpieces have illuminated screens and touched millions of hearts across generations.`,
+      `Born with an undeniable spark and a gift for raw storytelling, ${cleanSubject} embarked on an extraordinary artistic journey that redefined Hollywood excellence, turning every role into an unforgettable cultural landmark.`,
+      `From iconic breakthrough performances to heartwarming moments that left audiences in awe, ${cleanSubject} mastered the rare art of breathing absolute truth and vibrant soul into every character brought to life.`,
+      `Beyond the glittering awards and global box-office triumphs, the enduring legacy of ${cleanSubject} lies in a profound dedication to authenticity, artistic courage, and inspiring countless aspiring creators worldwide.`,
+      `As we honor another spectacular milestone today, we raise a glass to ${cleanSubject}—whose luminous spirit, legendary body of work, and unforgettable cinematic voyage continue to light up our lives with boundless wonder.`,
+    ];
+
+    while (beats.length < narrativeCount) {
+      beats.push(`The remarkable artistic evolution and timeless cultural footprint of ${cleanSubject} remain a permanent source of inspiration and cinematic wonder for movie lovers everywhere.`);
+    }
+
+    const quoteIdx = narrativeCount >= 6 ? Math.floor(narrativeCount * 0.55) : -1;
+
+    const scenes: any[] = beats.slice(0, narrativeCount).map((beatText, idx) => {
+      const isQuote = idx === quoteIdx;
+      const isVideo = !isQuote && (idx === 0 || idx % 2 === 0);
+      const sType = isQuote ? "quote" : isVideo ? "video" : "image";
+      const titleLabel =
+        idx === 0
+          ? `Mừng Sinh Nhật: ${cleanSubject}`
+          : isQuote
+          ? "Khoảnh khắc lắng đọng"
+          : `Chương Kỷ Niệm #${idx + 1}`;
+
+      return {
+        title: titleLabel,
+        sceneType: sType,
+        narrationText: beatText,
+        translationText: beatText,
+        visualPrompt: sType === "video" ? `CẦN VIDEO SINH NHẬT: ${cleanSubject}` : sType === "quote" ? `THẺ CHỮ: ${cleanSubject}` : `ẢNH KỶ NIỆM: ${cleanSubject}`,
+        imagePrompt: `Cinematic birthday tribute portrait of ${cleanSubject}, warm celebratory golden lighting, cinematic archival film still, full-frame ${ratioDesc}, edge-to-edge composition, no text.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from archival portrait of ${cleanSubject}, warm golden celebration lighting -> [2-4s Story Action & Speech]: Radiant warm smile and celebratory greeting -> [4-6s Camera Control & Climax]: Gentle documentary push-in, ${ratioDesc}.`,
+        archivalKeywords: `${cleanSubject} actor portrait birthday`,
+        motionEffect: motions[idx % motions.length],
+        colorFilter: idx % 2 === 0 ? "color-warm" : "original",
+        frameStyle: "full-bleed",
+        durationSec: Math.max(6, Math.min(10, Math.round(beatText.split(/\s+/).length * 0.42))),
+      };
+    });
+
+    scenes.push({
+      title: `Logo Kết Cố Định: ${channelTitle}`,
+      sceneType: "outro",
+      narrationText: `${channelTitle}. Happy Birthday ${cleanSubject}!`,
+      translationText: `Chúc Mừng Sinh Nhật ${cleanSubject}!`,
+      visualPrompt: `LOGO KẾT: ${channelTitle} — ${channelSubtitle}`,
+      imagePrompt: "Fixed Outro Logo",
+      videoMotionPrompt: "Fixed Outro Logo",
+      archivalKeywords: cleanSubject,
+      motionEffect: "zoom-in",
+      colorFilter: "original",
+      frameStyle: "full-bleed",
+      durationSec: 4,
+    });
+
+    return scenes;
+  }
+
+  // 1. Generate Documentary Storyboard & Prompts (Supports Biography, Film+Cast, Custom Summary, & Birthday Tribute)
   app.post("/api/story/generate", async (req, res) => {
     const {
       topic = "Clint Eastwood",
@@ -1769,8 +1840,10 @@ function registerRoutes() {
     }
 
     const filmMeta = resolveFilmTopicMeta(cleanTopicRaw);
-    const effectiveMode: "biography" | "film-cast" | "custom-story" =
-      storyMode === "custom-story" || cleanSummary.length >= 60
+    const effectiveMode: "biography" | "film-cast" | "custom-story" | "birthday-tribute" =
+      storyMode === "birthday-tribute" || /^(happy.*birthday|sinh nhật)\b/i.test(cleanTopicRaw)
+        ? "birthday-tribute"
+        : storyMode === "custom-story" || cleanSummary.length >= 60
         ? "custom-story"
         : storyMode === "film-cast" ||
           filmMeta.isKnownFilm ||
@@ -1927,7 +2000,16 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
     }
 
     const fallbackScenes =
-      effectiveMode === "custom-story"
+      effectiveMode === "birthday-tribute"
+        ? buildFallbackBirthdayTributeScenes(
+            effectiveTopic,
+            language,
+            targetSceneCount,
+            ratioDesc,
+            channelTitle,
+            channelSubtitle
+          )
+        : effectiveMode === "custom-story"
         ? buildFallbackCustomSummaryScenes(
             cleanSummary || effectiveTopic,
             effectiveTopic,
@@ -3206,23 +3288,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     ],
   };
 
-  // Helper: Build FFmpeg filter chain for crisp 720x960 (3:4 HD) output with Lanczos scaling + optical Unsharp mask
+  // Helper: Build FFmpeg filter chain for razor-sharp 720x960 (3:4 HD) output with accurate Lanczos resampling + optical Unsharp mask for maximum clarity
   function buildSharp34VideoFilter(frameMode = "3:4-sharp", focusX = "center"): string {
     const focusFactor =
       focusX === "left" ? "0.18" : focusX === "right" ? "0.82" : "0.5";
 
     if (frameMode === "3:4-full-wide") {
-      // Keep 100% of horizontal 16:9 scene sharp in center over a blurred 720x960 (3:4) cinema backdrop
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos,unsharp=5:5:1.0:3:3:0.55,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:-2:flags=lanczos+accurate_rnd,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
     if (frameMode === "3:4-cinema") {
-      // Balanced 3:4 cinema framing: moderate zoom (height=760px inside 720x960) so faces/scenes aren't over-zoomed, sharp foreground over blurred 3:4 backdrop
-      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.2,unsharp=5:5:1.0:3:3:0.55,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      return `split=2[bg][fg];[bg]scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:960,boxblur=16:2,eq=brightness=-0.12:contrast=0.95[bgblur];[fg]scale=720:760:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd,crop=720:760:(in_w-720)*${focusFactor}:(in_h-760)*0.18,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.05[fgsharp];[bgblur][fgsharp]overlay=(W-w)/2:(H-h)/2,setsar=1`;
     }
 
-    // Default "3:4-sharp": Full edge-to-edge 3:4 (720x960 HD) crop with Lanczos resampling + optical sharpening
-    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.2,setsar=1,unsharp=5:5:0.95:3:3:0.5,eq=contrast=1.04:saturation=1.04`;
+    // Default "3:4-sharp": Razor-sharp full edge-to-edge 3:4 (720x960 HD) crop with accurate Lanczos resampling + optical sharpening
+    return `scale=720:960:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd+full_chroma_int,crop=720:960:(in_w-720)*${focusFactor}:(in_h-960)*0.16,setsar=1,unsharp=7:7:1.15:5:5:0.65,eq=contrast=1.04:saturation=1.04`;
   }
 
   // Helper: Physically cut a standalone fast-playing MP4 clip + extract a real video frame JPG thumbnail using FFmpeg (cached on disk)

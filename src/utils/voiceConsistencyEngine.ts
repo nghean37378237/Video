@@ -696,6 +696,8 @@ export function loadSavedAudioPreferences(): SavedAudioPreferences {
           ? 'film-cast'
           : parsed.storyMode === 'custom-story'
           ? 'custom-story'
+          : parsed.storyMode === 'birthday-tribute'
+          ? 'birthday-tribute'
           : 'biography',
       customSummary: typeof parsed.customSummary === 'string' ? parsed.customSummary : '',
       sceneCount: typeof parsed.sceneCount === 'number' ? parsed.sceneCount : fallback.sceneCount,
