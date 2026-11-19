@@ -61,7 +61,7 @@ export interface YouTubeSearchVideoItem {
   thumbnailUrl: string;
   youtubeUrl: string;
   suggestedTrimStartSec: number;
-  sourcePlatform?: 'shorts' | 'tiktok' | 'instagram' | 'youtube';
+  sourcePlatform?: 'shorts' | 'tiktok' | 'instagram' | 'youtube' | 'archive';
   platformBadge?: string;
 }
 
@@ -139,9 +139,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterTab, setFilterTab] = useState<'youtube' | 'all' | 'video' | 'image'>(initialTab);
   const [videoSourceSubFilter, setVideoSourceSubFilter] = useState<
-    'all' | 'shorts' | 'tiktok' | 'instagram' | 'youtube-long'
+    'all' | 'shorts' | 'tiktok' | 'instagram' | 'youtube-long' | 'archive'
+  >('all');
+  const [searchDepth, setSearchDepth] = useState<
+    'all' | 'cinema' | 'interview' | 'rare' | 'archive' | 'social'
   >('all');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [isLoadingArchival, setIsLoadingArchival] = useState<boolean>(false);
   const [isCuttingYouTube, setIsCuttingYouTube] = useState<boolean>(false);
   const [cuttingCardId, setCuttingCardId] = useState<string | null>(null);
@@ -389,8 +393,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     }
   };
 
-  const executeSearch = async (queryToRun: string, nextCycle = 0, overrideSceneId?: string) => {
-    setIsLoading(true);
+  const executeSearch = async (
+    queryToRun: string,
+    nextCycle = 0,
+    overrideSceneId?: string,
+    appendMode = false,
+    overrideDepth?: 'all' | 'cinema' | 'interview' | 'rare' | 'archive' | 'social'
+  ) => {
+    const activeDepth = overrideDepth || searchDepth;
+    if (appendMode) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+    }
     setIsLoadingArchival(true);
     setPreviewingYtId(null);
     const effectiveQuery = queryToRun.trim() || cleanCharName;
@@ -398,7 +413,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       .replace(/https?:\/\/[^\s]+/gi, '')
       .replace(/\b(18|19|20)\d{2}s?\b/g, '')
       .replace(
-        /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|iconic|circa|early|late|young|birthplace)\b/gi,
+        /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|iconic|circa|early|late|young|birthplace|documentary|rare|footage|behind|the|quotes|life|biography|best)\b/gi,
         ''
       )
       .replace(/\s+/g, ' ')
@@ -424,15 +439,44 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       selectableScenes[0]?.id ||
       '';
 
+    const getYtDedupKey = (item: YouTubeSearchVideoItem) =>
+      item.youtubeId
+        ? `yt:${item.youtubeId}`
+        : item.tiktokId
+        ? `tt:${item.tiktokId}`
+        : item.instagramId
+        ? `ig:${item.instagramId}`
+        : item.dmId
+        ? `dm:${item.dmId}`
+        : item.archiveMp4Url
+        ? `arc:${item.archiveMp4Url}`
+        : `id:${item.id}`;
+
     const applyYtList = (ytList: YouTubeSearchVideoItem[]) => {
-      setYoutubeVideos(ytList);
-      const nextStarts: Record<string, number> = {};
-      const nextEnds: Record<string, number> = {};
-      const nextTargetScenes: Record<string, string> = {};
+      let mergedList: YouTubeSearchVideoItem[] = ytList;
+      if (appendMode) {
+        setYoutubeVideos((prev) => {
+          const seen = new Set(prev.map(getYtDedupKey));
+          const uniqueAdditions = ytList.filter((item) => {
+            const key = getYtDedupKey(item);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          mergedList = [...prev, ...uniqueAdditions];
+          return mergedList;
+        });
+      } else {
+        setYoutubeVideos(ytList);
+      }
 
       const shuffledScenePool = [
         ...(videoScenesOnly.length > 0 ? videoScenesOnly : selectableScenes),
       ].sort(() => Math.random() - 0.5);
+
+      const newStarts: Record<string, number> = {};
+      const newEnds: Record<string, number> = {};
+      const newTargetScenes: Record<string, string> = {};
 
       ytList.forEach((v, idx) => {
         const randomPoolScene =
@@ -450,16 +494,23 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           typeof v.suggestedTrimStartSec === 'number' && v.suggestedTrimStartSec >= 0
             ? v.suggestedTrimStartSec
             : 18 + (idx % 6) * 20;
-        nextStarts[v.id] = sSec;
-        nextEnds[v.id] = sSec + targetDur;
-        nextTargetScenes[v.id] = defaultTargetScene;
+        newStarts[v.id] = sSec;
+        newEnds[v.id] = sSec + targetDur;
+        newTargetScenes[v.id] = defaultTargetScene;
       });
-      setYtTrimStarts(nextStarts);
-      setYtTrimEnds(nextEnds);
-      setYtTargetSceneIds(nextTargetScenes);
+
+      if (appendMode) {
+        setYtTrimStarts((prev) => ({ ...newStarts, ...prev }));
+        setYtTrimEnds((prev) => ({ ...newEnds, ...prev }));
+        setYtTargetSceneIds((prev) => ({ ...newTargetScenes, ...prev }));
+      } else {
+        setYtTrimStarts(newStarts);
+        setYtTrimEnds(newEnds);
+        setYtTargetSceneIds(newTargetScenes);
+      }
     };
 
-    // 1. Fire Archival Videos & Photos search in parallel (non-blocking so Shorts/YouTube results appear in <0.8s!)
+    // 1. Fire Archival Videos & Photos search in parallel (Archive.org MP4 + Wikimedia Commons)
     fetch('/api/archival/search-scene-media', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -467,7 +518,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         query: effectiveQuery,
         characterName: effectiveCharForSearch,
         sceneDurationSec: sceneDur,
-        limit: 16,
+        limit: 20,
+        videoLimit: 14,
         cycleOffset: nextCycle,
       }),
     })
@@ -480,8 +532,32 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         const imgs: ScenePhotoOption[] = Array.isArray(data?.photoOptions)
           ? data.photoOptions
           : [];
-        setVideoOptions(vids);
-        setPhotoOptions(imgs);
+
+        if (appendMode) {
+          setVideoOptions((prev) => {
+            const seen = new Set(prev.map((p) => p.videoUrl || p.id));
+            const extra = vids.filter((v) => {
+              const key = v.videoUrl || v.id;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            return [...prev, ...extra];
+          });
+          setPhotoOptions((prev) => {
+            const seen = new Set(prev.map((p) => p.dataUrl || p.id));
+            const extra = imgs.filter((im) => {
+              const key = im.dataUrl || im.id;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            return [...prev, ...extra];
+          });
+        } else {
+          setVideoOptions(vids);
+          setPhotoOptions(imgs);
+        }
 
         const initialTrims: Record<string, number> = {};
         const initialTrimEnds: Record<string, number> = {};
@@ -494,10 +570,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             nextArchTargets[v.id] = targetSceneForDefault;
           }
         });
-        setCustomTrimStarts(initialTrims);
-        setCustomTrimEnds(initialTrimEnds);
-        if (targetSceneForDefault) {
-          setArchivalTargetScenes(nextArchTargets);
+        if (appendMode) {
+          setCustomTrimStarts((prev) => ({ ...initialTrims, ...prev }));
+          setCustomTrimEnds((prev) => ({ ...initialTrimEnds, ...prev }));
+          if (targetSceneForDefault) {
+            setArchivalTargetScenes((prev) => ({ ...nextArchTargets, ...prev }));
+          }
+        } else {
+          setCustomTrimStarts(initialTrims);
+          setCustomTrimEnds(initialTrimEnds);
+          if (targetSceneForDefault) {
+            setArchivalTargetScenes(nextArchTargets);
+          }
         }
 
         vids.slice(0, 4).forEach((v) => {
@@ -514,7 +598,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         setIsLoadingArchival(false);
       });
 
-    // 2. Fetch YouTube Shorts + TikTok + YouTube Videos (<0.8s via InnerTube JSON API)
+    // 2. Fetch Deep Multi-Source External Videos (YouTube 7 angles + Shorts + TikTok + Instagram + Archive.org MP4 + Dailymotion)
     try {
       let ytList: YouTubeSearchVideoItem[] = [];
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -524,7 +608,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           body: JSON.stringify({
             query: effectiveQuery,
             characterName: effectiveCharForSearch,
-            limit: 30,
+            limit: 60,
+            cycleOffset: nextCycle,
+            searchDepth: activeDepth,
           }),
         });
         if (ytRes.ok) {
@@ -538,6 +624,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       // Keep existing options
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   };
 
@@ -1283,42 +1370,107 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isLoadingMore}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white transition-colors shrink-0"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Đang tìm YouTube, TikTok &amp; Instagram...</span>
+                  <span>Đang tìm chuyên sâu đa nguồn...</span>
                 </>
               ) : (
                 <>
                   <Youtube className="w-4 h-4" />
-                  <span>Tìm Video (YouTube + TikTok + Instagram)</span>
+                  <span>🔍 Tìm Sâu Đa Nguồn (60+ Video)</span>
                 </>
               )}
             </button>
 
             <button
               type="button"
-              disabled={isLoading}
+              disabled={isLoading || isLoadingMore}
               onClick={() => {
                 const next = cycleOffset + 1;
                 setCycleOffset(next);
-                executeSearch(searchQuery, next);
+                executeSearch(searchQuery, next, effectiveScene?.id, true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/35 disabled:opacity-50 text-emerald-300 border border-emerald-500/50 transition-colors shrink-0"
+              title="Giữ nguyên các video đang có và tải thêm 50+ video mới từ trang tiếp theo"
+            >
+              {isLoadingMore ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              <span>➕ Tải Thêm Video</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isLoading || isLoadingMore}
+              onClick={() => {
+                const next = cycleOffset + 1;
+                setCycleOffset(next);
+                executeSearch(searchQuery, next, effectiveScene?.id, false);
               }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 disabled:opacity-50 text-sky-300 border border-sky-500/40 transition-colors shrink-0"
+              title="Làm mới sang một lô kết quả hoàn toàn mới"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Đổi Lô Khác</span>
+              <span>Đổi Lô Mới</span>
             </button>
           </form>
+
+          {/* Deep Search Mode Selector Bar (Chế Độ Tìm Video Ngoài Chuyên Sâu) */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[11px] font-bold text-amber-300 shrink-0">
+              🔎 Tìm Chuyên Sâu:
+            </span>
+            {(
+              [
+                { id: 'all', label: '🚀 Tất Cả Nguồn Sâu', qSuffix: '' },
+                { id: 'cinema', label: '🎬 Cảnh Phim Kinh Điển', qSuffix: 'best movie scenes clips' },
+                { id: 'interview', label: '🎙️ Phỏng Vấn & Tư Liệu Hiếm', qSuffix: 'rare interview documentary' },
+                { id: 'rare', label: '🕰️ Thời Trẻ & Hậu Trường', qSuffix: 'young behind the scenes rare footage' },
+                { id: 'archive', label: '🎞️ Archive.org (MP4 Gốc)', qSuffix: '' },
+                { id: 'social', label: '📱 Shorts / TikTok / Reels', qSuffix: 'shorts' },
+              ] as const
+            ).map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                disabled={isLoading || isLoadingMore}
+                onClick={() => {
+                  setSearchDepth(mode.id);
+                  setFilterTab('youtube');
+                  if (mode.id === 'archive') {
+                    setVideoSourceSubFilter('archive');
+                  } else if (mode.id === 'cinema' || mode.id === 'interview' || mode.id === 'rare') {
+                    setVideoSourceSubFilter('youtube-long');
+                  } else {
+                    setVideoSourceSubFilter('all');
+                  }
+                  const targetQ = mode.qSuffix ? `${activeCharName} ${mode.qSuffix}` : activeCharName;
+                  setSearchQuery(targetQ);
+                  setCycleOffset(0);
+                  executeSearch(targetQ, 0, effectiveScene?.id, false, mode.id);
+                }}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
+                  searchDepth === mode.id
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                    : 'bg-slate-900/90 text-slate-200 border-slate-700 hover:border-amber-400'
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
 
           {/* Quick Keyword Suggestions + Filter Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[11px] text-slate-400 font-medium">
-                Nguồn tổng hợp mọi giai đoạn:
+                Gợi ý giai đoạn:
               </span>
               {suggestedQueries.map((q, qIdx) => (
                 <button
@@ -1372,7 +1524,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 }`}
               >
                 <Youtube className="w-3.5 h-3.5" />
-                <span>YouTube + TikTok + Instagram ({youtubeVideos.length})</span>
+                <span>Video Ngoài Đa Nguồn ({youtubeVideos.length})</span>
               </button>
               <button
                 type="button"
@@ -2223,8 +2375,20 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               : 'bg-slate-900 text-sky-300 border border-sky-500/40 hover:bg-sky-500/20'
                           }`}
                         >
-                          🎬 YouTube Cảnh Phim &amp; Phỏng Vấn (
+                          🎬 Cảnh Phim &amp; Phỏng Vấn (
                           {youtubeVideos.filter((v) => v.sourcePlatform === 'youtube').length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVideoSourceSubFilter('archive')}
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                            videoSourceSubFilter === 'archive'
+                              ? 'bg-emerald-500 text-slate-950'
+                              : 'bg-slate-900 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/20'
+                          }`}
+                        >
+                          🎞️ Archive.org MP4 (
+                          {youtubeVideos.filter((v) => v.sourcePlatform === 'archive').length})
                         </button>
                       </div>
                     </div>
@@ -2249,6 +2413,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                           }
                           if (videoSourceSubFilter === 'youtube-long') {
                             return yt.sourcePlatform === 'youtube';
+                          }
+                          if (videoSourceSubFilter === 'archive') {
+                            return yt.sourcePlatform === 'archive';
                           }
                           return true;
                         })
@@ -2474,6 +2641,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                         ? 'bg-pink-600 text-white'
                                         : yt.sourcePlatform === 'instagram'
                                         ? 'bg-gradient-to-r from-fuchsia-600 to-amber-500 text-white'
+                                        : yt.sourcePlatform === 'archive'
+                                        ? 'bg-emerald-600 text-white'
                                         : yt.sourcePlatform === 'shorts'
                                         ? 'bg-red-600 text-white'
                                         : 'bg-slate-900/90 text-sky-300 border border-sky-500/40'
@@ -2484,6 +2653,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                         ? '🎵 TikTok'
                                         : yt.sourcePlatform === 'instagram'
                                         ? '📸 Instagram Reels'
+                                        : yt.sourcePlatform === 'archive'
+                                        ? '🎞️ Archive.org MP4'
                                         : yt.sourcePlatform === 'shorts'
                                         ? '📱 YouTube Short'
                                         : '🎬 YouTube')}
@@ -2807,6 +2978,35 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                             </div>
                           );
                         })}
+                    </div>
+                  )}
+
+                  {youtubeVideos.length > 0 && (
+                    <div className="pt-2 flex items-center justify-center">
+                      <button
+                        type="button"
+                        disabled={isLoading || isLoadingMore}
+                        onClick={() => {
+                          const next = cycleOffset + 1;
+                          setCycleOffset(next);
+                          executeSearch(searchQuery, next, effectiveScene?.id, true);
+                        }}
+                        className="px-5 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500 to-sky-500 hover:from-emerald-400 hover:to-sky-400 disabled:opacity-50 text-slate-950 shadow-lg flex items-center gap-2 transition-all"
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang tìm thêm hàng loạt video ngoài...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4" />
+                            <span>
+                              ➕ Tải Thêm Nhiều Video Hơn (Trang #{cycleOffset + 2} · Đang có {youtubeVideos.length} video)
+                            </span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>

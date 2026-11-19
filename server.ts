@@ -2480,7 +2480,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       trimEndSec?: number;
     }[] = [];
 
-    // 0. Check Curated Pre-Verified Actor Real Video Reels first for <50ms instant response
+    // 0. Check Curated Pre-Verified Actor Real Video Reels (only seed up to 3 on cycle 0 so Archive.org & Wikimedia always run too!)
     const lowerQueryCheck = cleanQuery.toLowerCase();
     const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
       (k) =>
@@ -2488,43 +2488,37 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         k.includes(lowerSubject) ||
         lowerQueryCheck.includes(k)
     );
-    if (matchedCuratedKey) {
+    if (matchedCuratedKey && cycleOffset === 0) {
       const reels = VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey];
-      const shiftOffsets = [0, 18, 38, 62, 88, 118];
-      const baseCycleShift = (Math.max(0, cycleOffset) % 5) * 14;
-      const targetCount = Math.min(limit, 6);
-      for (let i = 0; i < targetCount; i++) {
-        const r = reels[(i + Math.max(0, cycleOffset)) % reels.length];
-        const extraShift = shiftOffsets[i % shiftOffsets.length] + baseCycleShift;
-        const tStart = r.trimStartSec + (i >= reels.length ? extraShift : baseCycleShift);
-        const tEnd = r.trimEndSec + (i >= reels.length ? extraShift : baseCycleShift);
+      const curatedSeedCap = Math.min(reels.length, 3);
+      for (let i = 0; i < curatedSeedCap; i++) {
+        const r = reels[i];
+        usedSourceUrls.add(r.rawMp4Url);
         candidates.push({
-          title:
-            i >= reels.length
-              ? `${r.title} (Góc cắt #${i + 1})`
-              : r.title,
+          title: r.title,
           videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(r.rawMp4Url)}#cut=${i + 1}`,
           thumbUrl: "",
           width: r.width,
           height: r.height,
           year: r.year,
-          trimStartSec: tStart,
-          trimEndSec: tEnd,
+          trimStartSec: r.trimStartSec,
+          trimEndSec: r.trimEndSec,
         });
       }
     }
 
     const searchPhrases = ACTOR_ICONIC_FILM_QUERIES[lowerSubject] || [subjectFullPhrase];
 
-    // 1. Search Wikimedia Commons video files if more candidates needed
-    for (const phrase of searchPhrases.slice(0, 2)) {
+    // 1. Search Wikimedia Commons video files (multi-phrase + offset-aware)
+    for (const phrase of searchPhrases.slice(0, 3)) {
       if (candidates.length >= limit) break;
       try {
+        const gsOffset = Math.max(0, cycleOffset) * 10;
         const commonsVideoUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
           `filetype:video ${phrase} -subtitled -credits -logo`
-        )}&gsrnamespace=6&gsrlimit=${Math.min(
-          20,
-          limit * 4 + 4
+        )}&gsrnamespace=6&gsroffset=${gsOffset}&gsrlimit=${Math.min(
+          25,
+          limit * 2 + 8
         )}&prop=imageinfo&iiprop=url|dimensions|mime|size&iiurlwidth=860&format=json`;
 
         const controller = new AbortController();
@@ -2602,43 +2596,59 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       }
     }
 
-    // 2. Search Internet Archive (archive.org) for real film clips, trailers, and television episodes of the actor
+    // 2. Deep Parallel Search on Internet Archive (archive.org) across actor name + iconic films + documentaries + paginated pages
     if (candidates.length < limit) {
       try {
+        const iaPage = Math.max(1, Math.floor(Math.max(0, cycleOffset) / 2) + 1);
         const filmTitleQueries = searchPhrases
-          .slice(1)
-          .map((p) => `title:("${p.replace(/\s+trailer$/i, "").trim()}") AND mediatype:(movies)`);
+          .slice(1, 4)
+          .map((p) => {
+            const cleanFilm = p.replace(/\s+trailer$/i, "").trim();
+            return `(title:("${cleanFilm}") OR subject:("${cleanFilm}")) AND mediatype:(movies)`;
+          });
         const iaQueries = [
+          `(title:("${subjectFullPhrase}") OR subject:("${subjectFullPhrase}")) AND mediatype:(movies)`,
           ...filmTitleQueries,
-          `title:("${subjectFullPhrase}") AND mediatype:(movies)`,
-          `("${subjectFullPhrase}") AND mediatype:(movies) AND -title:(Venom) AND -title:(Podcast) AND -title:(Archive)`,
+          `("${subjectFullPhrase}") AND (trailer OR interview OR documentary OR scene OR western OR film) AND mediatype:(movies) AND -title:(Podcast)`,
         ];
 
-        for (const iaQ of iaQueries) {
-          if (candidates.length >= limit) break;
-          const iaSearchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
-            iaQ
-          )}&fl[]=identifier,title,year,description,creator&sort[]=downloads+desc&rows=5&page=1&output=json`;
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 2800);
-          const iaRes = await fetch(iaSearchUrl, {
-            headers: { "User-Agent": BROWSER_USER_AGENT },
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
+        const iaSearchResponses = await Promise.allSettled(
+          iaQueries.slice(0, 4).map(async (iaQ) => {
+            const iaSearchUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+              iaQ
+            )}&fl[]=identifier,title,year,description,creator&sort[]=downloads+desc&rows=10&page=${iaPage}&output=json`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3400);
+            try {
+              const iaRes = await fetch(iaSearchUrl, {
+                headers: { "User-Agent": BROWSER_USER_AGENT },
+                signal: controller.signal,
+              });
+              if (!iaRes.ok) return [];
+              const iaData: any = await iaRes.json();
+              return Array.isArray(iaData?.response?.docs) ? iaData.response.docs : [];
+            } finally {
+              clearTimeout(timeout);
+            }
+          })
+        );
 
-          if (!iaRes.ok) continue;
-          const iaData: any = await iaRes.json();
-          const docs: any[] = iaData?.response?.docs || [];
-
-          for (const doc of docs.slice(0, 4)) {
-            if (candidates.length >= limit) break;
+        const seenIdentifiers = new Set<string>();
+        const matchingDocs: any[] = [];
+        for (const resItem of iaSearchResponses) {
+          if (resItem.status !== "fulfilled") continue;
+          for (const doc of resItem.value) {
             const identifier = String(doc?.identifier || "").trim();
             const docTitle = String(doc?.title || identifier).trim();
             const docDesc = String(doc?.description || "");
             const docCreator = String(doc?.creator || "");
-            if (!identifier || bannedVideoWords.test(`${identifier} ${docTitle}`)) continue;
-
+            if (
+              !identifier ||
+              seenIdentifiers.has(identifier) ||
+              bannedVideoWords.test(`${identifier} ${docTitle}`)
+            ) {
+              continue;
+            }
             const combinedMeta = `${docTitle} ${docDesc} ${docCreator} ${identifier}`;
             const matchesActor = doesTitleMatchSubjectIdentity(combinedMeta, subjectTokens, true);
             const matchesKnownFilm = searchPhrases.some((p) =>
@@ -2647,10 +2657,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 .includes(p.toLowerCase().replace(/\s+trailer$/i, "").trim())
             );
             if (!matchesActor && !matchesKnownFilm) continue;
+            seenIdentifiers.add(identifier);
+            matchingDocs.push(doc);
+          }
+        }
 
+        // Fetch metadata/files in parallel for top matching Archive.org items (fast!)
+        const metaResults = await Promise.allSettled(
+          matchingDocs.slice(0, 12).map(async (doc) => {
+            const identifier = String(doc.identifier).trim();
+            const docTitle = String(doc.title || identifier).trim();
+            const metaCtrl = new AbortController();
+            const metaTimer = setTimeout(() => metaCtrl.abort(), 3000);
             try {
-              const metaCtrl = new AbortController();
-              const metaTimer = setTimeout(() => metaCtrl.abort(), 2400);
               const metaRes = await fetch(
                 `https://archive.org/metadata/${encodeURIComponent(identifier)}/files`,
                 {
@@ -2658,12 +2677,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   signal: metaCtrl.signal,
                 }
               );
-              clearTimeout(metaTimer);
-              if (!metaRes.ok) continue;
+              if (!metaRes.ok) return null;
               const metaJson: any = await metaRes.json();
               const files: any[] = Array.isArray(metaJson?.result) ? metaJson.result : [];
 
-              // Require video length >= 35 seconds so cut windows (14s->22s, 28s->36s, 44s->52s) are always valid!
               const mp4Files = files
                 .filter((f) => {
                   const name = String(f?.name || "").toLowerCase();
@@ -2672,9 +2689,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   return (
                     (name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".ogv")) &&
                     !bannedVideoWords.test(name) &&
-                    len >= 35 &&
-                    size > 1_500_000 &&
-                    size < 850 * 1024 * 1024
+                    len >= 25 &&
+                    size > 1_000_000 &&
+                    size < 1200 * 1024 * 1024
                   );
                 })
                 .sort((a, b) => {
@@ -2692,26 +2709,37 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   return Number(a?.size || 0) - Number(b?.size || 0);
                 });
 
-              if (mp4Files.length === 0) continue;
+              if (mp4Files.length === 0) return null;
               const chosenFile = mp4Files[0];
               const rawMp4Url = `https://archive.org/download/${encodeURIComponent(
                 identifier
               )}/${encodeURIComponent(chosenFile.name).replace(/%2F/g, "/")}`;
-              if (usedSourceUrls.has(rawMp4Url)) continue;
-              usedSourceUrls.add(rawMp4Url);
-
-              candidates.push({
-                title: `${docTitle.slice(0, 42)}`,
-                videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(rawMp4Url)}`,
-                thumbUrl: "",
+              return {
+                rawMp4Url,
+                title: docTitle.slice(0, 56),
                 width: Number(chosenFile.width) || 720,
                 height: Number(chosenFile.height) || 540,
                 year: extractPhotoYear(`${doc.year || ""} ${docTitle}`),
-              });
-            } catch {
-              // Continue next doc
+              };
+            } finally {
+              clearTimeout(metaTimer);
             }
-          }
+          })
+        );
+
+        for (const mr of metaResults) {
+          if (candidates.length >= limit) break;
+          if (mr.status !== "fulfilled" || !mr.value) continue;
+          if (usedSourceUrls.has(mr.value.rawMp4Url)) continue;
+          usedSourceUrls.add(mr.value.rawMp4Url);
+          candidates.push({
+            title: mr.value.title,
+            videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(mr.value.rawMp4Url)}`,
+            thumbUrl: "",
+            width: mr.value.width,
+            height: mr.value.height,
+            year: mr.value.year,
+          });
         }
       } catch {
         // Ignore IA search timeout
@@ -2726,7 +2754,27 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       { start: 95, end: 105, tag: "Cắt cảnh #4 (01:35–01:45)" },
       { start: 120, end: 130, tag: "Cắt cảnh #5 (02:00–02:10)" },
       { start: 150, end: 160, tag: "Cắt cảnh #6 (02:30–02:40)" },
+      { start: 185, end: 195, tag: "Cắt cảnh #7 (03:05–03:15)" },
+      { start: 225, end: 235, tag: "Cắt cảnh #8 (03:45–03:55)" },
     ];
+
+    // If cycleOffset > 0 still didn't find enough new Archive items, add curated varied offsets as backup
+    if (candidates.length === 0 && matchedCuratedKey) {
+      const reels = VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey];
+      const baseShift = (Math.max(0, cycleOffset) % 6) * 24;
+      reels.forEach((r, idx) => {
+        candidates.push({
+          title: `${r.title} (Mốc #${cycleOffset + 1})`,
+          videoUrl: `/api/archival/video-stream?url=${encodeURIComponent(r.rawMp4Url)}#cut=${idx + 1}`,
+          thumbUrl: "",
+          width: r.width,
+          height: r.height,
+          year: r.year,
+          trimStartSec: r.trimStartSec + baseShift,
+          trimEndSec: r.trimEndSec + baseShift,
+        });
+      });
+    }
 
     if (candidates.length === 0) {
       const fallbackReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"] || [];
@@ -2747,15 +2795,20 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
     const expandedCandidates: typeof candidates = [];
     if (candidates.length > 0) {
-      for (let i = 0; i < Math.min(limit, 6); i++) {
+      const targetTotal = Math.min(limit, 18);
+      for (let i = 0; i < targetTotal; i++) {
         const base = candidates[i % candidates.length];
-        const win = cutWindows[i % cutWindows.length];
-        const tStart = base.trimStartSec ?? win.start;
-        const tEnd = base.trimEndSec ?? win.end;
+        const win = cutWindows[(i + Math.max(0, cycleOffset)) % cutWindows.length];
+        const cycleShift = i >= candidates.length ? Math.floor(i / candidates.length) * 28 : 0;
+        const tStart = (base.trimStartSec ?? win.start) + cycleShift;
+        const tEnd = (base.trimEndSec ?? win.end) + cycleShift;
         const baseCleanUrl = base.videoUrl.replace(/#.*$/, "");
         expandedCandidates.push({
           ...base,
-          title: base.title,
+          title:
+            i >= candidates.length
+              ? `${base.title} (Góc cắt #${i + 1})`
+              : base.title,
           videoUrl: `${baseCleanUrl}#cut=${i + 1}&t=${tStart}`,
           trimStartSec: tStart,
           trimEndSec: tEnd,
@@ -3040,6 +3093,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         characterName = "Will Sampson",
         sceneDurationSec = 8,
         limit = 10,
+        videoLimit = 14,
         cycleOffset = 0,
       } = req.body || {};
 
@@ -3068,10 +3122,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const anchorForSearch =
         rawSearch.toLowerCase().includes(cleanChar.toLowerCase()) ? cleanChar : rawSearch;
 
+      const requestedVideoCount = Math.max(8, Math.min(18, Number(videoLimit) || 14));
+
       const [videos, exactPhotos, contextualPhotos] = await Promise.all([
         searchRealArchivalVideos(
           rawSearch,
-          6,
+          requestedVideoCount,
           usedUrls,
           cleanChar,
           usedTitles,
@@ -3079,7 +3135,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ),
         searchRealArchivalPhotos(
           rawSearch,
-          Math.max(6, Number(limit) || 10),
+          Math.max(8, Number(limit) || 12),
           usedUrls,
           anchorForSearch,
           usedTitles
@@ -3651,10 +3707,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }
   }
 
-  // 2h. Aggregated Search: YouTube Shorts + TikTok + Instagram Reels + All-Era YouTube Videos & Film Clips
+  // 2h. Deep Aggregated External Search: YouTube Shorts + TikTok + Instagram Reels + YouTube Movie Clips/Interviews + Archive.org MP4 + Dailymotion
   app.post("/api/youtube/search", async (req, res) => {
     try {
-      const { query = "Will Sampson", characterName = "Will Sampson", limit = 32 } = req.body || {};
+      const {
+        query = "Will Sampson",
+        characterName = "Will Sampson",
+        limit = 60,
+        cycleOffset = 0,
+        searchDepth = "all",
+      } = req.body || {};
+      const pageIdx = Math.max(0, Number(cycleOffset) || 0);
+      const depthMode = String(searchDepth || "all").toLowerCase();
+
       const propChar = String(characterName || "Will Sampson")
         .replace(/[—–-].*$/, "")
         .trim();
@@ -3670,7 +3735,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .replace(/https?:\/\/[^\s]+/gi, "")
         .replace(/\b(18|19|20)\d{2}s?\b/g, "")
         .replace(
-          /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|circa|early|late|young|birthplace)\b/gi,
+          /\b(shorts|short|tiktok|titock|instagram|ingram|insta|reels|reel|youtube|video|movie|clips|clip|scene|scenes|interview|tribute|trailer|actor|portrait|circa|early|late|young|birthplace|documentary|rare|footage|behind|the|quotes|life|biography)\b/gi,
           ""
         )
         .replace(/\s+/g, " ")
@@ -3709,23 +3774,78 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const pastedInstagramUrl = instagramUrlMatch ? instagramUrlMatch[1] : null;
       const pastedInstagramCode = instagramUrlMatch ? instagramUrlMatch[2] : null;
 
-      // Run 4 parallel fast InnerTube queries + Yahoo TikTok/Instagram discovery + Dailymotion film search
+      // Build varied deep YouTube InnerTube queries based on cycleOffset + searchDepth
+      const knownFilmList = ACTOR_ICONIC_FILM_QUERIES[cleanChar.toLowerCase()] || [cleanChar];
+      const rotatingFilm =
+        knownFilmList[(pageIdx % Math.max(1, knownFilmList.length)) || 0] || cleanChar;
+
+      const deepMovieVariants = [
+        `${cleanChar} iconic movie scenes clips`,
+        `${cleanChar} best action dramatic scenes 4k`,
+        `${rotatingFilm} best scenes`,
+        `${cleanChar} classic film trailer scenes`,
+      ];
+      const deepInterviewVariants = [
+        `${cleanChar} rare interview footage documentary`,
+        `${cleanChar} biography life story early career`,
+        `${cleanChar} behind the scenes making of`,
+        `${cleanChar} television appearance rare video`,
+      ];
+      const deepShortsVariants = [
+        `${cleanChar} shorts`,
+        `${cleanChar} iconic edit #shorts`,
+        `${cleanChar} legendary moments #shorts`,
+        `${cleanChar} tribute #shorts`,
+      ];
+
+      const primaryMovieQ =
+        broadBaseQuery.toLowerCase().includes(cleanChar.toLowerCase()) &&
+        broadBaseQuery.toLowerCase() !== cleanChar.toLowerCase() &&
+        pageIdx === 0
+          ? broadBaseQuery
+          : deepMovieVariants[pageIdx % deepMovieVariants.length];
+
+      const secondaryMovieQ =
+        depthMode === "rare" || depthMode === "interview"
+          ? `${cleanChar} young early photos rare footage`
+          : deepMovieVariants[(pageIdx + 1) % deepMovieVariants.length];
+
+      const interviewQ =
+        depthMode === "rare"
+          ? `${cleanChar} behind the scenes rare interview`
+          : deepInterviewVariants[pageIdx % deepInterviewVariants.length];
+
+      const shortsQ = deepShortsVariants[pageIdx % deepShortsVariants.length];
+
+      // Run 7 parallel fast InnerTube queries + Yahoo TikTok/Instagram discovery + Dailymotion deep search + Internet Archive deep MP4 search
       const [
         ytShortsPage,
         ytTikTokPage,
         ytInstagramPage,
         ytMoviesPage,
+        ytDeepMoviesPage,
+        ytInterviewDocPage,
+        ytFilmSpecificPage,
         yahooSocialLinks,
         dmResults,
+        archivalDeepVideos,
       ] = await Promise.all([
-        fetchYouTubeSearchDataFast(`${cleanChar} shorts`, cleanChar),
-        fetchYouTubeSearchDataFast(`${cleanChar} tiktok edit #shorts`, cleanChar),
-        fetchYouTubeSearchDataFast(`${cleanChar} instagram reels edit #shorts`, cleanChar),
+        fetchYouTubeSearchDataFast(shortsQ, cleanChar),
         fetchYouTubeSearchDataFast(
-          broadBaseQuery.toLowerCase().includes(cleanChar.toLowerCase()) &&
-            broadBaseQuery.toLowerCase() !== cleanChar.toLowerCase()
-            ? broadBaseQuery
-            : `${cleanChar} movie clips interview tribute`,
+          pageIdx % 2 === 0 ? `${cleanChar} tiktok edit #shorts` : `${cleanChar} tiktok viral clip`,
+          cleanChar
+        ),
+        fetchYouTubeSearchDataFast(
+          pageIdx % 2 === 0 ? `${cleanChar} instagram reels edit` : `${cleanChar} reels tribute`,
+          cleanChar
+        ),
+        fetchYouTubeSearchDataFast(primaryMovieQ, cleanChar),
+        fetchYouTubeSearchDataFast(secondaryMovieQ, cleanChar),
+        fetchYouTubeSearchDataFast(interviewQ, cleanChar),
+        fetchYouTubeSearchDataFast(
+          depthMode === "rare"
+            ? `${cleanChar} rare archive footage`
+            : `${rotatingFilm.replace(/\s+trailer$/i, "")} movie clip`,
           cleanChar
         ),
 
@@ -3751,7 +3871,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             });
           }
 
-          if (cleanChar.toLowerCase().includes("will sampson")) {
+          if (cleanChar.toLowerCase().includes("will sampson") && pageIdx === 0) {
             for (const vtt of [
               {
                 id: "7667774148445261086",
@@ -3771,16 +3891,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             }
           }
 
+          const yahooStart = pageIdx * 10 + 1;
           await Promise.all([
             (async () => {
               try {
                 const yRes = await fetch(
                   `https://search.yahoo.com/search?p=${encodeURIComponent(
                     `${cleanChar} site:tiktok.com`
-                  )}`,
+                  )}&b=${yahooStart}`,
                   {
                     headers: { "User-Agent": BROWSER_USER_AGENT },
-                    signal: AbortSignal.timeout(3000),
+                    signal: AbortSignal.timeout(3200),
                   }
                 );
                 if (yRes.ok) {
@@ -3815,11 +3936,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               try {
                 const yRes = await fetch(
                   `https://search.yahoo.com/search?p=${encodeURIComponent(
-                    `${cleanChar} instagram reel`
-                  )}`,
+                    `${cleanChar} site:instagram.com/reel`
+                  )}&b=${yahooStart}`,
                   {
                     headers: { "User-Agent": BROWSER_USER_AGENT },
-                    signal: AbortSignal.timeout(3000),
+                    signal: AbortSignal.timeout(3200),
                   }
                 );
                 if (yRes.ok) {
@@ -3850,7 +3971,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           return { ttUrls, igUrls };
         })(),
 
-        // Search Dailymotion Film Clips across all eras of the actor
+        // Search Dailymotion Film Clips deeply across multiple queries & pagination
         (async () => {
           const list: Array<{
             dmId: string;
@@ -3860,24 +3981,31 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             channel: string;
           }> = [];
           try {
-            const dmQueries = [
-              broadBaseQuery,
-              ...(ACTOR_ICONIC_FILM_QUERIES[cleanChar.toLowerCase()] || [cleanChar]).slice(0, 2),
-            ];
+            const dmQueries = Array.from(
+              new Set([
+                broadBaseQuery,
+                cleanChar,
+                ...knownFilmList.slice(0, 3),
+              ])
+            );
             const seenDm = new Set<string>();
-            for (const q of dmQueries.slice(0, 2)) {
-              const dmRes = await fetch(
-                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                  q.replace(/\s+trailer$/i, "")
-                )}&limit=8&fields=id,title,thumbnail_720_url,duration,owner.screenname`,
-                {
-                  headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3200),
-                }
-              );
-              if (!dmRes.ok) continue;
-              const dmData: any = await dmRes.json();
-              for (const item of dmData?.list || []) {
+            const dmPage = pageIdx + 1;
+            const dmResponses = await Promise.allSettled(
+              dmQueries.slice(0, 3).map((q) =>
+                fetch(
+                  `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                    q.replace(/\s+trailer$/i, "")
+                  )}&limit=15&page=${dmPage}&fields=id,title,thumbnail_720_url,duration,owner.screenname`,
+                  {
+                    headers: { "User-Agent": BROWSER_USER_AGENT },
+                    signal: AbortSignal.timeout(3400),
+                  }
+                ).then((r) => (r.ok ? r.json() : null))
+              )
+            );
+            for (const dmRes of dmResponses) {
+              if (dmRes.status !== "fulfilled" || !dmRes.value) continue;
+              for (const item of dmRes.value?.list || []) {
                 if (!item?.id || seenDm.has(item.id) || (item.duration || 0) < 12) continue;
                 seenDm.add(item.id);
                 list.push({
@@ -3894,47 +4022,59 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           }
           return list;
         })(),
+
+        // Deep Internet Archive + Wikimedia Commons real MP4 discovery in parallel
+        searchRealArchivalVideos(
+          cleanChar,
+          16,
+          new Set<string>(),
+          cleanChar,
+          new Set<string>(),
+          pageIdx
+        ).catch(() => []),
       ]);
 
       const lowerChar = `${rawQuery} ${cleanChar}`.toLowerCase();
       const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find(
         (k) => lowerChar.includes(k) || cleanChar.toLowerCase().includes(k)
       );
-      let curatedReels = matchedCuratedKey
+      const curatedBase = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : [];
 
-      if (curatedReels.length === 0) {
-        try {
-          const dynVideos = await searchRealArchivalVideos(
-            cleanChar,
-            6,
-            new Set<string>(),
-            cleanChar,
-            new Set<string>(),
-            0
-          );
-          const dynReels = dynVideos
-            .map((dv) => {
-              const uMatch = dv.videoUrl.match(/[?&]url=([^&#]+)/);
-              const rawMp4Url = uMatch ? decodeURIComponent(uMatch[1]) : "";
-              return {
-                title: dv.title,
-                rawMp4Url,
-                year: dv.year || 1970,
-                trimStartSec: dv.trimStartSec || 24,
-                trimEndSec: dv.trimEndSec || 33,
-                width: dv.width || 640,
-                height: dv.height || 360,
-              };
-            })
-            .filter((r) => Boolean(r.rawMp4Url));
-          if (dynReels.length > 0) {
-            curatedReels = dynReels;
-          }
-        } catch {
-          // ignore
-        }
+      const archivalPool = archivalDeepVideos
+        .map((dv) => {
+          const uMatch = dv.videoUrl.match(/[?&]url=([^&#]+)/);
+          const rawMp4Url = uMatch ? decodeURIComponent(uMatch[1]) : "";
+          return {
+            title: dv.title,
+            rawMp4Url,
+            year: dv.year || 1970,
+            trimStartSec: dv.trimStartSec || 22,
+            trimEndSec: dv.trimEndSec || 31,
+            width: dv.width || 720,
+            height: dv.height || 540,
+            thumbnailUrl: dv.dataUrl || "",
+          };
+        })
+        .filter((r) => Boolean(r.rawMp4Url));
+
+      // Combine curated reels + live discovered Archive.org MP4 streams (deduped by URL)
+      const seenStreamUrls = new Set<string>();
+      let curatedReels: Array<{
+        title: string;
+        rawMp4Url: string;
+        year: number;
+        trimStartSec: number;
+        trimEndSec: number;
+        width: number;
+        height: number;
+        thumbnailUrl?: string;
+      }> = [];
+      for (const r of [...archivalPool, ...curatedBase]) {
+        if (!r.rawMp4Url || seenStreamUrls.has(r.rawMp4Url)) continue;
+        seenStreamUrls.add(r.rawMp4Url);
+        curatedReels.push(r);
       }
       if (curatedReels.length === 0) {
         curatedReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
@@ -3952,10 +4092,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
             (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
             (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade")) ||
-            (lowerTitle.includes("fist of fury") && r.title.toLowerCase().includes("fist of fury"))
+            (lowerTitle.includes("fist of fury") && r.title.toLowerCase().includes("fist of fury")) ||
+            (lowerTitle.includes("fistful") && r.title.toLowerCase().includes("fistful"))
         );
         if (!matchedReel) {
-          matchedReel = curatedReels[itemIdx % curatedReels.length];
+          matchedReel = curatedReels[(itemIdx + pageIdx * 3) % curatedReels.length];
         }
         const pairedDmId =
           dmResults.length > 0 ? dmResults[itemIdx % dmResults.length].dmId : "";
@@ -3968,13 +4109,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       ): number => {
         const base = reel?.trimStartSec ?? 22;
         const rawUrl = (reel?.rawMp4Url || "").toLowerCase();
-        // Bullitt trailer is 164s long, Fist of Fury clip is ~120s long; keep startSec well within their duration
         if (rawUrl.includes("bullitt") || rawUrl.includes("7mzzuljj6vu")) {
           const shortOffsets = [16, 32, 48, 66, 84, 102, 118, 134];
-          return shortOffsets[slotIdx % shortOffsets.length];
+          return shortOffsets[(slotIdx + pageIdx * 2) % shortOffsets.length];
         }
-        const offsets = [0, 22, 46, 72, 98, 126, 158, 192, 230, 270];
-        return Math.max(12, base + offsets[slotIdx % offsets.length]);
+        const offsets = [0, 22, 46, 72, 98, 126, 158, 192, 230, 270, 315, 360];
+        return Math.max(12, base + offsets[(slotIdx + pageIdx * 3) % offsets.length]);
       };
 
       const seenYtIds = new Set<string>();
@@ -3982,6 +4122,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const tiktokItems: any[] = [];
       const instagramItems: any[] = [];
       const youtubeLongItems: any[] = [];
+      const archiveMp4Items: any[] = [];
 
       // Handle direct pasted URLs at the very top of their respective platform lists
       if (pastedYtId) {
@@ -4032,7 +4173,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       // Helper to collect candidates from a specific InnerTube page
       const collectFromPage = (
         page: Awaited<ReturnType<typeof fetchYouTubeSearchDataFast>>,
-        maxShortDur = 95
+        maxShortDur = 110
       ) => {
         const list: Array<{
           youtubeId: string;
@@ -4066,7 +4207,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               youtubeId: v.youtubeId,
               title: v.title,
               channel: v.channel || "Shorts",
-              durationSec: Math.min(60, v.durationSec || 45),
+              durationSec: Math.min(90, v.durationSec || 45),
               durationLabel: v.durationLabel || "0:45",
               viewsLabel: v.viewsLabel || "Video Ngắn",
               thumbnailUrl: v.thumbnailUrl,
@@ -4076,27 +4217,30 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return list;
       };
 
-      const rawShortsCandidates = collectFromPage(ytShortsPage, 65);
+      const rawShortsCandidates = [
+        ...collectFromPage(ytShortsPage, 75),
+        ...collectFromPage(ytMoviesPage, 70),
+      ];
       const rawTikTokCandidates = collectFromPage(ytTikTokPage, 120);
       const rawInstagramCandidates = collectFromPage(ytInstagramPage, 120);
 
-      // If any bucket has fewer than 5 items, redistribute from the richest short bucket so all 3 short platforms (YouTube Shorts, TikTok, Instagram Reels) have plenty of real playable items!
+      // Expand per-platform caps up to 16 each for rich deep search results
       const overflowPool = [
-        ...rawShortsCandidates.slice(6),
-        ...rawTikTokCandidates.slice(6),
-        ...rawInstagramCandidates.slice(6),
+        ...rawShortsCandidates.slice(12),
+        ...rawTikTokCandidates.slice(12),
+        ...rawInstagramCandidates.slice(12),
       ];
-      const finalShortsRaw = rawShortsCandidates.slice(0, 8);
-      const finalTikTokRaw = rawTikTokCandidates.slice(0, 8);
-      const finalInstagramRaw = rawInstagramCandidates.slice(0, 8);
+      const finalShortsRaw = rawShortsCandidates.slice(0, 16);
+      const finalTikTokRaw = rawTikTokCandidates.slice(0, 16);
+      const finalInstagramRaw = rawInstagramCandidates.slice(0, 16);
 
-      while (finalTikTokRaw.length < 5 && overflowPool.length > 0) {
+      while (finalTikTokRaw.length < 8 && overflowPool.length > 0) {
         finalTikTokRaw.push(overflowPool.shift()!);
       }
-      while (finalInstagramRaw.length < 5 && overflowPool.length > 0) {
+      while (finalInstagramRaw.length < 8 && overflowPool.length > 0) {
         finalInstagramRaw.push(overflowPool.shift()!);
       }
-      while (finalShortsRaw.length < 5 && overflowPool.length > 0) {
+      while (finalShortsRaw.length < 8 && overflowPool.length > 0) {
         finalShortsRaw.push(overflowPool.shift()!);
       }
 
@@ -4105,7 +4249,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
         const startSec = computeReelStartSec(matchedReel, idx);
         shortsItems.push({
-          id: `yt-short-${s.youtubeId}-${idx}`,
+          id: `yt-short-${s.youtubeId}-p${pageIdx}-${idx}`,
           youtubeId: s.youtubeId,
           tiktokUrl: "",
           instagramUrl: "",
@@ -4125,7 +4269,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       });
 
       // 2. Format TikTok items (combining Yahoo-discovered real TikTok URLs + TikTok InnerTube video streams)
-      const maxTtCount = Math.max(finalTikTokRaw.length, yahooSocialLinks.ttUrls.length);
+      const maxTtCount = Math.min(16, Math.max(finalTikTokRaw.length, yahooSocialLinks.ttUrls.length));
       for (let idx = 0; idx < maxTtCount; idx++) {
         const ytCand = finalTikTokRaw[idx % Math.max(1, finalTikTokRaw.length)];
         const ttLink = yahooSocialLinks.ttUrls[idx];
@@ -4135,7 +4279,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         const startSec = computeReelStartSec(matchedReel, idx + 2);
         const cleanTitle = /tiktok/i.test(titleText) ? titleText : `${titleText} #TikTok`;
         tiktokItems.push({
-          id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-${idx}`,
+          id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-p${pageIdx}-${idx}`,
           youtubeId: ytCand?.youtubeId || "",
           tiktokId: ttLink?.id || "",
           tiktokUrl: ttLink?.url || "",
@@ -4160,8 +4304,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         });
       }
 
-      // 3. Format Instagram Reels items (combining Yahoo-discovered real Instagram Reel URLs + Instagram Reels InnerTube streams)
-      const maxIgCount = Math.max(finalInstagramRaw.length, yahooSocialLinks.igUrls.length);
+      // 3. Format Instagram Reels items
+      const maxIgCount = Math.min(16, Math.max(finalInstagramRaw.length, yahooSocialLinks.igUrls.length));
       for (let idx = 0; idx < maxIgCount; idx++) {
         const ytCand = finalInstagramRaw[idx % Math.max(1, finalInstagramRaw.length)];
         const igLink = yahooSocialLinks.igUrls[idx];
@@ -4174,7 +4318,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           ? titleText
           : `${titleText} #InstagramReels`;
         instagramItems.push({
-          id: `ig-reel-${igLink?.code || ytCand?.youtubeId || idx}-${idx}`,
+          id: `ig-reel-${igLink?.code || ytCand?.youtubeId || idx}-p${pageIdx}-${idx}`,
           youtubeId: ytCand?.youtubeId || "",
           tiktokUrl: "",
           instagramId: igLink?.code || "",
@@ -4201,8 +4345,16 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         });
       }
 
-      // 4. Collect full-length YouTube Movie Clips & Interviews across all 4 pages
-      for (const page of [ytMoviesPage, ytShortsPage, ytTikTokPage, ytInstagramPage]) {
+      // 4. Collect deep YouTube Movie Clips, Interviews, Documentaries, and Rare Footage across ALL 7 InnerTube pages
+      for (const page of [
+        ytMoviesPage,
+        ytDeepMoviesPage,
+        ytInterviewDocPage,
+        ytFilmSpecificPage,
+        ytShortsPage,
+        ytTikTokPage,
+        ytInstagramPage,
+      ]) {
         for (const v of page.videos) {
           if (seenYtIds.has(v.youtubeId)) continue;
           if (!isVideoRelevantToSubject(v.title, cleanChar, rawQuery)) continue;
@@ -4212,8 +4364,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             youtubeLongItems.length
           );
           const suggestedStart = computeReelStartSec(matchedReel, youtubeLongItems.length + 1);
+          const isInterviewOrDoc = /\b(interview|documentary|biography|rare|behind\s+the\s+scenes|story|life|quotes)\b/i.test(
+            v.title
+          );
           youtubeLongItems.push({
-            id: `yt-vid-${v.youtubeId}-${youtubeLongItems.length}`,
+            id: `yt-vid-${v.youtubeId}-p${pageIdx}-${youtubeLongItems.length}`,
             youtubeId: v.youtubeId,
             tiktokUrl: "",
             instagramUrl: "",
@@ -4228,29 +4383,54 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             youtubeUrl: `https://www.youtube.com/watch?v=${v.youtubeId}`,
             suggestedTrimStartSec: suggestedStart,
             sourcePlatform: "youtube" as const,
-            platformBadge: "🎬 YouTube",
+            platformBadge: isInterviewOrDoc ? "🎙️ Phỏng Vấn / Tư Liệu" : "🎬 YouTube",
           });
         }
       }
 
-      // 5. Also include Dailymotion Film Clips as directly cuttable items
+      // 5. Include Real Internet Archive & Wikimedia MP4 films directly as external video cards
+      archivalPool.forEach((arch, idx) => {
+        archiveMp4Items.push({
+          id: `arch-mp4-${pageIdx}-${idx}-${Buffer.from(arch.rawMp4Url).toString("base64").slice(-10)}`,
+          youtubeId: "",
+          tiktokUrl: "",
+          instagramUrl: "",
+          dmId: dmResults[idx % Math.max(1, dmResults.length)]?.dmId || "",
+          archiveMp4Url: arch.rawMp4Url,
+          title: arch.year ? `${arch.title} (${arch.year})` : arch.title,
+          channel: "Internet Archive · MP4 Gốc",
+          durationSec: 240,
+          durationLabel: "MP4 Gốc",
+          viewsLabel: "Kho Lưu Trữ Thế Giới",
+          thumbnailUrl:
+            arch.thumbnailUrl ||
+            youtubeLongItems[idx % Math.max(1, youtubeLongItems.length)]?.thumbnailUrl ||
+            "",
+          youtubeUrl: arch.rawMp4Url,
+          suggestedTrimStartSec: arch.trimStartSec || 24,
+          sourcePlatform: "archive" as const,
+          platformBadge: "🎞️ Archive.org MP4",
+        });
+      });
+
+      // 6. Include Dailymotion Film Clips as directly cuttable items (supports HLS .m3u8 FFmpeg cut + fallback MP4 stream)
       dmResults.forEach((dm, idx) => {
         const isShortDm = dm.durationSec <= 75;
-        const matchedReel = curatedReels[idx % curatedReels.length];
+        const matchedReel = curatedReels[(idx + pageIdx) % curatedReels.length];
         const suggestedStart = computeReelStartSec(matchedReel, idx + 3);
         const mins = Math.floor(dm.durationSec / 60);
         const secs = dm.durationSec % 60;
         const fallbackYtId =
           finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.youtubeId || "";
         youtubeLongItems.push({
-          id: `dm-vid-${dm.dmId}-${idx}`,
+          id: `dm-vid-${dm.dmId}-p${pageIdx}-${idx}`,
           youtubeId: fallbackYtId,
           tiktokUrl: "",
           instagramUrl: "",
           dmId: dm.dmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: dm.title,
-          channel: `${dm.channel} · Kho Phim`,
+          channel: `${dm.channel} · Dailymotion`,
           durationSec: Math.max(180, dm.durationSec || 180),
           durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
           viewsLabel: isShortDm ? "Video Ngắn" : "Cảnh Phim",
@@ -4265,42 +4445,61 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         });
       });
 
-      // Order & interleave results: if user searched specifically for TikTok or Instagram, put those first; otherwise interleave YouTube Shorts + TikTok + Instagram Reels + YouTube Videos evenly!
+      // Order & interleave results according to searchDepth or platform intent
       const combinedVideos: any[] = [];
       const maxLen = Math.max(
         shortsItems.length,
         tiktokItems.length,
         instagramItems.length,
-        youtubeLongItems.length
+        youtubeLongItems.length,
+        archiveMp4Items.length
       );
 
       for (let i = 0; i < maxLen; i++) {
-        if (wantsTikTokFirst) {
+        if (depthMode === "archive") {
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+        } else if (depthMode === "cinema" || depthMode === "interview" || depthMode === "rare") {
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+        } else if (wantsTikTokFirst) {
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
         } else if (wantsInstagramFirst) {
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-        } else if (wantsShortsFirst) {
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
+        } else if (wantsShortsFirst || depthMode === "social") {
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
         } else {
+          // Balanced deep interleaving across all external sources
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
         }
       }
 
-      const maxResults = Math.max(20, Math.min(40, Number(limit) || 32));
+      const maxResults = Math.max(30, Math.min(90, Number(limit) || 60));
       res.json({
         searchedQuery: rawQuery,
+        page: pageIdx,
+        totalFound: combinedVideos.length,
+        hasMore: true,
         videos: combinedVideos.slice(0, maxResults),
       });
     } catch (error: any) {
