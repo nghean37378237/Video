@@ -622,7 +622,7 @@ export function loadSavedAudioPreferences(): SavedAudioPreferences {
     bgMusicVolume: 0.25,
     storyTopic: 'Clint Eastwood',
     storyMode: 'biography',
-    sceneCount: 8,
+    sceneCount: 16,
     updatedAtLabel: formatNowTime(),
     history: [
       {

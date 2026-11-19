@@ -160,7 +160,7 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   const [storyLang, setStoryLang] = useState<'vi' | 'en'>(
     settings.voiceLanguage || initialSaved.voiceLanguage || 'en'
   );
-  const [sceneCount, setSceneCount] = useState<number>(initialSaved.sceneCount || 8);
+  const [sceneCount, setSceneCount] = useState<number>(initialSaved.sceneCount || 16);
   const [customSummary, setCustomSummary] = useState<string>(initialSaved.customSummary || '');
   const [customImages, setCustomImages] = useState<CustomAttachedImage[]>([]);
   const [isSplittingCollage, setIsSplittingCollage] = useState<boolean>(false);

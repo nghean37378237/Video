@@ -1610,7 +1610,7 @@ export default function App() {
         mediaUrl: chosenMediaUrl,
         mediaKind: chosenMediaKind,
         videoTrimStartSec: 0,
-        durationSec: Math.max(5, Math.min(15, Math.ceil(Number(raw.durationSec) || 7))),
+        durationSec: sType === 'outro' ? 4 : 10,
         narrationText: primaryNarration,
         translationText:
           lang === 'vi'
@@ -2170,28 +2170,23 @@ export default function App() {
 
       if (rawAudioUrl) {
         try {
-          const { masteredAudioUrl, durationSec } = await masterAudioToConsistentStudioWav(
+          const { masteredAudioUrl } = await masterAudioToConsistentStudioWav(
             rawAudioUrl,
             voiceName,
             engineForScene
           );
-          const existingIntDur = Math.max(5, Math.round(sc.durationSec || 5));
-          const neededIntDur = Math.max(5, Math.ceil(durationSec + 0.15));
           updated[i] = {
             ...sc,
             voiceoverUrl: masteredAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(existingIntDur, neededIntDur),
+            durationSec: 10,
           };
         } catch {
-          const dur = await getMediaDuration(rawAudioUrl, 'audio');
-          const existingIntDur = Math.max(5, Math.round(sc.durationSec || 5));
-          const neededIntDur = Math.max(5, Math.ceil(dur + 0.15));
           updated[i] = {
             ...sc,
             voiceoverUrl: rawAudioUrl,
             voiceEngineUsed: `${voiceName}:${lang}:${engineForScene}`,
-            durationSec: Math.max(existingIntDur, neededIntDur),
+            durationSec: 10,
           };
         }
         setScenes([...updated]);
@@ -2533,7 +2528,7 @@ export default function App() {
         motionEffect: motions[idx % motions.length],
         colorFilter: idx % 2 === 0 ? 'bw-vintage' : 'color-warm',
         frameStyle: 'full-bleed',
-        durationSec: 7,
+        durationSec: 10,
       };
     });
   };
@@ -2677,11 +2672,12 @@ export default function App() {
         if (
           storyData?.storyMode === 'film-cast' ||
           storyData?.storyMode === 'biography' ||
-          storyData?.storyMode === 'custom-story'
+          storyData?.storyMode === 'custom-story' ||
+          storyData?.storyMode === 'birthday-tribute'
         ) {
           resolvedModeFromServer = storyData.storyMode;
         }
-        if (!effectiveTopic && typeof storyData?.inferredSubject === 'string' && storyData.inferredSubject.trim()) {
+        if (typeof storyData?.inferredSubject === 'string' && storyData.inferredSubject.trim()) {
           effectiveTopic = storyData.inferredSubject.trim();
         }
         if (storyRes.ok && Array.isArray(storyData?.scenes) && storyData.scenes.length > 0) {

@@ -1769,17 +1769,35 @@ function registerRoutes() {
     return scenes;
   }
 
-  function normalizeSceneDurations(scenes: any[], targetTotalSec = 160): any[] {
+  function normalizeSceneDurations(scenes: any[]): any[] {
     if (!Array.isArray(scenes) || scenes.length === 0) return scenes;
-    const nonOutro = scenes.filter((s) => s.sceneType !== "outro");
-    const outro = scenes.find((s) => s.sceneType === "outro");
-    const targetNonOutroSec = Math.max(130, targetTotalSec - 4);
-    const perScene = Math.max(10, Math.min(18, Math.round(targetNonOutroSec / Math.max(1, nonOutro.length))));
-    const normalizedNonOutro = nonOutro.map((s) => ({ ...s, durationSec: perScene }));
-    if (outro) {
-      return [...normalizedNonOutro, { ...outro, durationSec: 4 }];
-    }
-    return normalizedNonOutro;
+    return scenes.map((s) => ({
+      ...s,
+      durationSec: s.sceneType === "outro" ? 4 : 10,
+    }));
+  }
+
+  function extractBirthdaySubjectName(rawTopic: string): {
+    name: string;
+    birthDate?: string;
+    ageText?: string;
+  } {
+    const raw = String(rawTopic || "").trim();
+    const ageMatch = raw.match(/\b(\d{1,3}(?:st|nd|rd|th))\b/i);
+    const bornMatch = raw.match(/\(?\s*born\s+([^)]+?)\s*\)?$/i);
+    let cleaned = raw
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, " ")
+      .replace(/\(?\s*born\s+[^)]*\)?/gi, " ")
+      .replace(/^(happy\s*(?:\d+(?:st|nd|rd|th)\s*)?birthday(?:\s*to)?|chúc\s*mừng\s*sinh\s*nhật|sinh\s*nhật)\s*/i, "")
+      .replace(/[!.,;:]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned || cleaned.length < 2) cleaned = "Owen Wilson";
+    return {
+      name: cleaned,
+      birthDate: bornMatch?.[1]?.trim(),
+      ageText: ageMatch?.[1],
+    };
   }
 
   function buildFallbackBirthdayTributeScenes(
@@ -1790,49 +1808,119 @@ function registerRoutes() {
     channelTitle: string,
     channelSubtitle: string
   ) {
-    const cleanSubject = topic.replace(/^(happy|sinh nhật|birthday)\s*/i, "").trim() || "Whoopi Goldberg";
+    const info = extractBirthdaySubjectName(topic);
+    const cleanSubject = info.name;
     const narrativeCount = Math.max(3, targetSceneCount - 1);
     const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
 
-    const lifeStages = [
-      `Reflecting on the humble beginnings and early childhood years of ${cleanSubject}, before lighting up stages and silver screens worldwide with unmatched comedic brilliance and dramatic mastery.`,
-      `Stepping into youth and early career days, ${cleanSubject} pursued an unrelenting passion for performing arts, captivating early audiences with raw natural talent and charismatic presence.`,
-      `The defining breakthrough moment arrived as ${cleanSubject} secured iconic, career-defining roles that captivated global audiences, earning critical acclaim and prestigious awards.`,
-      `Throughout decades of cinematic excellence, ${cleanSubject} continually pushed artistic boundaries, starring in timeless masterpieces and beloved box-office hits.`,
-      `Today, as we celebrate this magnificent birthday milestone, ${cleanSubject} stands as an enduring cultural icon whose brilliant legacy and heartwarming spirit continue to inspire millions.`,
+    const stageTemplates = [
+      {
+        titleVi: `Tuổi Thơ & Xuất Phát Điểm: ${cleanSubject}`,
+        era: "childhood early years",
+        kw: `${cleanSubject} young childhood solo portrait`,
+        beatEn: `${info.birthDate ? `Born on ${info.birthDate}, ` : ""}${cleanSubject} grew up with big dreams and an unmistakable spark for storytelling.`,
+      },
+      {
+        titleVi: `Những Năm Tháng Tuổi Trẻ: ${cleanSubject}`,
+        era: "youth college years",
+        kw: `${cleanSubject} young actor 1990s portrait`,
+        beatEn: `During youthful early years, ${cleanSubject} quietly honed natural comedic timing and magnetic screen charm.`,
+      },
+      {
+        titleVi: `Bước Ngoặt Khởi Nghiệp: ${cleanSubject}`,
+        era: "career debut breakthrough",
+        kw: `${cleanSubject} early film premiere portrait`,
+        beatEn: `Everything changed when ${cleanSubject} stepped into Hollywood and immediately stood out with effortless authenticity.`,
+      },
+      {
+        titleVi: `Tác Phẩm Đột Phá Đầu Tiên: ${cleanSubject}`,
+        era: "breakout movie milestone",
+        kw: `${cleanSubject} 1990s movie actor headshot`,
+        beatEn: `Critics quickly praised ${cleanSubject} for turning unconventional characters into deeply relatable human icons.`,
+      },
+      {
+        titleVi: `Sự Kiện & Thảm Đỏ Nổi Tiếng: ${cleanSubject}`,
+        era: "red carpet premiere",
+        kw: `${cleanSubject} red carpet tuxedo suit solo`,
+        beatEn: `Soon, ${cleanSubject} became a beloved fixture at major premieres, capturing hearts across the global film industry.`,
+      },
+      {
+        titleVi: `Thời Kỳ Đỉnh Cao Danh Vọng: ${cleanSubject}`,
+        era: "peak box office success",
+        kw: `${cleanSubject} 2000s actor solo portrait`,
+        beatEn: `Hit after hit cemented ${cleanSubject} as one of cinema's most bankable and unforgettable stars.`,
+      },
+      {
+        titleVi: `Giải Thưởng & Đề Cử Danh Giá: ${cleanSubject}`,
+        era: "awards ceremony milestone",
+        kw: `${cleanSubject} award ceremony portrait`,
+        beatEn: `Prestigious nominations honored ${cleanSubject} for both sharp screenwriting brilliance and memorable dramatic depth.`,
+      },
+      {
+        titleVi: `Đời Tư Kín Tiếng & Gia Đình: ${cleanSubject}`,
+        era: "personal life candid",
+        kw: `${cleanSubject} candid casual outdoor portrait`,
+        beatEn: `Away from Hollywood spotlights, ${cleanSubject} fiercely protected family life, close friendships, and quiet moments.`,
+      },
+      {
+        titleVi: `Những Vai Diễn Để Đời: ${cleanSubject}`,
+        era: "iconic film performance",
+        kw: `${cleanSubject} film festival press portrait`,
+        beatEn: `Whether leading comedies or heartfelt dramas, ${cleanSubject} brought warmth, humor, and genuine soul to every frame.`,
+      },
+      {
+        titleVi: `Sự Kiện Quốc Tế & Tầm Ảnh Hưởng: ${cleanSubject}`,
+        era: "international festival appearance",
+        kw: `${cleanSubject} Cannes Venice film festival portrait`,
+        beatEn: `Across international festivals from Cannes to Hollywood, audiences cheered the unmistakable voice of ${cleanSubject}.`,
+      },
+      {
+        titleVi: `Hành Trình Bền Bỉ Qua Thập Kỷ: ${cleanSubject}`,
+        era: "mature career era",
+        kw: `${cleanSubject} recent solo portrait smiling`,
+        beatEn: `Decades into an extraordinary career, ${cleanSubject} keeps reinventing classic roles for whole new generations.`,
+      },
+      {
+        titleVi: `Dấu Ấn Văn Hóa Đại Chúng: ${cleanSubject}`,
+        era: "cultural legacy portrait",
+        kw: `${cleanSubject} studio portrait close up`,
+        beatEn: `Few performers match the timeless warmth and signature delivery that made ${cleanSubject} a household legend.`,
+      },
+      {
+        titleVi: `Tình Cảm Khán Giả Toàn Cầu: ${cleanSubject}`,
+        era: "fan favorite appearance",
+        kw: `${cleanSubject} interview portrait candid`,
+        beatEn: `Fans around the world still celebrate the unforgettable laughter and comfort ${cleanSubject} brought to screens.`,
+      },
+      {
+        titleVi: `Vượt Qua Thử Thách Cuộc Đời: ${cleanSubject}`,
+        era: "resilience personal journey",
+        kw: `${cleanSubject} black and white portrait`,
+        beatEn: `Through life's quiet battles and triumphant comebacks, ${cleanSubject} showed remarkable strength, grace, and humility.`,
+      },
+      {
+        titleVi: `Mừng Sinh Nhật Huyền Thoại: ${cleanSubject}`,
+        era: "celebrated milestone portrait",
+        kw: `${cleanSubject} smiling headshot portrait`,
+        beatEn: `Today, we celebrate ${info.ageText ? `the ${info.ageText} birthday of ` : ""}${cleanSubject}—an enduring star whose legacy shines brighter than ever.`,
+      },
     ];
 
-    while (lifeStages.length < narrativeCount) {
-      lifeStages.push(`The extraordinary life journey and illustrious career milestones of ${cleanSubject} remain a cherished inspiration for movie lovers across the globe.`);
-    }
-
-    const scenes: any[] = lifeStages.slice(0, narrativeCount).map((beatText, idx) => {
-      const eraTags = ["childhood early years", "youthful days", "career breakthrough", "iconic mature era", "celebrated milestone"];
-      const eraDesc = eraTags[idx % eraTags.length];
-      const titleLabel =
-        idx === 0
-          ? `Tuổi Thơ & Khởi Đầu: ${cleanSubject}`
-          : idx === 1
-          ? `Hành Trình Tuổi Trẻ: ${cleanSubject}`
-          : idx === 2
-          ? `Dấu Mốc Đột Phá: ${cleanSubject}`
-          : idx === 3
-          ? `Thời Kỳ Hoàng Kim: ${cleanSubject}`
-          : `Di Sản & Sinh Nhật: ${cleanSubject}`;
-
+    const scenes: any[] = Array.from({ length: narrativeCount }, (_, idx) => {
+      const tpl = stageTemplates[idx % stageTemplates.length];
       return {
-        title: titleLabel,
+        title: tpl.titleVi,
         sceneType: idx === 0 || idx % 2 === 0 ? "video" : "image",
-        narrationText: beatText,
-        translationText: beatText,
-        visualPrompt: `CẦN ẢNH/VIDEO ĐƠN (SOLO PORTRAIT): ${cleanSubject} (${eraDesc})`,
-        imagePrompt: `Solo single portrait photograph of ${cleanSubject} during ${eraDesc}, authentic documentary vintage photograph, single subject only, no collage, no composite, warm professional cinematic lighting, full-frame ${ratioDesc}, edge-to-edge composition, no text.`,
-        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from single solo portrait of ${cleanSubject} (${eraDesc}), warm cinematic lighting -> [2-4s Story Action & Speech]: Natural lifelike biographical expression -> [4-6s Camera Control & Climax]: Gentle cinematic documentary push-in, ${ratioDesc}.`,
-        archivalKeywords: `${cleanSubject} ${eraDesc} solo portrait`,
+        narrationText: tpl.beatEn,
+        translationText: tpl.beatEn,
+        visualPrompt: `CẦN ẢNH/VIDEO ĐƠN (SOLO): ${cleanSubject} (${tpl.era})`,
+        imagePrompt: `Solo single portrait photograph of ${cleanSubject} during ${tpl.era}, authentic single-person candid documentary photo, strictly one person only, no collage, no split panels, no text overlay, warm natural lighting, full-frame ${ratioDesc}.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from single solo portrait of ${cleanSubject} (${tpl.era}) -> [2-4s Story Action & Speech]: Gentle warm smile and natural eye contact -> [4-6s Camera Control & Climax]: Smooth documentary push-in, ${ratioDesc}.`,
+        archivalKeywords: tpl.kw,
         motionEffect: motions[idx % motions.length],
         colorFilter: idx % 2 === 0 ? "color-warm" : "original",
         frameStyle: "full-bleed",
-        durationSec: Math.max(6, Math.min(10, Math.round(beatText.split(/\s+/).length * 0.42))),
+        durationSec: 10,
       };
     });
 
@@ -1844,7 +1932,7 @@ function registerRoutes() {
       visualPrompt: `LOGO KẾT: ${channelTitle} — ${channelSubtitle}`,
       imagePrompt: "Fixed Outro Logo",
       videoMotionPrompt: "Fixed Outro Logo",
-      archivalKeywords: cleanSubject,
+      archivalKeywords: `${cleanSubject} portrait`,
       motionEffect: "zoom-in",
       colorFilter: "original",
       frameStyle: "full-bleed",
@@ -1892,7 +1980,9 @@ function registerRoutes() {
         : "biography";
 
     const effectiveTopic =
-      effectiveMode === "custom-story"
+      effectiveMode === "birthday-tribute"
+        ? extractBirthdaySubjectName(cleanTopicRaw).name
+        : effectiveMode === "custom-story"
         ? inferSubjectFromSummary(cleanSummary || cleanTopicRaw, cleanTopicRaw)
         : cleanTopicRaw;
 
@@ -1903,13 +1993,13 @@ function registerRoutes() {
         ? "widescreen 16:9 full-frame (1920x1080px) --ar 16:9"
         : "vertical 3:4 full-frame (1080x1440px) --ar 3:4";
 
-    const targetSceneCount = Math.max(4, Math.min(20, Number(sceneCount) || 10));
+    const targetSceneCount = Math.max(4, Math.min(20, Number(sceneCount) || 16));
 
     try {
       const langInstruction =
         language === "en"
-          ? "Write narrationText in dramatic, warm English documentary style (exact 'Life Legends' channel style: short punchy sentences, deep emotional storytelling), and translationText in Vietnamese."
-          : "Write narrationText in dramatic, warm Vietnamese documentary storytelling style (phong cách kể chuyện truyền cảm hứng sâu sắc như kênh Life Legends), and translationText in English.";
+          ? "Write narrationText in dramatic, warm English documentary style (EXACTLY 15-21 words per scene so it reads smoothly within 10 seconds), and translationText in Vietnamese."
+          : "Write narrationText in dramatic, warm Vietnamese documentary storytelling style (ngắn gọn 20-28 chữ mỗi cảnh để đọc vừa 10 giây), and translationText in English.";
 
       const videoSceneQuota =
         targetSceneCount >= 20
@@ -1950,10 +2040,10 @@ STRICT RULES FOR CELEBRITY BIRTHDAY TRIBUTES (CHRONOLOGICAL & SOLO SINGLE PORTRA
    - Scene #4–#${targetSceneCount - 1}: Peak Success, Famous Events, Awards, and Enduring Legacy.
    - Final scene (#${targetSceneCount}) MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
    - Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes, ${imageSceneQuota} 'image' scenes, and ${quoteSceneQuota}.
-2. CRITICAL FOR ARCHIVAL PHOTOS & AI PROMPTS (SOLO SINGLE PORTRAIT ONLY - NO COLLAGES / NO COMPOSITES):
+2. CRITICAL FOR ARCHIVAL PHOTOS & AI PROMPTS (SOLO SINGLE PORTRAIT ONLY - NO COLLAGES / NO HAPPY BIRTHDAY CARDS):
    - 'frameStyle': "full-bleed".
-   - 'archivalKeywords': MUST begin with the star's exact FULL ENGLISH NAME + life stage/era (e.g. "Whoopi Goldberg childhood solo portrait", "Whoopi Goldberg young 1980s portrait", "Whoopi Goldberg The Color Purple 1985").
-   - 'imagePrompt': Concise English prompt (25-40 words) for ${ratioDesc}, **SOLO SINGLE PORTRAIT ONLY** (strictly single person, no collage, no composite, no multi-panel, full-bleed composition, no text).
+   - 'archivalKeywords': MUST begin with "${effectiveTopic}" + life stage/event (e.g. "${effectiveTopic} childhood solo portrait", "${effectiveTopic} young 1990s portrait", "${effectiveTopic} red carpet solo portrait"). NEVER include the word "birthday" or "card" in archivalKeywords!
+   - 'imagePrompt': Concise English prompt (25-40 words) for ${ratioDesc}, **SOLO SINGLE PORTRAIT ONLY** (strictly one person, authentic real photograph, no collage, no split panels, no composite, full-bleed, no text).
    - 'videoMotionPrompt': Concise 3-beat English Kling AI I2V prompt preserving face identity.`
           : effectiveMode === "custom-story"
           ? `Create an EXACTLY ${targetSceneCount}-scene viral "Life Legends" documentary BIOGRAPHY video script strictly adapting this user-provided story summary about "${effectiveTopic}":
@@ -2014,7 +2104,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
             customModel,
           });
           res.json({
-            scenes: normalizeSceneDurations(proxyResult.scenes, 160),
+            scenes: normalizeSceneDurations(proxyResult.scenes),
             storyMode: effectiveMode,
             inferredSubject: effectiveTopic,
             resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
@@ -2044,7 +2134,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
       const extracted = extractScenesArraySafely(response.text || "");
       if (extracted && extracted.length > 0) {
         res.json({
-          scenes: normalizeSceneDurations(extracted, 160),
+          scenes: normalizeSceneDurations(extracted),
           storyMode: effectiveMode,
           inferredSubject: effectiveTopic,
           resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
@@ -2059,7 +2149,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
     const rawFallback =
       effectiveMode === "birthday-tribute"
         ? buildFallbackBirthdayTributeScenes(
-            effectiveTopic,
+            cleanTopicRaw,
             language,
             targetSceneCount,
             ratioDesc,
@@ -2093,7 +2183,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
             channelTitle,
             channelSubtitle
           );
-    const fallbackScenes = normalizeSceneDurations(rawFallback, 160);
+    const fallbackScenes = normalizeSceneDurations(rawFallback);
     res.json({
       scenes: fallbackScenes,
       storyMode: effectiveMode,
@@ -2167,7 +2257,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             customModel,
           });
           res.json({
-            scenes: proxyResult.scenes,
+            scenes: normalizeSceneDurations(proxyResult.scenes),
             usedProvider: `API Trung Gian (${proxyResult.usedModel})`,
             usedModel: proxyResult.usedModel,
           });
@@ -2193,7 +2283,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const response = await Promise.race([geminiPromise, timeoutPromise]);
       const extracted = extractScenesArraySafely(response.text || "");
       if (extracted && extracted.length > 0) {
-        res.json({ scenes: normalizeSceneDurations(extracted, 160), usedProvider: "Gemini AI" });
+        res.json({ scenes: normalizeSceneDurations(extracted), usedProvider: "Gemini AI" });
         return;
       }
     } catch {
@@ -2208,7 +2298,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       channelTitle,
       channelSubtitle
     );
-    const fallbackScenes = normalizeSceneDurations(rawParsed, 160);
+    const fallbackScenes = normalizeSceneDurations(rawParsed);
     res.json({
       scenes: fallbackScenes,
       usedProvider: "LegendCut Chronological Script Parser",
@@ -2622,9 +2712,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       year: number | null;
     }[] = [];
 
-    // Strictly ban any image with overlaid text: posters, magazine/book/DVD covers, lobby cards, title cards, newspapers, quotes, autographs, plaques, watermarks
+    // Strictly ban any image with overlaid text, birthday greeting cards, or multi-photo collages
     const bannedTitleWords =
-      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy)\b/i;
+      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|composite|split|before\s+and\s+after|then\s+and\s+now|evolution|transformation|happy\s*birthday|birthday\s*card|wishes|greeting|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy)\b/i;
 
     const watermarkedStockDomains =
       /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com)\b/i;
@@ -2632,13 +2722,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     for (const q of candidateQueries) {
       if (candidates.length >= limit) break;
 
-      // 1. Search Bing Web Images FIRST with explicit negative filters (-poster -cover -magazine -quote -text -autograph) for clean text-free photography
+      // 1. Search Bing Web Images FIRST with explicit negative filters (-poster -cover -collage -birthday -card -split) for clean solo photography
       try {
+        const cleanedQ = q.replace(/\b(happy|birthday|wishes|collage)\b/gi, " ").replace(/\s+/g, " ").trim();
         const basePhotoQuery =
-          q.toLowerCase().includes("photo") || q.toLowerCase().includes("portrait")
-            ? q
-            : `${q} actor film still portrait photo`;
-        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text`;
+          cleanedQ.toLowerCase().includes("photo") || cleanedQ.toLowerCase().includes("portrait")
+            ? cleanedQ
+            : `${cleanedQ} solo portrait photo`;
+        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text -collage -birthday -card -wishes -split -grid -meme`;
         const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
           bingQuery
         )}&first=0&count=${Math.min(45, limit * 3 + 15)}&adlt=moderate`;
