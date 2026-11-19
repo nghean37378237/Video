@@ -1743,6 +1743,19 @@ function registerRoutes() {
     return scenes;
   }
 
+  function normalizeSceneDurations(scenes: any[], targetTotalSec = 160): any[] {
+    if (!Array.isArray(scenes) || scenes.length === 0) return scenes;
+    const nonOutro = scenes.filter((s) => s.sceneType !== "outro");
+    const outro = scenes.find((s) => s.sceneType === "outro");
+    const targetNonOutroSec = Math.max(130, targetTotalSec - 4);
+    const perScene = Math.max(10, Math.min(18, Math.round(targetNonOutroSec / Math.max(1, nonOutro.length))));
+    const normalizedNonOutro = nonOutro.map((s) => ({ ...s, durationSec: perScene }));
+    if (outro) {
+      return [...normalizedNonOutro, { ...outro, durationSec: 4 }];
+    }
+    return normalizedNonOutro;
+  }
+
   function buildFallbackBirthdayTributeScenes(
     topic: string,
     language: string,
@@ -1755,40 +1768,41 @@ function registerRoutes() {
     const narrativeCount = Math.max(3, targetSceneCount - 1);
     const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
 
-    const beats = [
-      `Happy Birthday to the legendary ${cleanSubject}! Today we celebrate a phenomenal talent whose brilliant performances, infectious laughter, and timeless cinematic masterpieces have illuminated screens and touched millions of hearts across generations.`,
-      `Born with an undeniable spark and a gift for raw storytelling, ${cleanSubject} embarked on an extraordinary artistic journey that redefined Hollywood excellence, turning every role into an unforgettable cultural landmark.`,
-      `From iconic breakthrough performances to heartwarming moments that left audiences in awe, ${cleanSubject} mastered the rare art of breathing absolute truth and vibrant soul into every character brought to life.`,
-      `Beyond the glittering awards and global box-office triumphs, the enduring legacy of ${cleanSubject} lies in a profound dedication to authenticity, artistic courage, and inspiring countless aspiring creators worldwide.`,
-      `As we honor another spectacular milestone today, we raise a glass to ${cleanSubject}—whose luminous spirit, legendary body of work, and unforgettable cinematic voyage continue to light up our lives with boundless wonder.`,
+    const lifeStages = [
+      `Reflecting on the humble beginnings and early childhood years of ${cleanSubject}, before lighting up stages and silver screens worldwide with unmatched comedic brilliance and dramatic mastery.`,
+      `Stepping into youth and early career days, ${cleanSubject} pursued an unrelenting passion for performing arts, captivating early audiences with raw natural talent and charismatic presence.`,
+      `The defining breakthrough moment arrived as ${cleanSubject} secured iconic, career-defining roles that captivated global audiences, earning critical acclaim and prestigious awards.`,
+      `Throughout decades of cinematic excellence, ${cleanSubject} continually pushed artistic boundaries, starring in timeless masterpieces and beloved box-office hits.`,
+      `Today, as we celebrate this magnificent birthday milestone, ${cleanSubject} stands as an enduring cultural icon whose brilliant legacy and heartwarming spirit continue to inspire millions.`,
     ];
 
-    while (beats.length < narrativeCount) {
-      beats.push(`The remarkable artistic evolution and timeless cultural footprint of ${cleanSubject} remain a permanent source of inspiration and cinematic wonder for movie lovers everywhere.`);
+    while (lifeStages.length < narrativeCount) {
+      lifeStages.push(`The extraordinary life journey and illustrious career milestones of ${cleanSubject} remain a cherished inspiration for movie lovers across the globe.`);
     }
 
-    const quoteIdx = narrativeCount >= 6 ? Math.floor(narrativeCount * 0.55) : -1;
-
-    const scenes: any[] = beats.slice(0, narrativeCount).map((beatText, idx) => {
-      const isQuote = idx === quoteIdx;
-      const isVideo = !isQuote && (idx === 0 || idx % 2 === 0);
-      const sType = isQuote ? "quote" : isVideo ? "video" : "image";
+    const scenes: any[] = lifeStages.slice(0, narrativeCount).map((beatText, idx) => {
+      const eraTags = ["childhood early years", "youthful days", "career breakthrough", "iconic mature era", "celebrated milestone"];
+      const eraDesc = eraTags[idx % eraTags.length];
       const titleLabel =
         idx === 0
-          ? `Mừng Sinh Nhật: ${cleanSubject}`
-          : isQuote
-          ? "Khoảnh khắc lắng đọng"
-          : `Chương Kỷ Niệm #${idx + 1}`;
+          ? `Tuổi Thơ & Khởi Đầu: ${cleanSubject}`
+          : idx === 1
+          ? `Hành Trình Tuổi Trẻ: ${cleanSubject}`
+          : idx === 2
+          ? `Dấu Mốc Đột Phá: ${cleanSubject}`
+          : idx === 3
+          ? `Thời Kỳ Hoàng Kim: ${cleanSubject}`
+          : `Di Sản & Sinh Nhật: ${cleanSubject}`;
 
       return {
         title: titleLabel,
-        sceneType: sType,
+        sceneType: idx === 0 || idx % 2 === 0 ? "video" : "image",
         narrationText: beatText,
         translationText: beatText,
-        visualPrompt: sType === "video" ? `CẦN VIDEO SINH NHẬT: ${cleanSubject}` : sType === "quote" ? `THẺ CHỮ: ${cleanSubject}` : `ẢNH KỶ NIỆM: ${cleanSubject}`,
-        imagePrompt: `Cinematic birthday tribute portrait of ${cleanSubject}, warm celebratory golden lighting, cinematic archival film still, full-frame ${ratioDesc}, edge-to-edge composition, no text.`,
-        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from archival portrait of ${cleanSubject}, warm golden celebration lighting -> [2-4s Story Action & Speech]: Radiant warm smile and celebratory greeting -> [4-6s Camera Control & Climax]: Gentle documentary push-in, ${ratioDesc}.`,
-        archivalKeywords: `${cleanSubject} actor portrait birthday`,
+        visualPrompt: `CẦN ẢNH/VIDEO ĐƠN (SOLO PORTRAIT): ${cleanSubject} (${eraDesc})`,
+        imagePrompt: `Solo single portrait photograph of ${cleanSubject} during ${eraDesc}, authentic documentary vintage photograph, single subject only, no collage, no composite, warm professional cinematic lighting, full-frame ${ratioDesc}, edge-to-edge composition, no text.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from single solo portrait of ${cleanSubject} (${eraDesc}), warm cinematic lighting -> [2-4s Story Action & Speech]: Natural lifelike biographical expression -> [4-6s Camera Control & Climax]: Gentle cinematic documentary push-in, ${ratioDesc}.`,
+        archivalKeywords: `${cleanSubject} ${eraDesc} solo portrait`,
         motionEffect: motions[idx % motions.length],
         colorFilter: idx % 2 === 0 ? "color-warm" : "original",
         frameStyle: "full-bleed",
@@ -1898,7 +1912,24 @@ function registerRoutes() {
           : "1 or 2";
 
       const prompt =
-        effectiveMode === "custom-story"
+        effectiveMode === "birthday-tribute"
+          ? `Create an EXACTLY ${targetSceneCount}-scene viral "Life Legends" celebrity birthday tribute video script celebrating: "${effectiveTopic}" — return a JSON array with exactly ${targetSceneCount} scene objects.
+${langInstruction}
+
+STRICT RULES FOR CELEBRITY BIRTHDAY TRIBUTES (CHRONOLOGICAL & SOLO SINGLE PORTRAITS ONLY):
+1. Chronological Life & Career Arc from Childhood to Maturity (#01 -> #${targetSceneCount}):
+   - Scene #1: Childhood & Early Origins (early years, humble beginnings, young portrait).
+   - Scene #2: Youth & First Steps into Performing Arts.
+   - Scene #3: Major Career Breakthrough & Iconic Roles.
+   - Scene #4–#${targetSceneCount - 1}: Peak Success, Famous Events, Awards, and Enduring Legacy.
+   - Final scene (#${targetSceneCount}) MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
+   - Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes, ${imageSceneQuota} 'image' scenes, and ${quoteSceneQuota}.
+2. CRITICAL FOR ARCHIVAL PHOTOS & AI PROMPTS (SOLO SINGLE PORTRAIT ONLY - NO COLLAGES / NO COMPOSITES):
+   - 'frameStyle': "full-bleed".
+   - 'archivalKeywords': MUST begin with the star's exact FULL ENGLISH NAME + life stage/era (e.g. "Whoopi Goldberg childhood solo portrait", "Whoopi Goldberg young 1980s portrait", "Whoopi Goldberg The Color Purple 1985").
+   - 'imagePrompt': Concise English prompt (25-40 words) for ${ratioDesc}, **SOLO SINGLE PORTRAIT ONLY** (strictly single person, no collage, no composite, no multi-panel, full-bleed composition, no text).
+   - 'videoMotionPrompt': Concise 3-beat English Kling AI I2V prompt preserving face identity.`
+          : effectiveMode === "custom-story"
           ? `Create an EXACTLY ${targetSceneCount}-scene viral "Life Legends" documentary BIOGRAPHY video script strictly adapting this user-provided story summary about "${effectiveTopic}":
 """
 ${cleanSummary || effectiveTopic}
@@ -1957,7 +1988,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
             customModel,
           });
           res.json({
-            scenes: proxyResult.scenes,
+            scenes: normalizeSceneDurations(proxyResult.scenes, 160),
             storyMode: effectiveMode,
             inferredSubject: effectiveTopic,
             resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
@@ -1987,7 +2018,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
       const extracted = extractScenesArraySafely(response.text || "");
       if (extracted && extracted.length > 0) {
         res.json({
-          scenes: extracted,
+          scenes: normalizeSceneDurations(extracted, 160),
           storyMode: effectiveMode,
           inferredSubject: effectiveTopic,
           resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
@@ -1999,7 +2030,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
       // Fall through to guaranteed chronological storyboard builder below so user never gets an error
     }
 
-    const fallbackScenes =
+    const rawFallback =
       effectiveMode === "birthday-tribute"
         ? buildFallbackBirthdayTributeScenes(
             effectiveTopic,
@@ -2036,6 +2067,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
             channelTitle,
             channelSubtitle
           );
+    const fallbackScenes = normalizeSceneDurations(rawFallback, 160);
     res.json({
       scenes: fallbackScenes,
       storyMode: effectiveMode,
@@ -2135,14 +2167,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const response = await Promise.race([geminiPromise, timeoutPromise]);
       const extracted = extractScenesArraySafely(response.text || "");
       if (extracted && extracted.length > 0) {
-        res.json({ scenes: extracted, usedProvider: "Gemini AI" });
+        res.json({ scenes: normalizeSceneDurations(extracted, 160), usedProvider: "Gemini AI" });
         return;
       }
     } catch {
       // Fall through to deterministic script parser below so user never gets an error
     }
 
-    const fallbackScenes = buildFallbackParsedScriptScenes(
+    const rawParsed = buildFallbackParsedScriptScenes(
       rawScript,
       language,
       requestedSceneCount,
@@ -2150,6 +2182,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       channelTitle,
       channelSubtitle
     );
+    const fallbackScenes = normalizeSceneDurations(rawParsed, 160);
     res.json({
       scenes: fallbackScenes,
       usedProvider: "LegendCut Chronological Script Parser",

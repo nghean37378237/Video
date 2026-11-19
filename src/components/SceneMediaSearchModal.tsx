@@ -929,6 +929,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
         targetSceneId: seg.targetSceneId,
         title: seg.video.title,
         youtubeId: seg.video.youtubeId,
+        youtubeUrl: seg.video.youtubeUrl || '',
+        videoUrl: seg.video.archiveMp4Url || '',
         tiktokUrl: seg.video.tiktokUrl || '',
         instagramUrl: seg.video.instagramUrl || '',
         dmId: seg.video.dmId,
