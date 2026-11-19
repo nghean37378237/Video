@@ -9,9 +9,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const execFileAsync = promisify(execFile);
-const YT_CUTS_DIR = path.join(process.cwd(), "public", "saved_cuts");
-if (!fs.existsSync(YT_CUTS_DIR)) {
-  fs.mkdirSync(YT_CUTS_DIR, { recursive: true });
+const YT_CUTS_DIR = process.env.VERCEL
+  ? "/tmp/saved_cuts"
+  : path.join(process.cwd(), "public", "saved_cuts");
+try {
+  if (!fs.existsSync(YT_CUTS_DIR)) {
+    fs.mkdirSync(YT_CUTS_DIR, { recursive: true });
+  }
+} catch {
+  // Ignore read-only filesystem errors in serverless environments
 }
 const SAVED_CUTS_MANIFEST_PATH = path.join(YT_CUTS_DIR, "saved_cuts_manifest.json");
 
@@ -366,6 +372,24 @@ const JSON_SCHEMA_INSTRUCTION_FOR_PROXY = `You MUST respond ONLY with a valid JS
 export const app = express();
 app.use(express.json({ limit: "25mb" }));
 
+// CORS support for Vercel deployment (https://video-new-rho.vercel.app) & cross-origin connections
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 // Ensure Vercel Serverless Function rewrites (/api/* -> /api/index or /*) always preserve /api prefix for Express routes
 app.use((req, _res, next) => {
   if (
@@ -375,7 +399,9 @@ app.use((req, _res, next) => {
     (req.url.startsWith("/proxy/") ||
       req.url.startsWith("/story/") ||
       req.url.startsWith("/archival/") ||
-      req.url.startsWith("/tts/"))
+      req.url.startsWith("/tts/") ||
+      req.url.startsWith("/youtube/") ||
+      req.url.startsWith("/media/"))
   ) {
     req.url = `/api${req.url}`;
   }
