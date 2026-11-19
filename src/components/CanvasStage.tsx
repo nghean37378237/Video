@@ -915,10 +915,15 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           );
           drawn = true;
         } else {
-          // While the HTTP 206 video stream is buffering its trimmed byte range, draw the scene's thumbnail or reference photo so there is zero black screen
+          // While the HTTP 206 video stream is buffering its trimmed byte range, draw the scene's thumbnail, reference photo, or best project photo so there is zero black screen
           const vaultItem = vaultItems.find((v) => v.id === scene.mediaId);
-          const fallbackThumbUrl = vaultItem?.thumbnailUrl || scene.characterRefPhotoUrl;
-          const fallbackImg = fallbackThumbUrl ? imageCacheRef.current.get(fallbackThumbUrl) : undefined;
+          const bestProjectPhotoUrl =
+            vaultItem?.thumbnailUrl ||
+            scene.characterRefPhotoUrl ||
+            scenes.find((s) => s.mediaKind === 'image' && s.mediaUrl)?.mediaUrl ||
+            scenes.find((s) => s.characterRefPhotoUrl)?.characterRefPhotoUrl ||
+            vaultItems.find((v) => v.type === 'image' && v.url)?.url;
+          const fallbackImg = bestProjectPhotoUrl ? imageCacheRef.current.get(bestProjectPhotoUrl) : undefined;
           if (fallbackImg && fallbackImg.complete && fallbackImg.naturalWidth > 0) {
             drawMediaWithKenBurns(
               ctx,
@@ -1732,7 +1737,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       {/* Main Viewport Canvas Container */}
       <div className="relative flex-1 flex items-center justify-center p-4 overflow-hidden bg-[#070A10]">
         <div
-          className="relative flex items-center justify-center shadow-2xl border border-slate-800/90 rounded-lg overflow-hidden bg-black"
+          className="relative flex items-center justify-center shadow-2xl border border-slate-800/90 rounded-lg overflow-hidden bg-slate-900"
           style={{
             maxHeight: '100%',
             maxWidth: '100%',

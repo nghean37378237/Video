@@ -3610,7 +3610,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       }
 
       if (!fs.existsSync(outJpgPath) || fs.statSync(outJpgPath).size < 1000) {
-        const thumbSeek = Math.min(2.2, Math.max(0.5, Number((safeDur * 0.35).toFixed(1))));
+        const thumbSeek = Math.min(2.8, Math.max(1.2, Number((safeDur * 0.4).toFixed(1))));
         await execFileAsync(
           "ffmpeg",
           [
@@ -4524,6 +4524,40 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName}"`);
     }
     res.sendFile(fullPath);
+  });
+
+  // 2g-1. CORS-Safe Image Proxy for Canvas Thumbnail Rendering & Download
+  app.get("/api/archival/proxy-image", async (req, res) => {
+    const rawUrl = String(req.query.url || "").trim();
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+      res.status(400).send("Invalid image URL");
+      return;
+    }
+    try {
+      const upstream = await fetch(rawUrl, {
+        headers: {
+          "User-Agent": BROWSER_USER_AGENT,
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+        signal: AbortSignal.timeout(7000),
+      });
+      if (!upstream.ok) {
+        res.status(upstream.status).send("Upstream image error");
+        return;
+      }
+      const cType = upstream.headers.get("content-type") || "image/jpeg";
+      if (!cType.startsWith("image/")) {
+        res.status(415).send("Not an image");
+        return;
+      }
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", cType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(buf);
+    } catch {
+      res.status(502).send("Failed to fetch image");
+    }
   });
 
   // 2g-2. Get or Delete Persistently Saved Cut Video Clips

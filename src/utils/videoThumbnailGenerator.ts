@@ -217,39 +217,76 @@ export function collectAvailableThumbnailImages(
   scenes: StoryScene[],
   vaultItems: VaultItem[]
 ): Array<{ id: string; label: string; url: string }> {
-  const candidates: Array<{ id: string; label: string; url: string }> = [];
+  const scored: Array<{ id: string; label: string; url: string; score: number }> = [];
   const seen = new Set<string>();
 
-  const pushUnique = (id: string, label: string, url?: string) => {
+  const scoreCandidate = (url: string, label: string, baseScore: number): number => {
+    let s = baseScore;
+    if (url.startsWith('data:image/') || url.startsWith('blob:')) s += 20;
+    if (/\b(full[\s-]?body|full[\s-]?length|red[\s-]?carpet|photoshoot|vogue|gq|vanity\s*fair|gown|stunning|gorgeous|glamor|glamorous|hot|bikini|premiere|editorial)\b/i.test(label)) {
+      s += 16;
+    }
+    if (/i\.ytimg\.com\/vi\/.*\/(hqdefault|sddefault|mqdefault|default)\.jpg/i.test(url)) {
+      s -= 28; // YouTube 4:3 thumbnails often have black letterbox bars
+    }
+    if (/\b(childhood|baby|young|1940s|1950s)\b/i.test(label)) {
+      s -= 4; // Slightly prefer vibrant prime/glamorous adult photos as video cover
+    }
+    if (/\b(black\s+and\s+white|monochrome)\b/i.test(label)) {
+      s -= 3;
+    }
+    return s;
+  };
+
+  const pushUnique = (id: string, label: string, url?: string, baseScore = 0) => {
     if (!url || seen.has(url)) return;
+    if (url.includes('outro') || url.includes('fixed_outro')) return;
     seen.add(url);
-    candidates.push({ id, label, url });
+    scored.push({ id, label, url, score: scoreCandidate(url, label, baseScore) });
   };
 
   scenes.forEach((sc, idx) => {
     if (sc.sceneType === 'outro' || sc.sceneType === 'quote') return;
     const vItem = vaultItems.find((v) => v.id === sc.mediaId);
     const num = String(idx + 1).padStart(2, '0');
+    const photoTitle = sc.realPhotoTitle || sc.title;
     if (sc.mediaKind === 'image' && sc.mediaUrl) {
-      pushUnique(`sc-img-${sc.id}`, `Cảnh #${num}: ${sc.title.slice(0, 24)}`, sc.mediaUrl);
-    }
-    if (vItem?.thumbnailUrl) {
-      pushUnique(`sc-thumb-${sc.id}`, `Khung Cảnh #${num}: ${sc.title.slice(0, 22)}`, vItem.thumbnailUrl);
+      pushUnique(
+        `sc-img-${sc.id}`,
+        `Ảnh Đẹp Cảnh #${num}: ${photoTitle.slice(0, 28)}`,
+        sc.mediaUrl,
+        idx < 4 ? 38 : 34
+      );
     }
     if (sc.characterRefPhotoUrl) {
-      pushUnique(`sc-ref-${sc.id}`, `Ảnh Gốc Cảnh #${num}`, sc.characterRefPhotoUrl);
+      pushUnique(
+        `sc-ref-${sc.id}`,
+        `Ảnh Nhân Vật #${num}: ${photoTitle.slice(0, 26)}`,
+        sc.characterRefPhotoUrl,
+        32
+      );
+    }
+    if (vItem?.thumbnailUrl) {
+      const isVideoFrame = vItem.type === 'video';
+      pushUnique(
+        `sc-thumb-${sc.id}`,
+        `Khung #${num}: ${photoTitle.slice(0, 26)}`,
+        vItem.thumbnailUrl,
+        isVideoFrame ? 10 : 28
+      );
     }
   });
 
   vaultItems.forEach((item, idx) => {
     if (item.type === 'image' && item.url) {
-      pushUnique(`vault-${item.id}`, item.name || `Ảnh Kho #${idx + 1}`, item.url);
+      pushUnique(`vault-${item.id}`, item.name || `Ảnh Kho #${idx + 1}`, item.url, 30);
     } else if (item.thumbnailUrl) {
-      pushUnique(`vault-th-${item.id}`, item.name || `Video Kho #${idx + 1}`, item.thumbnailUrl);
+      pushUnique(`vault-th-${item.id}`, item.name || `Video Kho #${idx + 1}`, item.thumbnailUrl, 8);
     }
   });
 
-  return candidates;
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(({ id, label, url }) => ({ id, label, url }));
 }
 
 export function buildAiThumbnailGenerationPrompt(
@@ -331,30 +368,33 @@ export function renderVideoThumbnailToCanvas(
   ctx.save();
   ctx.clearRect(0, 0, W, H);
 
-  // 1. Base dark cinema background
-  const bgGrad = ctx.createRadialGradient(W * 0.5, H * 0.35, W * 0.08, W * 0.5, H * 0.5, Math.max(W, H) * 0.85);
-  bgGrad.addColorStop(0, '#271E14');
-  bgGrad.addColorStop(0.55, '#111622');
-  bgGrad.addColorStop(1, '#05070B');
+  const isCleanPhotoMode = !config.showTextOverlay || config.template === 'clean-portrait';
+
+  // 1. Clean neutral backdrop (only visible briefly if image hasn't finished loading yet)
+  const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+  bgGrad.addColorStop(0, '#1E293B');
+  bgGrad.addColorStop(1, '#0F172A');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // 2. Draw Portrait Image with Safe 6% Border Crop & Optional HDR Contrast Pop
+  // 2. Draw Best Photo Edge-to-Edge with Gentle 2% Border Crop & Crisp Vibrancy
   if (loadedImage && loadedImage.complete && loadedImage.naturalWidth > 0) {
     ctx.save();
     if (config.template === 'vintage-sepia-prestige') {
       ctx.filter = config.autoHdrEnhance
-        ? 'sepia(34%) contrast(120%) brightness(106%) saturate(112%)'
-        : 'sepia(28%) contrast(108%)';
+        ? 'sepia(28%) contrast(114%) brightness(106%) saturate(112%)'
+        : 'sepia(24%) contrast(106%)';
     } else if (config.autoHdrEnhance) {
-      ctx.filter = 'contrast(118%) brightness(106%) saturate(116%)';
+      ctx.filter = isCleanPhotoMode
+        ? 'contrast(107%) brightness(105%) saturate(110%)'
+        : 'contrast(112%) brightness(105%) saturate(112%)';
     }
 
     const nw = loadedImage.naturalWidth;
     const nh = loadedImage.naturalHeight;
-    // Safe 6% inset crop to strip any archival border/caption
-    const sx = Math.round(nw * 0.06);
-    const sy = Math.round(nh * 0.06);
+    // Gentle 2% border crop so full-body framing, head, and outfit stay completely intact
+    const sx = Math.round(nw * 0.02);
+    const sy = Math.round(nh * 0.02);
     const sw = Math.max(1, nw - sx * 2);
     const sh = Math.max(1, nh - sy * 2);
 
@@ -374,16 +414,30 @@ export function renderVideoThumbnailToCanvas(
       drawW = W;
       drawH = W / imgAspect;
       dx = 0;
-      // Favor upper-middle face region of portrait
-      dy = (H - drawH) * 0.22;
+      // Favor upper portrait region so head/face is never clipped
+      dy = (H - drawH) * 0.12;
     }
 
     ctx.drawImage(loadedImage, sx, sy, sw, sh, dx, dy, drawW, drawH);
     ctx.restore();
+  } else {
+    // Clean non-black waiting indicator while photo finishes loading
+    ctx.save();
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = `700 ${Math.round(Math.min(W, H) * 0.032)}px "Plus Jakarta Sans", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Đang chọn ảnh đẹp nhất cho Thumbnail...', W / 2, H / 2);
+    ctx.restore();
   }
 
-  // 3. Cinematic Rim-Glow & Vignette Overlays
-  // Warm golden top-center key light glow
+  // If clean photo thumbnail mode (DEFAULT): keep 100% bright, clean, full-bleed photo with ZERO black vignette or dark overlay!
+  if (isCleanPhotoMode) {
+    ctx.restore();
+    return;
+  }
+
+  // 3. Soft Cinematic Rim-Glow & Light Edge Vignette (only for text-overlay templates)
   const rimGlow = ctx.createRadialGradient(
     W * 0.5,
     H * 0.26,
@@ -392,53 +446,39 @@ export function renderVideoThumbnailToCanvas(
     H * 0.26,
     W * 0.65
   );
-  rimGlow.addColorStop(0, 'rgba(245, 158, 11, 0.16)');
-  rimGlow.addColorStop(0.6, 'rgba(245, 158, 11, 0.04)');
+  rimGlow.addColorStop(0, 'rgba(245, 158, 11, 0.12)');
+  rimGlow.addColorStop(0.6, 'rgba(245, 158, 11, 0.03)');
   rimGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = rimGlow;
   ctx.fillRect(0, 0, W, H);
 
-  // Edge vignette
   const edgeVig = ctx.createRadialGradient(
     W * 0.5,
     H * 0.42,
-    Math.min(W, H) * 0.28,
+    Math.min(W, H) * 0.36,
     W * 0.5,
     H * 0.5,
-    Math.max(W, H) * 0.78
+    Math.max(W, H) * 0.85
   );
   edgeVig.addColorStop(0, 'rgba(0,0,0,0)');
-  edgeVig.addColorStop(0.7, 'rgba(5,7,12,0.32)');
-  edgeVig.addColorStop(1, 'rgba(3,5,9,0.82)');
+  edgeVig.addColorStop(0.75, 'rgba(5,7,12,0.16)');
+  edgeVig.addColorStop(1, 'rgba(3,5,9,0.42)');
   ctx.fillStyle = edgeVig;
   ctx.fillRect(0, 0, W, H);
 
-  // If user selected clean portrait with NO text overlay, draw optional subtle border and return
-  if (!config.showTextOverlay || config.template === 'clean-portrait') {
-    if (config.template === 'vintage-sepia-prestige') {
-      const pad = Math.round(Math.min(W, H) * 0.028);
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.65)';
-      ctx.lineWidth = Math.max(2, Math.round(W * 0.003));
-      ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
-    }
-    ctx.restore();
-    return;
-  }
-
-  // 4. Bottom & Top Scrims for 100% Typography Legibility on Mobile Feeds
-  const topScrim = ctx.createLinearGradient(0, 0, 0, H * 0.22);
-  topScrim.addColorStop(0, 'rgba(4, 6, 11, 0.82)');
+  // 4. Bottom & Top Scrims for Typography Legibility without darkening the full photo
+  const topScrim = ctx.createLinearGradient(0, 0, 0, H * 0.16);
+  topScrim.addColorStop(0, 'rgba(4, 6, 11, 0.48)');
   topScrim.addColorStop(1, 'rgba(4, 6, 11, 0)');
   ctx.fillStyle = topScrim;
-  ctx.fillRect(0, 0, W, H * 0.22);
+  ctx.fillRect(0, 0, W, H * 0.16);
 
-  const bottomScrim = ctx.createLinearGradient(0, H * 0.46, 0, H);
+  const bottomScrim = ctx.createLinearGradient(0, H * 0.6, 0, H);
   bottomScrim.addColorStop(0, 'rgba(4, 6, 11, 0)');
-  bottomScrim.addColorStop(0.32, 'rgba(6, 9, 15, 0.76)');
-  bottomScrim.addColorStop(0.68, 'rgba(6, 9, 15, 0.94)');
-  bottomScrim.addColorStop(1, 'rgba(3, 5, 10, 0.98)');
+  bottomScrim.addColorStop(0.45, 'rgba(6, 9, 15, 0.52)');
+  bottomScrim.addColorStop(1, 'rgba(3, 5, 10, 0.74)');
   ctx.fillStyle = bottomScrim;
-  ctx.fillRect(0, H * 0.46, W, H * 0.54);
+  ctx.fillRect(0, H * 0.6, W, H * 0.4);
 
   // Decorative Frame for Vintage Prestige or Cinema Gold
   const framePad = Math.round(Math.min(W, H) * 0.026);

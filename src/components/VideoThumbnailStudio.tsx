@@ -42,7 +42,7 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
   const loadedImageRef = useRef<HTMLImageElement | null>(null);
 
   const [thumbLang, setThumbLang] = useState<'vi' | 'en'>('vi');
-  const [template, setTemplate] = useState<ThumbnailTemplateStyle>('cinema-gold');
+  const [template, setTemplate] = useState<ThumbnailTemplateStyle>('clean-portrait');
   const [ratio, setRatio] = useState<ThumbnailAspectRatio>(
     (settings.aspectRatio as ThumbnailAspectRatio) || '3:4'
   );
@@ -54,10 +54,11 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
   const [subHookText, setSubHookText] = useState<string>(
     'Từ Chàng Cao Bồi Rodeo Đến Biểu Tượng Bất Tử Của Hollywood'
   );
-  const [showTextOverlay, setShowTextOverlay] = useState<boolean>(true);
-  const [showChannelBadge, setShowChannelBadge] = useState<boolean>(true);
+  const [showTextOverlay, setShowTextOverlay] = useState<boolean>(false);
+  const [showChannelBadge, setShowChannelBadge] = useState<boolean>(false);
   const [autoHdrEnhance, setAutoHdrEnhance] = useState<boolean>(true);
   const [selectedBgUrl, setSelectedBgUrl] = useState<string>('');
+  const [hasManualBgChoice, setHasManualBgChoice] = useState<boolean>(false);
   const [imageTick, setImageTick] = useState<number>(0);
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [isGeneratingAiBg, setIsGeneratingAiBg] = useState<boolean>(false);
@@ -76,22 +77,22 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
     }
   }, [settings.projectTitle, thumbLang]);
 
-  // Pick first valid portrait image if none selected or when scenes update
+  // Always auto-select the #1 best, prettiest photo when availableImages updates (unless user manually chose/uploaded one)
   useEffect(() => {
-    if (!selectedBgUrl && availableImages.length > 0) {
+    if (availableImages.length === 0) return;
+    if (!selectedBgUrl) {
       setSelectedBgUrl(availableImages[0].url);
-    } else if (
-      selectedBgUrl &&
-      availableImages.length > 0 &&
-      !selectedBgUrl.startsWith('blob:') &&
-      !selectedBgUrl.startsWith('data:image/png;base64,iVBOR') &&
-      !availableImages.some((img) => img.url === selectedBgUrl)
-    ) {
+      return;
+    }
+    const isCustomUploadedOrAi =
+      selectedBgUrl.startsWith('blob:') ||
+      (hasManualBgChoice && availableImages.some((img) => img.url === selectedBgUrl));
+    if (!isCustomUploadedOrAi && availableImages[0].url !== selectedBgUrl) {
       setSelectedBgUrl(availableImages[0].url);
     }
-  }, [availableImages, selectedBgUrl]);
+  }, [availableImages, selectedBgUrl, hasManualBgChoice]);
 
-  // Load selected background image into HTMLImageElement
+  // Load selected background image into HTMLImageElement with automatic CORS proxy fallback (prevents black screen!)
   useEffect(() => {
     if (!selectedBgUrl) {
       loadedImageRef.current = null;
@@ -99,18 +100,61 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
       return;
     }
 
+    let cancelled = false;
+    const isExternalHttp =
+      selectedBgUrl.startsWith('http://') || selectedBgUrl.startsWith('https://');
+    const isSameOrigin =
+      isExternalHttp && typeof window !== 'undefined' && selectedBgUrl.startsWith(window.location.origin);
+
+    const tryAdvanceToNextWorkingImage = () => {
+      if (cancelled || availableImages.length <= 1) {
+        loadedImageRef.current = null;
+        setImageTick((t) => t + 1);
+        return;
+      }
+      const curIdx = availableImages.findIndex((i) => i.url === selectedBgUrl);
+      const nextIdx = (curIdx + 1) % availableImages.length;
+      if (nextIdx !== curIdx) {
+        setSelectedBgUrl(availableImages[nextIdx].url);
+      } else {
+        loadedImageRef.current = null;
+        setImageTick((t) => t + 1);
+      }
+    };
+
+    const loadViaProxyFallback = () => {
+      const proxyImg = new Image();
+      proxyImg.crossOrigin = 'anonymous';
+      proxyImg.onload = () => {
+        if (cancelled) return;
+        loadedImageRef.current = proxyImg;
+        setImageTick((t) => t + 1);
+      };
+      proxyImg.onerror = tryAdvanceToNextWorkingImage;
+      proxyImg.src = `/api/archival/proxy-image?url=${encodeURIComponent(selectedBgUrl)}`;
+    };
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (cancelled) return;
       loadedImageRef.current = img;
       setImageTick((t) => t + 1);
     };
     img.onerror = () => {
-      loadedImageRef.current = null;
-      setImageTick((t) => t + 1);
+      if (cancelled) return;
+      if (isExternalHttp && !isSameOrigin) {
+        loadViaProxyFallback();
+      } else {
+        tryAdvanceToNextWorkingImage();
+      }
     };
     img.src = selectedBgUrl;
-  }, [selectedBgUrl]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBgUrl, availableImages]);
 
   // Render canvas whenever config or loaded image updates
   useEffect(() => {
@@ -166,6 +210,7 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
+        setHasManualBgChoice(true);
         setSelectedBgUrl(reader.result);
       }
     };
@@ -189,6 +234,7 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data?.imageUrl) {
+          setHasManualBgChoice(true);
           setSelectedBgUrl(data.imageUrl);
         }
       }
@@ -220,10 +266,10 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
         <div>
           <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
             <ImageIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Ảnh Thumbnail Bìa Video Chuẩn Đẹp ({dimSpec.width}×{dimSpec.height}px)</span>
+            <span>Ảnh Thumbnail Video (Lấy Ảnh Đẹp Nhất · {dimSpec.width}×{dimSpec.height}px)</span>
           </h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Thiết kế tự động theo phong cách điện ảnh Hoàng Kim. Bấm tải PNG nét căng để đăng kèm Video lên Page / YouTube!
+            Tự động chọn ảnh đẹp, bốc lửa &amp; rõ nét nhất làm bìa Thumbnail trực tiếp (không nền đen). Bấm tải PNG hoặc chọn ảnh khác bên dưới!
           </p>
         </div>
         {compactMode && onOpenFullThumbTab && (
@@ -238,9 +284,9 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
       </div>
 
       {/* Live Canvas Preview + 1-Click Download */}
-      <div className="flex flex-col items-center bg-[#05070C] border border-slate-800 rounded-lg p-2.5 space-y-2.5">
+      <div className="flex flex-col items-center bg-slate-900/60 border border-slate-700/80 rounded-lg p-2.5 space-y-2.5">
         <div
-          className="relative w-full flex items-center justify-center overflow-hidden rounded-md shadow-xl border border-amber-500/30 bg-black"
+          className="relative w-full flex items-center justify-center overflow-hidden rounded-md shadow-xl border border-amber-500/30 bg-slate-900"
           style={{
             maxHeight: compactMode ? '250px' : '330px',
           }}
@@ -249,7 +295,7 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
             ref={canvasRef}
             className="max-h-[245px] w-auto h-auto object-contain rounded"
           />
-          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/80 text-amber-300 border border-amber-500/40">
+          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-900/80 text-amber-300 border border-amber-500/40">
             {ratio} · {dimSpec.width}×{dimSpec.height}
           </span>
         </div>
@@ -262,7 +308,7 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg transition-colors shadow-md"
           >
             <Download className="w-4 h-4 shrink-0" />
-            <span>Tải Ảnh Thumbnail Đẹp Nét Căng (.PNG {dimSpec.width}×{dimSpec.height})</span>
+            <span>Tải Ảnh Thumbnail Đẹp (.PNG {dimSpec.width}×{dimSpec.height})</span>
           </button>
 
           <div className="grid grid-cols-3 gap-1.5">
@@ -272,13 +318,14 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
                 if (availableImages.length === 0) return;
                 const curIdx = availableImages.findIndex((i) => i.url === selectedBgUrl);
                 const nextIdx = (curIdx + 1) % availableImages.length;
+                setHasManualBgChoice(true);
                 setSelectedBgUrl(availableImages[nextIdx].url);
               }}
               className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors"
-              title="Đổi sang ảnh chân dung thật khác của nhân vật trong dự án"
+              title="Đổi sang ảnh đẹp khác của nhân vật trong dự án"
             >
               <RefreshCw className="w-3 h-3 text-amber-400 shrink-0" />
-              <span className="truncate">Đổi Ảnh Nền ({availableImages.length})</span>
+              <span className="truncate">Đổi Ảnh ({availableImages.length})</span>
             </button>
 
             <label className="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 rounded cursor-pointer transition-colors">
@@ -337,7 +384,10 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
                 <button
                   key={img.id}
                   type="button"
-                  onClick={() => setSelectedBgUrl(img.url)}
+                  onClick={() => {
+                    setHasManualBgChoice(true);
+                    setSelectedBgUrl(img.url);
+                  }}
                   title={img.label}
                   className={`relative w-12 h-12 rounded overflow-hidden shrink-0 border-2 transition-all ${
                     active
@@ -380,10 +430,10 @@ export const VideoThumbnailStudio: React.FC<VideoThumbnailStudioProps> = ({
             }}
             className="w-full px-2 py-1.5 text-[11px] font-semibold bg-[#0B0F17] border border-slate-700 rounded text-amber-300 focus:outline-none focus:border-amber-500"
           >
-            <option value="cinema-gold">✨ Điện Ảnh Hoàng Kim (Chuẩn Kênh)</option>
+            <option value="clean-portrait">🖼️ Chỉ Ảnh Đẹp Nhất (Mặc Định — Không Nền Đen)</option>
+            <option value="cinema-gold">✨ Điện Ảnh Hoàng Kim (Có Chữ Giật Tít)</option>
             <option value="viral-red-bar">🔥 Viral Đỏ-Vàng (Tăng Click Page/YT)</option>
             <option value="vintage-sepia-prestige">🎞️ Hoài Cổ Kinh Điển (Western/Retro)</option>
-            <option value="clean-portrait">🖼️ Chỉ Ảnh Chân Dung Nét (Không Chữ)</option>
           </select>
         </div>
 
