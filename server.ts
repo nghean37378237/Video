@@ -5692,12 +5692,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const targetSceneId = clip?.targetSceneId ? String(clip.targetSceneId) : undefined;
           const tiktokUrl = String(clip?.tiktokUrl || "").trim();
           const instagramUrl = String(clip?.instagramUrl || "").trim();
-          const socialDirectUrl = tiktokUrl || instagramUrl;
+          const youtubeUrl = String(clip?.youtubeUrl || (clip?.youtubeId ? `https://www.youtube.com/watch?v=${clip.youtubeId}` : "")).trim();
+          const videoUrlOpt = String(clip?.videoUrl || "").trim();
           let explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
           if (/\.ogv(\?|#|$)/i.test(explicitArchiveMp4)) {
             explicitArchiveMp4 = explicitArchiveMp4.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
           }
-          const preferArchiveMp4 = clip?.preferArchiveMp4 !== false && Boolean(explicitArchiveMp4);
+
+          // Prioritize exact user-selected video source URL (YouTube, TikTok, Instagram, Archive, or direct videoUrl)
+          const userSelectedSourceUrl = explicitArchiveMp4 || videoUrlOpt || youtubeUrl || tiktokUrl || instagramUrl;
           const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
           const clipFocusX = String(clip?.focusX || reqFocusX || "center");
           const vf34Filter = buildSharp34VideoFilter(clipFrameMode, clipFocusX);
@@ -5713,54 +5716,50 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
           let cutSucceeded = false;
 
-          // 0. If no explicit MP4 URL was attached and we have a direct social URL + yt-dlp, try yt-dlp quickly
-          if (!preferArchiveMp4 && socialDirectUrl && ytDlpBin) {
-            const rawSocialPath = path.join(YT_CUTS_DIR, `${fileId}_raw_social.mp4`);
+          // 0. If user selected a YouTube / TikTok / Instagram URL and yt-dlp is available, download/stream that exact video
+          if (!cutSucceeded && userSelectedSourceUrl && ytDlpBin && /youtube\.com|youtu\.be|tiktok\.com|instagram\.com/i.test(userSelectedSourceUrl)) {
+            const rawDlPath = path.join(YT_CUTS_DIR, `${fileId}_raw_dl.mp4`);
             try {
               await execFileAsync(
                 ytDlpBin,
-                ["--no-warnings", "-o", rawSocialPath, socialDirectUrl],
-                { timeout: 8000 }
+                ["--no-warnings", "-o", rawDlPath, userSelectedSourceUrl],
+                { timeout: 12000 }
               );
-              if (fs.existsSync(rawSocialPath) && fs.statSync(rawSocialPath).size > 15000) {
+              if (fs.existsSync(rawDlPath) && fs.statSync(rawDlPath).size > 15000) {
                 cutSucceeded = await runFastFfmpegCut(
-                  rawSocialPath,
-                  Math.min(20, trimStartSec),
+                  rawDlPath,
+                  trimStartSec,
                   durationSec,
                   vf34Filter,
                   outMp4Path,
                   outJpgPath,
-                  8000
+                  9000
                 );
               }
             } catch {
               // fallback below
             } finally {
               try {
-                if (fs.existsSync(rawSocialPath)) fs.unlinkSync(rawSocialPath);
-              } catch {
-                // ignore
-              }
+                if (fs.existsSync(rawDlPath)) fs.unlinkSync(rawDlPath);
+              } catch {}
             }
           }
 
-          // 1. Choose the matched archive MP4 stream (strictly .mp4, never .ogv)
-          const lowerTitle = title.toLowerCase();
-          let chosenReel = curatedReels.find(
-            (r) =>
-              (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
-              (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
-              (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
-              (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
-              (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
-              (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade"))
-          );
-          if (!chosenReel) {
-            chosenReel = curatedReels[idx % curatedReels.length];
+          // 1. If we have a direct archive/video stream URL, cut it directly
+          if (!cutSucceeded && userSelectedSourceUrl) {
+            cutSucceeded = await runFastFfmpegCut(
+              userSelectedSourceUrl,
+              trimStartSec,
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath,
+              9500
+            );
           }
-          const archiveMp4 = explicitArchiveMp4 || chosenReel.rawMp4Url;
 
-          // 2. Attempt ultra-fast FFmpeg cut on the primary MP4 stream (timeout 9.5s max)
+          // 2. Only fall back to curated reels if user did not provide a specific source URL
+          const archiveMp4 = userSelectedSourceUrl || (curatedReels[idx % curatedReels.length]?.rawMp4Url || "");
           if (!cutSucceeded && archiveMp4) {
             cutSucceeded = await runFastFfmpegCut(
               archiveMp4,
