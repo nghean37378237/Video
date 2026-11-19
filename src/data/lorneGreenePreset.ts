@@ -29,6 +29,7 @@ export const FIXED_OUTRO_LOGO_URL = '/assets/aistudio/image_4653598d.png';
 
 export const INITIAL_PROJECT_SETTINGS: ProjectSettings = {
   projectTitle: 'Will Sampson — Người Khổng Lồ Dịu Dàng (Chuẩn Voice & Nhạc Dạo)',
+  storyMode: 'biography',
   activePresetId: 'will-sampson',
   referenceVideoUrl: '',
   aspectRatio: '3:4',

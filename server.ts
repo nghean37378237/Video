@@ -637,6 +637,672 @@ function registerRoutes() {
     }
   });
 
+  interface FilmCastMemberMeta {
+    actor: string;
+    role: string;
+    bioVi: string;
+    bioEn: string;
+    eraQuery?: string;
+  }
+
+  interface CuratedFilmMeta {
+    keys: string[];
+    englishTitle: string;
+    vietnameseTitle: string;
+    year: number;
+    plotVi: string;
+    plotEn: string;
+    quoteVi: string;
+    quoteEn: string;
+    cast: FilmCastMemberMeta[];
+  }
+
+  const CURATED_CLASSIC_FILMS: CuratedFilmMeta[] = [
+    {
+      keys: ["home alone", "ở nhà 1 mình", "ở nhà một mình", "o nha 1 minh", "o nha mot minh"],
+      englishTitle: "Home Alone",
+      vietnameseTitle: "Ở Nhà Một Mình",
+      year: 1990,
+      plotVi:
+        "Bị gia đình bỏ quên ở nhà đúng dịp Giáng Sinh khi mới tám tuổi, cậu bé Kevin McCallister từ nỗi cô đơn ban đầu đã biến ngôi nhà thành pháo đài bẫy rập hài hước để chống lại hai tên trộm vụng về.",
+      plotEn:
+        "Accidentally left behind when his family flies to Paris for Christmas, eight-year-old Kevin McCallister turns his suburban home into a fortress of clever traps to outsmart two bumbling burglars.",
+      quoteVi: "Dù gia đình có ồn ào đến đâu, ngôi nhà thực sự luôn là nơi có người thương yêu chờ ta trở về.",
+      quoteEn: "No matter how loud a family gets, home is never truly home without the people who love you.",
+      cast: [
+        {
+          actor: "Macaulay Culkin",
+          role: "Kevin McCallister",
+          bioVi:
+            "Macaulay Culkin vụt sáng thành sao nhí đắt giá nhất Hollywood chỉ sau một đêm. Nhưng đằng sau nụ cười lém lỉnh ấy là tuổi thơ nhiều áp lực gia đình và hành trình dài tìm lại bình yên ngoài ánh hào quang.",
+          bioEn:
+            "Macaulay Culkin became the biggest child star in Hollywood overnight. Yet behind that mischievous grin lay years of family turmoil and a long journey to reclaim his peace away from the spotlight.",
+          eraQuery: "Macaulay Culkin 1990 portrait",
+        },
+        {
+          actor: "Joe Pesci",
+          role: "Harry Lyme",
+          bioVi:
+            "Joe Pesci vốn nổi tiếng với những vai gangster gai góc, vậy mà khi hóa thân thành tên trộm Harry, ông khiến cả thế giới bật cười nghiêng ngả. Ngay năm 1990 đó, ông còn giành tượng vàng Oscar danh giá.",
+          bioEn:
+            "Known for fierce gangster roles, Joe Pesci amazed audiences with his slapstick brilliance as Harry—the very same year he won an Academy Award for Goodfellas.",
+          eraQuery: "Joe Pesci actor portrait",
+        },
+        {
+          actor: "Daniel Stern",
+          role: "Marv Murchins",
+          bioVi:
+            "Daniel Stern mang đến tiếng hét kinh điển và những cú ngã để đời trong vai Marv. Ngoài diễn xuất, ông còn là đạo diễn, nhà điêu khắc tài hoa và có cuộc sống gia đình bền chặt hiếm thấy ở Hollywood.",
+          bioEn:
+            "Daniel Stern gave cinema one of its most iconic screams as Marv. Beyond comedy, he became a respected director, sculptor, and devoted family man far from tabloid drama.",
+          eraQuery: "Daniel Stern actor portrait",
+        },
+        {
+          actor: "Catherine O'Hara",
+          role: "Kate McCallister",
+          bioVi:
+            "Catherine O'Hara khắc họa nỗi xót xa của người mẹ chạy khắp nước Mỹ tìm con, để rồi hàng chục năm sau bà lại chinh phục thế hệ mới với giải Emmy danh giá và vẫn giữ tình cảm gắn bó với cậu con trai màn ảnh.",
+          bioEn:
+            "Catherine O'Hara anchored the film's emotional heart as Kevin's frantic mother, later earning Emmy glory and sharing a lifelong bond with her young co-star.",
+          eraQuery: "Catherine O'Hara actress portrait",
+        },
+        {
+          actor: "John Candy",
+          role: "Gus Polinski",
+          bioVi:
+            "Chỉ xuất hiện vài phút với vai nhạc công tốt bụng giúp mẹ con Kevin đoàn tụ, cố nghệ sĩ John Candy đã để lại sự ấm áp khó quên trước khi ra đi đột ngột vào năm 1994 ở tuổi 43.",
+          bioEn:
+            "Appearing for just a few unforgettable scenes as kindhearted Gus Polinski, the late John Candy brought pure warmth to the film before his sudden passing in 1994.",
+          eraQuery: "John Candy actor portrait",
+        },
+      ],
+    },
+    {
+      keys: [
+        "little house on the prairie",
+        "ngôi nhà nhỏ trên thảo nguyên",
+        "ngoi nha nho tren thao nguyen",
+      ],
+      englishTitle: "Little House on the Prairie",
+      vietnameseTitle: "Ngôi Nhà Nhỏ Trên Thảo Nguyên",
+      year: 1974,
+      plotVi:
+        "Lấy bối cảnh miền Tây nước Mỹ thế kỷ 19, bộ phim theo chân gia đình Ingalls dựng mái ấm gỗ mộc mạc giữa thảo nguyên bao la, vượt qua thiên tai, nghèo khó bằng tình thân và lòng nhân hậu.",
+      plotEn:
+        "Set on the 19th-century American frontier, the beloved series follows the Ingalls family building a humble homestead while facing hardship with resilience, faith, and unconditional love.",
+      quoteVi: "Giữa thảo nguyên gió lộng, tài sản lớn nhất của con người chưa bao giờ là vàng bạc—mà là mái ấm gia đình.",
+      quoteEn: "Out on the open prairie, the richest treasure was never gold—it was having each other.",
+      cast: [
+        {
+          actor: "Michael Landon",
+          role: "Charles Ingalls (Pa)",
+          bioVi:
+            "Michael Landon không chỉ đóng vai người cha Charles Ingalls mẫu mực mà còn là linh hồn đạo diễn của cả loạt phim. Ít ai biết ông từng trải qua tuổi thơ cô độc trước khi trở thành người cha quốc dân màn ảnh và ra đi sớm năm 1991.",
+          bioEn:
+            "Michael Landon was both the beloved Pa Ingalls and the creative force behind the camera. Having overcome a lonely childhood, he became television's most cherished father before passing in 1991.",
+          eraQuery: "Michael Landon Little House portrait",
+        },
+        {
+          actor: "Melissa Gilbert",
+          role: "Laura Ingalls",
+          bioVi:
+            "Được chọn từ hơn năm trăm cô bé năm lên chín tuổi, Melissa Gilbert trưởng thành ngay trước mắt hàng triệu khán giả trong vai Laura tinh nghịch. Sau phim, bà từng giữ cương vị Chủ tịch Nghiệp đoàn Diễn viên Mỹ.",
+          bioEn:
+            "Chosen from over five hundred young hopefuls at age nine, Melissa Gilbert grew up on screen as spirited Laura, later serving as President of the Screen Actors Guild.",
+          eraQuery: "Melissa Gilbert actress portrait",
+        },
+        {
+          actor: "Karen Grassle",
+          role: "Caroline Ingalls (Ma)",
+          bioVi:
+            "Karen Grassle hóa thân thành người mẹ dịu hiền, nhẫn nại của thung lũng Walnut Grove. Phía sau hình ảnh dịu dàng ấy, bà từng dũng cảm vượt qua giai đoạn đấu tranh với chứng nghiện rượu để viết hồi ký truyền cảm hứng.",
+          bioEn:
+            "Karen Grassle brought quiet grace to Caroline Ingalls. Off screen, she privately overcame personal struggles and later shared her inspiring story of renewal.",
+          eraQuery: "Karen Grassle actress portrait",
+        },
+        {
+          actor: "Melissa Sue Anderson",
+          role: "Mary Ingalls",
+          bioVi:
+            "Vai cô chị cả Mary bị mất thị lực đã mang về cho Melissa Sue Anderson đề cử giải Emmy danh giá khi mới tuổi thiếu niên, ghi dấu một trong những vai diễn xúc động nhất truyền hình Mỹ.",
+          bioEn:
+            "Portraying eldest sister Mary's courage after losing her sight earned Melissa Sue Anderson an Emmy nomination as a teenager and a lasting place in television history.",
+          eraQuery: "Melissa Sue Anderson actress portrait",
+        },
+        {
+          actor: "Alison Arngrim",
+          role: "Nellie Oleson",
+          bioVi:
+            "Đóng vai cô tiểu thư đỏng đảnh Nellie Oleson bị khán giả ghét cay ghét đắng suốt nhiều năm, nhưng ngoài đời Alison Arngrim lại là người bạn thân thiết nhất của Melissa Gilbert và tích cực làm từ thiện.",
+          bioEn:
+            "Playing spoiled Nellie Oleson made Alison Arngrim television's favorite rival, yet in real life she became Melissa Gilbert's lifelong best friend and a dedicated humanitarian.",
+          eraQuery: "Alison Arngrim portrait",
+        },
+      ],
+    },
+    {
+      keys: ["titanic"],
+      englishTitle: "Titanic",
+      vietnameseTitle: "Titanic",
+      year: 1997,
+      plotVi:
+        "Trên chuyến hải trình định mệnh năm 1912 của con tàu không thể chìm, mối tình vượt ranh giới giàu nghèo giữa chàng họa sĩ Jack và tiểu thư Rose đã trở thành bản tình ca bi tráng nhất lịch sử điện ảnh.",
+      plotEn:
+        "Aboard the doomed maiden voyage of 1912, a penniless artist named Jack and aristocrat Rose discover a once-in-a-lifetime love before disaster strikes the Atlantic.",
+      quoteVi: "Trái tim con người giống như đại dương sâu thẳm—một khi đã chạm tới tình yêu chân thật, nó sẽ sống mãi.",
+      quoteEn: "A woman's heart is a deep ocean of secrets—and true love endures beyond time.",
+      cast: [
+        {
+          actor: "Leonardo DiCaprio",
+          role: "Jack Dawson",
+          bioVi:
+            "Ở tuổi 22, Leonardo DiCaprio trở thành biểu tượng toàn cầu với ánh mắt tự do của Jack Dawson, mở ra sự nghiệp lừng lẫy với tượng vàng Oscar và hàng loạt siêu phẩm kinh điển.",
+          bioEn:
+            "At just 22, Leonardo DiCaprio became a global phenomenon as Jack Dawson, launching a legendary career crowned by an Academy Award and iconic collaborations.",
+          eraQuery: "Leonardo DiCaprio 1997 portrait",
+        },
+        {
+          actor: "Kate Winslet",
+          role: "Rose DeWitt Bukater",
+          bioVi:
+            "Kate Winslet từng phải viết thư thuyết phục đạo diễn James Cameron để giành lấy vai Rose, biến nhân vật từ cô tiểu thư gò bó thành người phụ nữ kiên cường và xây dựng tình bạn tri kỷ suốt gần ba thập kỷ với DiCaprio.",
+          bioEn:
+            "Kate Winslet famously campaigned for the role of Rose, delivering an Oscar-nominated triumph and forging one of Hollywood's most genuine lifelong friendships with DiCaprio.",
+          eraQuery: "Kate Winslet 1997 portrait",
+        },
+        {
+          actor: "Billy Zane",
+          role: "Cal Hockley",
+          bioVi:
+            "Billy Zane khắc họa xuất sắc sự kiêu ngạo và ghen tuông của vị hôn phu Cal Hockley, tạo nên lực đối trọng kịch tính cho toàn bộ nửa sau bộ phim.",
+          bioEn:
+            "Billy Zane delivered a razor-sharp performance as arrogant fiancé Cal Hockley, giving the epic romance its unforgettable dramatic tension.",
+          eraQuery: "Billy Zane actor portrait",
+        },
+      ],
+    },
+    {
+      keys: ["the godfather", "bố già", "bo gia"],
+      englishTitle: "The Godfather",
+      vietnameseTitle: "Bố Già",
+      year: 1972,
+      plotVi:
+        "Câu chuyện bi tráng về gia tộc mafia Corleone tại New York, nơi người con út Michael vốn muốn tránh xa thế giới ngầm buộc phải bước lên kế vị để bảo vệ gia đình.",
+      plotEn:
+        "The epic chronicle of the Corleone crime dynasty in postwar New York, tracing reluctant war hero Michael as family loyalty pulls him onto the throne.",
+      quoteVi: "Người đàn ông không dành thời gian cho gia đình thì mãi mãi không bao giờ là một người đàn ông đích thực.",
+      quoteEn: "A man who doesn't spend time with his family can never be a real man.",
+      cast: [
+        {
+          actor: "Marlon Brando",
+          role: "Don Vito Corleone",
+          bioVi:
+            "Marlon Brando nhét bông gòn vào má khi thử vai và tạo nên giọng khàn bất hủ của Ông Trùm Vito Corleone, mang về tượng vàng Oscar thứ hai trong sự nghiệp đầy thăng trầm.",
+          bioEn:
+            "Marlon Brando redefined screen acting as Don Vito Corleone, creating an immortal silhouette of quiet power that earned him his second Academy Award.",
+          eraQuery: "Marlon Brando 1972 Godfather portrait",
+        },
+        {
+          actor: "Al Pacino",
+          role: "Michael Corleone",
+          bioVi:
+            "Suýt bị hãng phim sa thải ở những tuần quay đầu tiên vì còn vô danh, Al Pacino đã chứng minh thiên tài qua màn biến đổi lạnh lùng của Michael Corleone, bước lên hàng ngũ huyền thoại.",
+          bioEn:
+            "Nearly replaced during early filming as a little-known stage actor, Al Pacino delivered one of cinema's greatest transformations as Michael Corleone.",
+          eraQuery: "Al Pacino 1972 portrait",
+        },
+        {
+          actor: "James Caan",
+          role: "Sonny Corleone",
+          bioVi:
+            "James Caan thổi bùng ngọn lửa nóng nảy và bộc trực vào người anh cả Sonny, để lại một trong những phân cảnh gây chấn động nhất lịch sử điện ảnh thập niên 70.",
+          bioEn:
+            "James Caan brought volcanic energy to eldest brother Sonny Corleone, delivering one of the most memorable performances of 1970s cinema.",
+          eraQuery: "James Caan actor portrait",
+        },
+      ],
+    },
+    {
+      keys: ["tây du ký", "tay du ky", "journey to the west"],
+      englishTitle: "Journey to the West 1986",
+      vietnameseTitle: "Tây Du Ký 1986",
+      year: 1986,
+      plotVi:
+        "Trong điều kiện thiếu thốn chỉ có một chiếc máy quay cũ suốt 6 năm ròng, đạo diễn Dương Khiết và đoàn phim đã tạo nên hành trình thỉnh kinh bất hủ qua 81 kiếp nạn gắn liền với tuổi thơ hàng tỷ người châu Á.",
+      plotEn:
+        "Filmed over six grueling years with a single camera and boundless passion, the 1986 adaptation of the Monkey King's pilgrimage became an eternal cultural treasure.",
+      quoteVi: "Đường thỉnh kinh gian nan tám mươi mốt kiếp nạn, cũng giống như đời người phải đi qua thử thách mới thấy chân tâm.",
+      quoteEn: "The road to wisdom passes through eighty-one trials, forging character at every step.",
+      cast: [
+        {
+          actor: "Liu Xiao Ling Tong",
+          role: "Tôn Ngộ Không (Sun Wukong)",
+          bioVi:
+            "Lục Tiểu Linh Đồng xuất thân từ bốn đời truyền nhân Hầu Vương. Để có ánh mắt Hỏa Nhãn Kim Tinh rực lửa dù bị cận nặng, ông từng luyện nhìn mặt trời và đốm hương hàng giờ mỗi ngày.",
+          bioEn:
+            "Born into a four-generation dynasty of Monkey King performers, Liu Xiao Ling Tong trained tirelessly to master Sun Wukong's fiery gaze despite severe nearsightedness.",
+          eraQuery: "Liu Xiao Ling Tong Sun Wukong",
+        },
+        {
+          actor: "Chi Zhongrui",
+          role: "Đường Tăng (Tang Sanzang)",
+          bioVi:
+            "Trì Trọng Thụy là người thứ ba đảm nhận vai Đường Tăng và đi đến trọn vẹn Tây Thiên, mang phong thái điềm đạm từ tốn ngoài đời thực bước thẳng vào huyền thoại màn ảnh.",
+          bioEn:
+            "Chi Zhongrui brought serene dignity to Tang Sanzang for the final stretch to the Western Heaven, cementing an unforgettable childhood icon.",
+          eraQuery: "Journey to the West 1986 cast",
+        },
+        {
+          actor: "Ma Dehua",
+          role: "Trư Bát Giới (Zhu Bajie)",
+          bioVi:
+            "Mã Đức Hoa phải đeo lớp bụng giả và mặt nạ cao su nặng nề dưới cái nắng hơn bốn mươi độ để mang đến một Trư Bát Giới vừa tham ăn lười biếng vừa giàu tình nghĩa.",
+          bioEn:
+            "Enduring heavy prosthetics in blistering summer heat, Ma Dehua turned Zhu Bajie into the humorous, unexpectedly warm heart of the quartet.",
+          eraQuery: "Ma Dehua Zhu Bajie 1986",
+        },
+      ],
+    },
+    {
+      keys: ["gone with the wind", "cuốn theo chiều gió", "cuon theo chieu gio"],
+      englishTitle: "Gone with the Wind",
+      vietnameseTitle: "Cuốn Theo Chiều Gió",
+      year: 1939,
+      plotVi:
+        "Lấy bối cảnh Nội chiến Hoa Kỳ đầy khói lửa, bộ phim khắc họa khát vọng sống mãnh liệt của nàng Scarlett O'Hara và mối tình ngang trái cùng gã phong trần Rhett Butler.",
+      plotEn:
+        "Set against the turmoil of the American Civil War, the monumental 1939 epic follows fiery Scarlett O'Hara through ruin, survival, and her stormy romance with Rhett Butler.",
+      quoteVi: "Dù thế giới có sụp đổ hôm nay, ngày mai vẫn là một ngày mới.",
+      quoteEn: "After all, tomorrow is another day.",
+      cast: [
+        {
+          actor: "Vivien Leigh",
+          role: "Scarlett O'Hara",
+          bioVi:
+            "Vượt qua hơn một nghìn bốn trăm ứng viên, nữ diễn viên Anh quốc Vivien Leigh đã hóa thân xuất thần thành Scarlett O'Hara và giành tượng vàng Oscar Nữ chính đầu tiên ở tuổi 26.",
+          bioEn:
+            "Beating over 1,400 contenders, British actress Vivien Leigh immortalized Scarlett O'Hara and won her first Academy Award at just 26 years old.",
+          eraQuery: "Vivien Leigh 1939 portrait",
+        },
+        {
+          actor: "Clark Gable",
+          role: "Rhett Butler",
+          bioVi:
+            "Ông Vua Hollywood Clark Gable tạo nên câu thoại bất hủ nhất lịch sử điện ảnh trong vai Rhett Butler, giấu sau vẻ ngoài bất cần là nỗi đau mất mát người bạn đời ngoài đời thực.",
+          bioEn:
+            "The King of Hollywood, Clark Gable, gave cinema its most famous parting line as Rhett Butler while carrying private heartache behind his magnetic smile.",
+          eraQuery: "Clark Gable 1939 portrait",
+        },
+        {
+          actor: "Hattie McDaniel",
+          role: "Mammy",
+          bioVi:
+            "Với vai bà vú Mammy nhân hậu mà cương trực, Hattie McDaniel đã làm nên lịch sử khi trở thành nghệ sĩ gốc Phi đầu tiên đoạt giải Oscar trong lịch sử điện ảnh.",
+          bioEn:
+            "For her unforgettable portrayal of Mammy, Hattie McDaniel made history as the first African American artist ever to win an Academy Award.",
+          eraQuery: "Hattie McDaniel actress portrait",
+        },
+      ],
+    },
+    {
+      keys: ["forrest gump"],
+      englishTitle: "Forrest Gump",
+      vietnameseTitle: "Forrest Gump",
+      year: 1994,
+      plotVi:
+        "Một chàng trai có chỉ số IQ thấp hơn người thường nhưng sở hữu trái tim thuần khiết vô tình đi qua mọi sự kiện vĩ đại nhất nước Mỹ thế kỷ 20 chỉ vì luôn giữ trọn lời hứa với những người mình yêu thương.",
+      plotEn:
+        "A kindhearted man with a simple mind unintentionally shapes decades of twentieth-century American history simply by keeping every promise he ever made.",
+      quoteVi: "Cuộc đời giống như một hộp sô-cô-la, bạn sẽ không bao giờ biết mình nhận được viên nào.",
+      quoteEn: "Life was like a box of chocolates. You never know what you're gonna get.",
+      cast: [
+        {
+          actor: "Tom Hanks",
+          role: "Forrest Gump",
+          bioVi:
+            "Tom Hanks mang đến diễn xuất chạm tới trái tim hàng triệu người, giúp ông lập kỷ lục lịch sử khi đoạt giải Oscar Nam chính xuất sắc hai năm liên tiếp.",
+          bioEn:
+            "Tom Hanks delivered an iconic portrayal of pure decency, winning back-to-back Best Actor Oscars in consecutive years.",
+          eraQuery: "Tom Hanks 1994 actor portrait",
+        },
+        {
+          actor: "Robin Wright",
+          role: "Jenny Curran",
+          bioVi:
+            "Robin Wright khắc họa số phận đầy giằng xé của Jenny—mối tình đầu suốt cả đời của Forrest, trước khi bà tiếp tục tỏa sáng trong những vai diễn quyền lực hàng thập kỷ sau.",
+          bioEn:
+            "Robin Wright brought haunting vulnerability to Jenny Curran, Forrest's lifelong love, cementing an extraordinary decades-long career.",
+          eraQuery: "Robin Wright actress portrait",
+        },
+        {
+          actor: "Gary Sinise",
+          role: "Lieutenant Dan Taylor",
+          bioVi:
+            "Vai Trung úy Dan đã gắn kết cuộc đời Gary Sinise với các cựu chiến binh ngoài đời thực, thôi thúc ông lập quỹ hỗ trợ nhân đạo suốt hơn ba thập kỷ qua.",
+          bioEn:
+            "Playing Lieutenant Dan transformed Gary Sinise's life off screen, inspiring him to dedicate decades to supporting real-life veterans and their families.",
+          eraQuery: "Gary Sinise actor portrait",
+        },
+      ],
+    },
+    {
+      keys: ["harry potter"],
+      englishTitle: "Harry Potter",
+      vietnameseTitle: "Harry Potter",
+      year: 2001,
+      plotVi:
+        "Cậu bé mồ côi sống trong gầm cầu thang bỗng phát hiện mình là phù thủy, bước chân vào ngôi trường Hogwarts kỳ diệu và cùng hai người bạn thân viết nên cuộc chiến ánh sáng kéo dài suốt mười năm.",
+      plotEn:
+        "An orphan boy living under a staircase discovers he is a wizard, entering Hogwarts School and forging an unbreakable friendship across an eight-film battle against darkness.",
+      quoteVi: "Không phải năng lực bẩm sinh, chính những lựa chọn của chúng ta mới quyết định ta là ai.",
+      quoteEn: "It is our choices that show what we truly are, far more than our abilities.",
+      cast: [
+        {
+          actor: "Daniel Radcliffe",
+          role: "Harry Potter",
+          bioVi:
+            "Lớn lên cùng bộ phim từ năm 11 tuổi, Daniel Radcliffe đã dũng cảm vượt qua cái bóng khổng lồ của cậu bé phù thủy để khẳng định thực lực qua sân khấu kịch và điện ảnh độc lập.",
+          bioEn:
+            "Growing up on set from age eleven, Daniel Radcliffe boldly stepped beyond his iconic wizard role into acclaimed theater and fearless indie cinema.",
+          eraQuery: "Daniel Radcliffe Harry Potter",
+        },
+        {
+          actor: "Emma Watson",
+          role: "Hermione Granger",
+          bioVi:
+            "Emma Watson mang trí tuệ sắc sảo của Hermione ra ngoài đời thật khi vừa đóng phim vừa tốt nghiệp Đại học Brown danh giá và trở thành đại sứ thiện chí Liên Hợp Quốc.",
+          bioEn:
+            "Emma Watson mirrored Hermione's brilliance off screen, earning an Ivy League degree while filming and becoming a global advocate.",
+          eraQuery: "Emma Watson actress portrait",
+        },
+        {
+          actor: "Alan Rickman",
+          role: "Severus Snape",
+          bioVi:
+            "Cố nghệ sĩ Alan Rickman là người duy nhất được tác giả tiết lộ bí mật cuối cùng của Giáo sư Snape ngay từ tập đầu, tạo nên một trong những vai diễn sâu sắc và lấy nước mắt nhất thế kỷ 21.",
+          bioEn:
+            "The late Alan Rickman held Snape's deepest secret from the very first film, crafting one of modern cinema's most hauntingly loyal characters.",
+          eraQuery: "Alan Rickman actor portrait",
+        },
+      ],
+    },
+  ];
+
+  function resolveFilmTopicMeta(rawTopic: string): {
+    isKnownFilm: boolean;
+    englishTitle: string;
+    vietnameseTitle: string;
+    year: number | null;
+    curated?: CuratedFilmMeta;
+  } {
+    const cleaned = String(rawTopic || "")
+      .replace(/^(phim|bộ phim|film|movie|review phim|tóm tắt phim)\s*[:\-–]?\s*/i, "")
+      .replace(/\(.*?\)/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const lower = cleaned.toLowerCase();
+
+    const matched = CURATED_CLASSIC_FILMS.find((f) =>
+      f.keys.some((k) => lower === k || lower.includes(k) || k.includes(lower))
+    );
+    if (matched) {
+      return {
+        isKnownFilm: true,
+        englishTitle: matched.englishTitle,
+        vietnameseTitle: matched.vietnameseTitle,
+        year: matched.year,
+        curated: matched,
+      };
+    }
+
+    // Simple common Vietnamese -> English classic movie aliases
+    const aliasMap: Array<[RegExp, string, number | null]> = [
+      [/cướp biển vùng caribe|cuop bien vung caribe/i, "Pirates of the Caribbean", 2003],
+      [/chúa tể những chiếc nhẫn|chua te nhung chiec nhan/i, "The Lord of the Rings", 2001],
+      [/mặt nạ xanh|mat na xanh/i, "The Mask", 1994],
+      [/vua sư tử|vua su tu/i, "The Lion King", 1994],
+      [/ba chàng ngốc|ba chang ngoc|3 idiots/i, "3 Idiots", 2009],
+      [/người nhện|nguoi nhen/i, "Spider-Man", 2002],
+      [/kẻ hủy diệt|ke huy diet/i, "The Terminator", 1984],
+      [/ma trận|ma tran/i, "The Matrix", 1999],
+      [/chiến binh thép|vo si giac dau|gladiator/i, "Gladiator", 2000],
+      [/những người khốn khổ|nhung nguoi khon kho/i, "Les Miserables", 2012],
+      [/trân châu cảng|tran chau cang/i, "Pearl Harbor", 2001],
+      [/bản tình ca mùa đông|ban tinh ca mua dong/i, "Winter Sonata", 2002],
+      [/giày thủy tinh|giay thuy tinh/i, "Glass Slippers", 2002],
+    ];
+    for (const [rx, enTitle, yr] of aliasMap) {
+      if (rx.test(lower)) {
+        return {
+          isKnownFilm: true,
+          englishTitle: enTitle,
+          vietnameseTitle: cleaned || enTitle,
+          year: yr,
+        };
+      }
+    }
+
+    return {
+      isKnownFilm: false,
+      englishTitle: cleaned || "Classic Cinema",
+      vietnameseTitle: cleaned || "Tác Phẩm Kinh Điển",
+      year: null,
+    };
+  }
+
+  function buildFallbackFilmCastScenes(
+    topic: string,
+    language: string,
+    targetSceneCount: number,
+    ratioDesc: string,
+    channelTitle: string,
+    channelSubtitle: string
+  ) {
+    const filmMeta = resolveFilmTopicMeta(topic);
+    const filmVi = filmMeta.vietnameseTitle;
+    const filmEn = filmMeta.englishTitle;
+    const yearStr = filmMeta.year ? ` (${filmMeta.year})` : "";
+    const total = Math.max(4, Math.min(20, Number(targetSceneCount) || 10));
+    const narrativeCount = total - 1;
+    const motions = ["zoom-in", "pan-right", "zoom-out", "pan-left"] as const;
+
+    const curated = filmMeta.curated;
+    const castList: FilmCastMemberMeta[] = curated?.cast || [
+      {
+        actor: `${filmEn} lead actor`,
+        role: "Nhân vật chính (Lead Role)",
+        bioVi: `Gương mặt trung tâm gánh vác linh hồn của ${filmVi}${yearStr}, người đã biến vai diễn này thành cột mốc không thể thay thế trong sự nghiệp và in sâu vào ký ức nhiều thế hệ.`,
+        bioEn: `At the heart of ${filmEn}${yearStr} stood a lead performer whose honesty turned a script into an unforgettable screen milestone.`,
+        eraQuery: `${filmEn} cast lead actor`,
+      },
+      {
+        actor: `${filmEn} co-star`,
+        role: "Bạn diễn ăn ý (Co-Star)",
+        bioVi: `Bên cạnh nhân vật chính là những bạn diễn tài năng tạo nên phản ứng hóa học kỳ diệu. Ít ai biết đằng sau màn ảnh họ cũng trải qua nhiều thăng trầm để giữ lửa nghề suốt nhiều năm sau đó.`,
+        bioEn: `Beside the lead stood remarkable co-stars whose chemistry gave the story warmth, though their personal lives off camera carried quiet battles of their own.`,
+        eraQuery: `${filmEn} cast actress`,
+      },
+      {
+        actor: `${filmEn} director`,
+        role: "Dấu ấn đạo diễn & diễn viên phụ",
+        bioVi: `Từ những vai phụ tưởng chừng nhỏ bé đến bàn tay nhào nặn tinh tế của ekip sản xuất, từng mảnh ghép đều góp phần làm nên linh hồn sống mãi cho ${filmVi}.`,
+        bioEn: `From unforgettable supporting players to the visionary crew behind the lens, every contributor helped turn ${filmEn} into a living classic.`,
+        eraQuery: `${filmEn} behind the scenes cast`,
+      },
+    ];
+
+    const filmBeats: Array<{
+      title: string;
+      kw: string;
+      sceneType: "video" | "image" | "quote";
+      en: string;
+      vi: string;
+    }> = [
+      {
+        title: `Mở màn: Ký ức mang tên ${filmVi}`,
+        kw: `${filmEn} ${filmMeta.year || ""} iconic movie scene`.trim(),
+        sceneType: "video",
+        en: `Decades have passed, yet the moment the opening notes of ${filmEn}${yearStr} begin to play, millions still feel like they are watching it for the very first time.`,
+        vi: `Hàng thập kỷ đã trôi qua, nhưng hễ nhắc đến ${filmVi}${yearStr}, hàng triệu khán giả vẫn bồi hồi như được sống lại trọn vẹn những thước phim năm nào.`,
+      },
+      {
+        title: "Tóm tắt cốt truyện & Bối cảnh",
+        kw: `${filmEn} ${filmMeta.year || ""} film still scene`.trim(),
+        sceneType: "video",
+        en:
+          curated?.plotEn ||
+          `${filmEn}${yearStr} tells a deeply human story of courage, heartbreak, and hope—capturing the imagination of audiences across generations.`,
+        vi:
+          curated?.plotVi ||
+          `${filmVi}${yearStr} mở ra một câu chuyện giàu tính nhân văn về tình thân, nghị lực và những khoảnh khắc chạm thẳng tới trái tim người xem suốt nhiều thế hệ.`,
+      },
+      {
+        title: "Sức hút vượt thời gian của bộ phim",
+        kw: `${filmEn} classic movie clip`.trim(),
+        sceneType: "image",
+        en: `What made ${filmEn} immortal wasn't big-budget spectacle—it was an unforgettable cast who poured their real souls into every frame.`,
+        vi: `Điều làm nên sức sống bất diệt của ${filmVi} không chỉ là kịch bản lôi cuốn, mà chính là dàn diễn viên đã thổi hồn thật vào từng khung hình.`,
+      },
+      {
+        title: `Thông điệp bất hủ trong ${filmVi}`,
+        kw: "cinema quote",
+        sceneType: "quote",
+        en:
+          curated?.quoteEn ||
+          `Great films don't just entertain for two hours—their characters stay beside us for a lifetime.`,
+        vi:
+          curated?.quoteVi ||
+          `Một bộ phim hay không chỉ kéo dài hai giờ đồng hồ—những nhân vật trong đó sẽ đồng hành cùng ta suốt cả cuộc đời.`,
+      },
+    ];
+
+    // Insert mini-biographies of the famous actors in the film
+    castList.forEach((member, mIdx) => {
+      filmBeats.push({
+        title: `Diễn viên: ${member.actor} (${member.role})`,
+        kw: member.eraQuery || `${member.actor} ${filmEn}`,
+        sceneType: mIdx % 2 === 0 ? "video" : "image",
+        en: member.bioEn,
+        vi: member.bioVi,
+      });
+    });
+
+    filmBeats.push(
+      {
+        title: "Chuyện hậu trường ít người biết",
+        kw: `${filmEn} behind the scenes cast`,
+        sceneType: "video",
+        en: `Behind the camera of ${filmEn}, unscripted moments and quiet struggles forged bonds among the cast that endured long after filming wrapped.`,
+        vi: `Phía sau ống kính của ${filmVi}, biết bao câu chuyện hậu trường xúc động và sự hy sinh thầm lặng đã gắn kết dàn diễn viên như một gia đình thực sự.`,
+      },
+      {
+        title: "Thông điệp & Hào quang quá khứ",
+        kw: "legacy quote",
+        sceneType: "quote",
+        en: `Actors grow older and sets fade away, yet the magic they captured on film remains forever young.`,
+        vi: `Năm tháng có thể làm phai mái tóc người nghệ sĩ, nhưng ánh sáng từ những vai diễn để đời vẫn mãi trẻ trung trong lòng khán giả.`,
+      },
+      {
+        title: "Dàn diễn viên ngày ấy & Bây giờ",
+        kw: `${filmEn} cast then and now reunion`,
+        sceneType: "video",
+        en: `Looking back at the stars of ${filmEn}${yearStr}, some are still shining on stage while others live on in memory—forever united by a masterpiece.`,
+        vi: `Nhìn lại dàn sao của ${filmVi}${yearStr} ngày ấy và bây giờ, có người vẫn miệt mài cống hiến, có người đã hóa thành ký ức, nhưng tất cả mãi chung một huyền thoại.`,
+      },
+      {
+        title: "Di sản điện ảnh sống mãi",
+        kw: `${filmEn} tribute portrait`,
+        sceneType: "video",
+        en: `And that is why ${filmEn} is far more than a movie—it is a timeless chapter of our own lives we will always cherish.`,
+        vi: `Và đó là lý do ${filmVi} không chỉ là một bộ phim—mà là cả một vùng trời ký ức thanh xuân không thể nào quên.`,
+      }
+    );
+
+    const openingHook = filmBeats[0];
+    const plotSummary = filmBeats[1];
+    const iconicTheme = filmBeats[2];
+    const filmQuote = filmBeats[3];
+    const castBeats = filmBeats.slice(4, 4 + castList.length);
+    const btsBeat = filmBeats[4 + castList.length];
+    const legacyQuote = filmBeats[5 + castList.length];
+    const thenNowBeat = filmBeats[6 + castList.length];
+    const legacyClose = filmBeats[7 + castList.length];
+
+    let selectedBeats: typeof filmBeats = [];
+    if (narrativeCount <= 5) {
+      selectedBeats = [
+        openingHook,
+        plotSummary,
+        ...castBeats.slice(0, Math.max(1, narrativeCount - 3)),
+        legacyClose,
+      ].slice(0, narrativeCount);
+    } else if (narrativeCount < filmBeats.length) {
+      const middleSlots = Math.max(1, narrativeCount - 5);
+      const middlePool = [...castBeats, iconicTheme, btsBeat, legacyQuote];
+      const pickedCastAndExtras = middlePool.slice(0, middleSlots);
+      selectedBeats = [
+        openingHook,
+        plotSummary,
+        filmQuote,
+        ...pickedCastAndExtras,
+        thenNowBeat,
+        legacyClose,
+      ].slice(0, narrativeCount);
+    } else {
+      selectedBeats = [...filmBeats];
+      while (selectedBeats.length < narrativeCount) {
+        selectedBeats.splice(
+          selectedBeats.length - 1,
+          0,
+          filmBeats[(selectedBeats.length - 2) % filmBeats.length]
+        );
+      }
+      selectedBeats = selectedBeats.slice(0, narrativeCount);
+    }
+
+    const scenes: any[] = selectedBeats.map((beat, idx) => {
+      const primaryText = language === "vi" ? beat.vi : beat.en;
+      const secondaryText = language === "vi" ? beat.en : beat.vi;
+      const sType = beat.sceneType;
+      return {
+        title: beat.title,
+        sceneType: sType,
+        narrationText: primaryText,
+        translationText: secondaryText,
+        visualPrompt:
+          sType === "video"
+            ? `CẦN VIDEO: ${beat.title}`
+            : sType === "quote"
+            ? `THẺ CHỮ ĐEN: ${beat.title}`
+            : `CẦN ẢNH TĨNH: ${beat.title}`,
+        imagePrompt: `Cinematic documentary film frame representing ${beat.kw} (${filmEn}${yearStr}), authentic 35mm photography, warm nostalgic lighting, full-frame ${ratioDesc}, edge-to-edge full-bleed composition, no borders, no text.`,
+        videoMotionPrompt: `[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: Starting from the uploaded reference frame for ${beat.title}, expressive atmosphere -> [2-4s Story Action & Speech]: Preserving 100% exact facial identity from the reference image, subtle cinematic expression matching "${primaryText.slice(0, 80)}" -> [4-6s Camera Control & Climax]: Smooth Kling dolly push-in, 35mm cinema grain, full-screen ${ratioDesc}.`,
+        archivalKeywords: beat.kw,
+        motionEffect: motions[idx % motions.length],
+        colorFilter: idx % 3 === 0 ? "color-warm" : idx % 3 === 1 ? "original" : "bw-vintage",
+        frameStyle: "full-bleed",
+        durationSec: 7,
+      };
+    });
+
+    scenes.push({
+      title: `Logo Kết Cố Định: ${channelTitle} (HM)`,
+      sceneType: "outro",
+      narrationText: "Life Legends. Their Legacy. Your Inspiration.",
+      translationText: "Huyền Thoại Cuộc Đời. Di sản của họ. Cảm hứng của bạn.",
+      visualPrompt: `LOGO KẾT CỐ ĐỊNH: ${channelTitle} — ${channelSubtitle}`,
+      imagePrompt: "Fixed Outro Logo",
+      videoMotionPrompt: "Fixed Outro Logo",
+      archivalKeywords: filmEn,
+      motionEffect: "zoom-in",
+      colorFilter: "original",
+      frameStyle: "full-bleed",
+      durationSec: 4,
+    });
+
+    return scenes;
+  }
+
   function buildFallbackDocumentaryScenes(
     topic: string,
     language: string,
@@ -921,10 +1587,11 @@ function registerRoutes() {
     return scenes;
   }
 
-  // 1. Generate Documentary Storyboard & Prompts (Uses Intermediary API if configured, else Gemini, with Guaranteed Chronological Fallback)
+  // 1. Generate Documentary Storyboard & Prompts (Supports both Biography & Film Summary + Famous Cast modes)
   app.post("/api/story/generate", async (req, res) => {
     const {
       topic = "Clint Eastwood",
+      storyMode = "biography",
       language = "en",
       sceneCount = 10,
       includeQuotes = true,
@@ -937,9 +1604,17 @@ function registerRoutes() {
     } = req.body || {};
 
     if (!topic || typeof topic !== "string") {
-      res.status(400).json({ error: "Vui lòng nhập tên nhân vật, chủ đề hoặc kịch bản." });
+      res.status(400).json({ error: "Vui lòng nhập tên nhân vật, tên phim hoặc kịch bản." });
       return;
     }
+
+    const filmMeta = resolveFilmTopicMeta(topic);
+    const effectiveMode: "biography" | "film-cast" =
+      storyMode === "film-cast" ||
+      filmMeta.isKnownFilm ||
+      /^(phim|bộ phim|film|movie|tóm tắt phim)\b/i.test(topic.trim())
+        ? "film-cast"
+        : "biography";
 
     const ratioDesc =
       aspectRatio === "9:16"
@@ -988,7 +1663,25 @@ function registerRoutes() {
           ? "2"
           : "1 or 2";
 
-      const prompt = `Create an EXACTLY ${targetSceneCount}-scene documentary story video script & production prompt sheet about: "${topic}" (return a JSON array with exactly ${targetSceneCount} scene objects).
+      const prompt =
+        effectiveMode === "film-cast"
+          ? `Create an EXACTLY ${targetSceneCount}-scene viral documentary FILM SUMMARY & FAMOUS CAST BIOGRAPHY script about the film/series: "${topic}" (canonical English title: "${filmMeta.englishTitle}"${filmMeta.year ? `, released ${filmMeta.year}` : ""}) — return a JSON array with exactly ${targetSceneCount} scene objects.
+${langInstruction}
+
+Follow the exact emotional "Life Legends" documentary style adapted for CLASSIC FILM + CAST SPOTLIGHT:
+1. Smooth Documentary Film & Cast Arc (#01 -> #${targetSceneCount}) — IMPORTANT: 'video' scenes MUST account for >60% of the total duration:
+   - Scene #1 MUST be 'video': Emotional nostalgic hook introducing the film "${topic}" (${filmMeta.englishTitle}) and why millions still love it decades later (7-9s).
+   - Scenes #2–#3: Concise, gripping PLOT SUMMARY & setting of the film (what the story is about, why it became iconic), plus 1 memorable 'quote' scene reflecting the soul of the film.
+   - Middle & Main Spotlight Scenes (majority of scenes): Profile **3 to 5 of the MOST FAMOUS ACTORS/ACTRESSES** in this exact film in biographical storytelling style! For EACH actor: name the actor + iconic character they played -> share fascinating biographical highlights, struggles or behind-the-scenes trivia -> reveal what happened to their career/life after the film ("Where are they now / Legacy"). Give each featured actor their own dedicated scene title like "Diễn viên: [Actor Name] ([Role Name])".
+   - Penultimate scene(s): Film behind-the-scenes legacy & cast reunion reflection.
+   - Final scene (#${targetSceneCount}) MUST be 'outro' (closing crest "${channelTitle} — ${channelSubtitle}").
+   - Across the ${targetSceneCount} scenes, use ${videoSceneQuota} 'video' scenes, ${imageSceneQuota} 'image' scenes, and ${quoteSceneQuota}.
+2. CRITICAL FOR ACCURATE REAL PHOTOS/VIDEOS PER SCENE:
+   - 'frameStyle': "full-bleed".
+   - 'archivalKeywords': For plot/film scenes, use "${filmMeta.englishTitle} ${filmMeta.year || ""} movie scene". For EACH specific actor biography scene, MUST begin with that actor's exact FULL ENGLISH NAME + film/year (e.g. "Macaulay Culkin Home Alone 1990", "Michael Landon Little House on the Prairie") so our archival matcher fetches that exact actor's real portrait/video!
+   - 'imagePrompt': Concise English prompt (25-40 words) for ${ratioDesc}, full-bleed composition.
+   - 'videoMotionPrompt': Concise 3-beat English Kling AI I2V prompt: "[Kling AI I2V - Lock Reference Face Identity] [0-2s Opening Beat]: ... -> [2-4s Story Action & Speech]: ... -> [4-6s Camera Control & Climax]: ..." in ${ratioDesc}.`
+          : `Create an EXACTLY ${targetSceneCount}-scene documentary story video script & production prompt sheet about: "${topic}" (return a JSON array with exactly ${targetSceneCount} scene objects).
 ${langInstruction}
 
 Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scenes with SMOOTH CHRONOLOGICAL & EMOTIONAL ORDERING:
@@ -1015,6 +1708,8 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
           });
           res.json({
             scenes: proxyResult.scenes,
+            storyMode: effectiveMode,
+            resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
             usedProvider: `API Trung Gian (${proxyResult.usedModel})`,
             usedModel: proxyResult.usedModel,
           });
@@ -1026,7 +1721,7 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
 
       const ai = getGenAIClient();
       const geminiPromise = ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1040,23 +1735,40 @@ Follow the exact viral "Life Legends" video formula for ${targetSceneCount} scen
       const response = await Promise.race([geminiPromise, timeoutPromise]);
       const extracted = extractScenesArraySafely(response.text || "");
       if (extracted && extracted.length > 0) {
-        res.json({ scenes: extracted, usedProvider: "Gemini AI" });
+        res.json({
+          scenes: extracted,
+          storyMode: effectiveMode,
+          resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
+          usedProvider: "Gemini AI",
+        });
         return;
       }
     } catch {
       // Fall through to guaranteed chronological storyboard builder below so user never gets an error
     }
 
-    const fallbackScenes = buildFallbackDocumentaryScenes(
-      topic,
-      language,
-      targetSceneCount,
-      ratioDesc,
-      channelTitle,
-      channelSubtitle
-    );
+    const fallbackScenes =
+      effectiveMode === "film-cast"
+        ? buildFallbackFilmCastScenes(
+            topic,
+            language,
+            targetSceneCount,
+            ratioDesc,
+            channelTitle,
+            channelSubtitle
+          )
+        : buildFallbackDocumentaryScenes(
+            topic,
+            language,
+            targetSceneCount,
+            ratioDesc,
+            channelTitle,
+            channelSubtitle
+          );
     res.json({
       scenes: fallbackScenes,
+      storyMode: effectiveMode,
+      resolvedFilmTitleEn: effectiveMode === "film-cast" ? filmMeta.englishTitle : undefined,
       usedProvider: "LegendCut Chronological Studio Engine",
     });
   });
@@ -1137,7 +1849,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const ai = getGenAIClient();
       const geminiPromise = ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -3100,7 +3812,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const propChar = String(characterName || "Will Sampson")
         .replace(/[—–-].*$/, "")
         .trim();
-      const rawSearch = String(query || propChar).trim();
+      const rawSearchInput = String(query || propChar).trim();
+      const resolvedSearchFilm = resolveFilmTopicMeta(rawSearchInput);
+      const rawSearch = resolvedSearchFilm.isKnownFilm
+        ? resolvedSearchFilm.englishTitle
+        : rawSearchInput;
       const dur = Math.max(5, Math.min(20, Math.round(Number(sceneDurationSec) || 8)));
 
       // If rawSearch starts with or contains a known actor name, prioritize it
@@ -3112,7 +3828,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         )
         .replace(/\s+/g, " ")
         .trim();
-      const cleanChar = queryCore.length >= 3 ? queryCore : propChar;
+      const cleanChar = queryCore.length >= 3 ? queryCore : resolvedSearchFilm.isKnownFilm ? resolvedSearchFilm.englishTitle : propChar;
 
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();
@@ -3742,8 +4458,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         .trim();
 
       // Always prioritize the subject typed in the search box (e.g. "Steve McQueen") over a stale characterName prop!
-      const cleanChar =
+      // Also resolve Vietnamese classic film titles (e.g. "Ở Nhà 1 Mình" -> "Home Alone") so external video queries hit global catalogs!
+      const rawCleanChar =
         queryCoreSubject.length >= 3 ? queryCoreSubject : propChar || "Will Sampson";
+      const resolvedFilmForSearch = resolveFilmTopicMeta(rawCleanChar);
+      const cleanChar = resolvedFilmForSearch.isKnownFilm
+        ? resolvedFilmForSearch.englishTitle
+        : rawCleanChar;
 
       const broadBaseQuery =
         rawQuery
@@ -4856,7 +5577,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   // Searches across Bing Web Images + Wikipedia + Wikimedia Commons across multiple chronological eras so every visual scene gets a unique real photo whenever available!
   app.post("/api/archival/match-scenes", async (req, res) => {
     try {
-      const { topic = "", scenes = [] } = req.body || {};
+      const { topic = "", storyMode = "biography", scenes = [] } = req.body || {};
       if (!Array.isArray(scenes) || scenes.length === 0) {
         res.json({ matchedBySceneId: {}, allPhotos: [] });
         return;
@@ -4896,7 +5617,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return;
       }
 
-      const cleanTopic = String(topic || "").trim();
+      const rawTopicStr = String(topic || "").trim();
+      const resolvedFilmMeta = resolveFilmTopicMeta(rawTopicStr);
+      const isFilmCastMode =
+        storyMode === "film-cast" || resolvedFilmMeta.isKnownFilm;
+      const cleanTopic =
+        isFilmCastMode && resolvedFilmMeta.isKnownFilm
+          ? resolvedFilmMeta.englishTitle
+          : rawTopicStr;
 
       // Step 1: Search in parallel across chronological eras on Bing Web Images + Wikipedia + Wikimedia Commons
       const verifiedVideos: {
@@ -4919,12 +5647,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       }[] = [];
 
       if (cleanTopic) {
-        const eraQueries = [
-          `${cleanTopic} young early career candid portrait photo`,
-          `${cleanTopic} classic movie scene film still photograph`,
-          `${cleanTopic} 1970s actor portrait headshot photograph`,
-          `${cleanTopic} behind the scenes portrait photograph`,
-        ];
+        const eraQueries = isFilmCastMode
+          ? [
+              `${cleanTopic} ${resolvedFilmMeta.year || ""} movie scene film still`.trim(),
+              `${cleanTopic} cast actors portrait photograph`,
+              `${cleanTopic} behind the scenes cast`,
+              `${cleanTopic} classic movie poster actors`,
+            ]
+          : [
+              `${cleanTopic} young early career candid portrait photo`,
+              `${cleanTopic} classic movie scene film still photograph`,
+              `${cleanTopic} 1970s actor portrait headshot photograph`,
+              `${cleanTopic} behind the scenes portrait photograph`,
+            ];
 
         const [foundVideos, ...eraPhotoLists] = await Promise.all([
           searchRealArchivalVideos(cleanTopic, 6, usedUrls, cleanTopic, usedTitleKeys),
@@ -4945,6 +5680,72 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         }
       }
 
+      // Per-scene targeted archival photo lookup when in Film+Cast mode OR when scene has distinct actor archivalKeywords!
+      if (isFilmCastMode) {
+        const actorScenes = visualScenes.filter((sc: any) => {
+          const kw = String(sc.archivalKeywords || "").trim();
+          return (
+            kw &&
+            !kw.toLowerCase().includes(cleanTopic.toLowerCase()) &&
+            !/\b(movie scene|film still|behind the scenes|then and now|cast reunion|tribute)\b/i.test(kw)
+          );
+        });
+        const uniqueActorKeywords = Array.from(
+          new Set(actorScenes.map((sc: any) => String(sc.archivalKeywords || "").trim()))
+        ).slice(0, 6);
+
+        if (uniqueActorKeywords.length > 0) {
+          const actorPhotosByKw: Record<string, any[]> = {};
+          await Promise.all(
+            uniqueActorKeywords.map(async (kw) => {
+              const actorAnchor = kw
+                .replace(/\b(19|20)\d{2}\b/g, "")
+                .replace(/\b(portrait|actor|actress|cast|movie|film|scene|young)\b/gi, "")
+                .replace(/\s+/g, " ")
+                .trim();
+              const subjectHint = actorAnchor.split(" ").slice(0, 3).join(" ") || kw;
+              const hits = await searchRealArchivalPhotos(
+                `${subjectHint} actor portrait photo`,
+                3,
+                usedUrls,
+                subjectHint,
+                usedTitleKeys
+              );
+              if (hits.length > 0) {
+                actorPhotosByKw[kw] = hits;
+              }
+            })
+          );
+
+          // Pre-assign each cast member scene directly to their real actor portrait!
+          for (const sc of actorScenes) {
+            const kw = String(sc.archivalKeywords || "").trim();
+            const hits = actorPhotosByKw[kw];
+            if (hits && hits.length > 0) {
+              const photo = hits.shift()!;
+              const label = photo.year ? `${photo.title} (${photo.year})` : photo.title;
+              matchedBySceneId[sc.id] = {
+                title: label,
+                dataUrl: photo.dataUrl,
+                mediaKind: "image",
+                width: photo.width,
+                height: photo.height,
+                year: photo.year,
+              };
+              allPhotos.push({
+                sceneId: sc.id,
+                title: label,
+                dataUrl: photo.dataUrl,
+                mediaKind: "image",
+                width: photo.width,
+                height: photo.height,
+                year: photo.year,
+              });
+            }
+          }
+        }
+      }
+
       // If we still need more photos, check scene-specific archivalKeywords in parallel
       if (verifiedPool.length < visualScenes.length) {
         const extraKeywords = Array.from(
@@ -4953,11 +5754,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               .map((sc: any) => String(sc.archivalKeywords || "").trim())
               .filter((kw: string) => kw && kw.toLowerCase() !== cleanTopic.toLowerCase())
           )
-        ).slice(0, 3);
+        ).slice(0, 4);
 
         const extraResults = await Promise.all(
           extraKeywords.map((kw) =>
-            searchRealArchivalPhotos(kw, 5, usedUrls, cleanTopic || kw, usedTitleKeys)
+            searchRealArchivalPhotos(
+              kw,
+              5,
+              usedUrls,
+              isFilmCastMode ? kw.split(" ").slice(0, 2).join(" ") : cleanTopic || kw,
+              usedTitleKeys
+            )
           )
         );
         for (const list of extraResults) {

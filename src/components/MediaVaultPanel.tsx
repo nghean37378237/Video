@@ -22,7 +22,7 @@ import {
   CheckCircle2,
   Search,
 } from 'lucide-react';
-import { PresetId, ProjectSettings, StoryScene, VaultItem } from '../types';
+import { PresetId, ProjectSettings, StoryScene, StoryTopicMode, VaultItem } from '../types';
 import {
   cleanDisplayFileName,
   detectMediaKindFromFile,
@@ -57,7 +57,12 @@ interface MediaVaultPanelProps {
   onAutoStitchVault: () => void;
   onExtractSampleFrames?: () => Promise<void>;
   isExtractingFrames?: boolean;
-  onGenerateAIStory: (topic: string, lang: 'vi' | 'en', sceneCount: number) => Promise<void>;
+  onGenerateAIStory: (
+    topic: string,
+    lang: 'vi' | 'en',
+    sceneCount: number,
+    overrideStoryMode?: StoryTopicMode
+  ) => Promise<void>;
   isGeneratingStory: boolean;
   onRunFullAutoPilot: (
     characterOrTopic: string,
@@ -65,7 +70,8 @@ interface MediaVaultPanelProps {
     sceneCount: number,
     overrideVoice?: ProjectSettings['ttsVoice'],
     overrideMusicStyle?: ProjectSettings['bgMusicStyle'],
-    overrideMusicVolume?: number
+    overrideMusicVolume?: number,
+    overrideStoryMode?: StoryTopicMode
   ) => Promise<void>;
   isRunningAutoPilot: boolean;
   autoPilotStepText: string;
@@ -113,11 +119,21 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'auto-pilot' | 'vault'>('auto-pilot');
 
   const initialSaved = loadSavedAudioPreferences();
+  const [storyMode, setStoryMode] = useState<StoryTopicMode>(
+    settings.storyMode || initialSaved.storyMode || 'biography'
+  );
   const [storyTopic, setStoryTopic] = useState<string>(
     initialSaved.storyTopic ||
       settings.projectTitle?.split('—')[0]?.split('-')[0]?.trim() ||
       'Clint Eastwood'
   );
+
+  useEffect(() => {
+    if (settings.storyMode && settings.storyMode !== storyMode) {
+      setStoryMode(settings.storyMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.storyMode]);
 
   // Sync storyTopic when settings.projectTitle changes from preset selection
   useEffect(() => {
@@ -353,16 +369,77 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             <div>
               <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                 <Zap className="w-4 h-4" />
-                NHẬP TÊN NHÂN VẬT &amp; CHỌN NHẠC / GIỌNG TRƯỚC KHI CHẠY
+                CHỌN CHỦ ĐỀ · NHẬP TÊN &amp; CHẠY TỰ ĐỘNG
               </h3>
               <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                Chọn <strong>Nhân vật + Giọng đọc + Nhạc nền</strong> bên dưới. Hệ thống sẽ <strong>tự động lưu lại quá trình chọn</strong> của bạn và áp dụng xuyên suốt khi bấm Chạy!
+                Chọn chủ đề <strong>Tiểu sử Nhân vật</strong> hoặc <strong>Tóm tắt Phim &amp; Diễn viên nổi tiếng</strong>, hệ thống sẽ tự dựng mạch kể chuyện + ghép ảnh/video thật!
               </p>
+            </div>
+
+            {/* Topic Mode Switcher: Biography vs Film Summary & Famous Cast */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-lg bg-[#111827] border border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setStoryMode('biography');
+                  onUpdateSettings({ storyMode: 'biography' });
+                  saveAudioPreferences({ storyMode: 'biography' });
+                  const filmSamples = [
+                    'Ở Nhà 1 Mình',
+                    'Ngôi Nhà Nhỏ Trên Thảo Nguyên',
+                    'Titanic',
+                    'Bố Già (The Godfather)',
+                    'Tây Du Ký 1986',
+                    'Cuốn Theo Chiều Gió',
+                  ];
+                  if (filmSamples.includes(storyTopic.trim())) {
+                    setStoryTopic('Clint Eastwood');
+                    saveAudioPreferences({ storyTopic: 'Clint Eastwood', storyMode: 'biography' });
+                  }
+                }}
+                className={`px-2 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+                  storyMode === 'biography'
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>👤 Tiểu Sử Nhân Vật</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStoryMode('film-cast');
+                  onUpdateSettings({ storyMode: 'film-cast' });
+                  saveAudioPreferences({ storyMode: 'film-cast' });
+                  const actorSamples = [
+                    'Clint Eastwood',
+                    'John Wayne',
+                    'Steve McQueen',
+                    'Bruce Lee',
+                    'Elvis Presley',
+                    'Audrey Hepburn',
+                    'Will Sampson',
+                  ];
+                  if (actorSamples.includes(storyTopic.trim())) {
+                    setStoryTopic('Ở Nhà 1 Mình');
+                    saveAudioPreferences({ storyTopic: 'Ở Nhà 1 Mình', storyMode: 'film-cast' });
+                  }
+                }}
+                className={`px-2 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+                  storyMode === 'film-cast'
+                    ? 'bg-sky-500 text-slate-950 shadow'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>🎬 Tóm Tắt Phim &amp; Sao</span>
+              </button>
             </div>
 
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-slate-200">
-                1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):
+                {storyMode === 'film-cast'
+                  ? '1. Nhập Tên Bộ Phim cần tóm tắt & điểm danh Dàn Diễn Viên:'
+                  : '1. Nhập Tên Nhân Vật (hoặc Chủ đề câu chuyện):'}
               </label>
               <input
                 type="text"
@@ -370,41 +447,57 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                 onChange={(e) => {
                   const val = e.target.value;
                   setStoryTopic(val);
-                  saveAudioPreferences({ storyTopic: val });
+                  saveAudioPreferences({ storyTopic: val, storyMode });
                   if (val.trim()) {
-                    onUpdateSettings({ projectTitle: val.trim() });
+                    onUpdateSettings({ projectTitle: val.trim(), storyMode });
                   }
                 }}
-                placeholder="VD: Clint Eastwood, John Wayne, Audrey Hepburn..."
+                placeholder={
+                  storyMode === 'film-cast'
+                    ? 'VD: Ở Nhà 1 Mình, Ngôi Nhà Nhỏ Trên Thảo Nguyên, Titanic, Bố Già...'
+                    : 'VD: Clint Eastwood, John Wayne, Audrey Hepburn...'
+                }
                 className="w-full px-3 py-2 text-xs bg-[#111827] border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
 
-            {/* Quick famous legend presets */}
+            {/* Quick presets matching active Story Mode */}
             <div className="flex flex-wrap gap-1.5">
-              {[
-                'Clint Eastwood',
-                'John Wayne',
-                'Steve McQueen',
-                'Bruce Lee',
-                'Elvis Presley',
-                'Audrey Hepburn',
-              ].map((name) => (
+              {(storyMode === 'film-cast'
+                ? [
+                    'Ở Nhà 1 Mình',
+                    'Ngôi Nhà Nhỏ Trên Thảo Nguyên',
+                    'Titanic',
+                    'Bố Già (The Godfather)',
+                    'Tây Du Ký 1986',
+                    'Cuốn Theo Chiều Gió',
+                  ]
+                : [
+                    'Clint Eastwood',
+                    'John Wayne',
+                    'Steve McQueen',
+                    'Bruce Lee',
+                    'Elvis Presley',
+                    'Audrey Hepburn',
+                  ]
+              ).map((name) => (
                 <button
                   key={name}
                   type="button"
                   onClick={() => {
                     setStoryTopic(name);
-                    saveAudioPreferences({ storyTopic: name });
-                    onUpdateSettings({ projectTitle: name });
+                    saveAudioPreferences({ storyTopic: name, storyMode });
+                    onUpdateSettings({ projectTitle: name, storyMode });
                   }}
                   className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                     storyTopic === name
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
+                      ? storyMode === 'film-cast'
+                        ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-semibold'
+                        : 'bg-amber-500/20 border-amber-500 text-amber-300 font-semibold'
                       : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {name}
+                  {storyMode === 'film-cast' ? `🎬 ${name}` : name}
                 </button>
               ))}
             </div>
@@ -845,7 +938,8 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
                   sceneCount,
                   settings.ttsVoice,
                   settings.bgMusicStyle,
-                  settings.bgMusicVolume
+                  settings.bgMusicVolume,
+                  storyMode
                 )
               }
               disabled={isRunningAutoPilot || !storyTopic.trim()}
@@ -859,7 +953,9 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
               ) : (
                 <>
                   <Zap className="w-4 h-4 fill-current" />
-                  Chạy Tự Động A → Z ({VOICE_SHORT_LABELS[settings.ttsVoice]} + Nhạc Đã Lưu)
+                  {storyMode === 'film-cast'
+                    ? `Dựng Phim & Dàn Sao A → Z (${VOICE_SHORT_LABELS[settings.ttsVoice]})`
+                    : `Chạy Tự Động A → Z (${VOICE_SHORT_LABELS[settings.ttsVoice]} + Nhạc Đã Lưu)`}
                 </>
               )}
             </button>
@@ -867,12 +963,12 @@ export const MediaVaultPanel: React.FC<MediaVaultPanelProps> = ({
             {/* Secondary actions: Only Script or Only Fetch Photos */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
-                onClick={() => onGenerateAIStory(storyTopic, storyLang, sceneCount)}
+                onClick={() => onGenerateAIStory(storyTopic, storyLang, sceneCount, storyMode)}
                 disabled={isGeneratingStory || isRunningAutoPilot}
                 className="flex items-center justify-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 transition-colors whitespace-nowrap shrink-0"
               >
                 <Wand2 className="w-3 h-3 text-amber-400" />
-                Chỉ Tạo Kịch Bản & Prompt
+                Chỉ Tạo Kịch Bản &amp; Prompt
               </button>
               <button
                 onClick={() => onFetchArchivalPhotos(storyTopic)}

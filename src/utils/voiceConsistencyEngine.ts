@@ -576,6 +576,7 @@ export interface SavedAudioPreferences {
   bgMusicStyle: ProjectSettings['bgMusicStyle'];
   bgMusicVolume: number;
   storyTopic?: string;
+  storyMode?: 'biography' | 'film-cast';
   sceneCount?: number;
   updatedAtLabel: string;
   history: SavedAudioSelectionEntry[];
@@ -619,6 +620,7 @@ export function loadSavedAudioPreferences(): SavedAudioPreferences {
     bgMusicStyle: 'western-acoustic',
     bgMusicVolume: 0.25,
     storyTopic: 'Clint Eastwood',
+    storyMode: 'biography',
     sceneCount: 8,
     updatedAtLabel: formatNowTime(),
     history: [
@@ -688,6 +690,7 @@ export function loadSavedAudioPreferences(): SavedAudioPreferences {
       bgMusicStyle,
       bgMusicVolume,
       storyTopic: typeof parsed.storyTopic === 'string' ? parsed.storyTopic : fallback.storyTopic,
+      storyMode: parsed.storyMode === 'film-cast' ? 'film-cast' : 'biography',
       sceneCount: typeof parsed.sceneCount === 'number' ? parsed.sceneCount : fallback.sceneCount,
       updatedAtLabel: parsed.updatedAtLabel || fallback.updatedAtLabel,
       history,
@@ -701,7 +704,7 @@ export function saveAudioPreferences(
   patch: Partial<
     Pick<
       SavedAudioPreferences,
-      'ttsVoice' | 'voiceLanguage' | 'bgMusicStyle' | 'bgMusicVolume' | 'storyTopic' | 'sceneCount'
+      'ttsVoice' | 'voiceLanguage' | 'bgMusicStyle' | 'bgMusicVolume' | 'storyTopic' | 'storyMode' | 'sceneCount'
     >
   >
 ): SavedAudioPreferences {
@@ -712,6 +715,7 @@ export function saveAudioPreferences(
   const nextVol =
     patch.bgMusicVolume !== undefined ? patch.bgMusicVolume : current.bgMusicVolume;
   const nextTopic = patch.storyTopic !== undefined ? patch.storyTopic : current.storyTopic;
+  const nextStoryMode = patch.storyMode ?? current.storyMode ?? 'biography';
   const nextSceneCount = patch.sceneCount !== undefined ? patch.sceneCount : current.sceneCount;
   const nowLabel = formatNowTime();
 
@@ -762,6 +766,7 @@ export function saveAudioPreferences(
     bgMusicStyle: nextMusic,
     bgMusicVolume: nextVol,
     storyTopic: nextTopic,
+    storyMode: nextStoryMode,
     sceneCount: nextSceneCount,
     updatedAtLabel: nowLabel,
     history: nextHistory,

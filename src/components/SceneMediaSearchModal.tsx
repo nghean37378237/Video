@@ -129,6 +129,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   activeSceneId,
   initialTab = 'youtube',
   characterName,
+  settings,
   vaultItems,
   onClose,
   onSelectVideoForScene,
@@ -337,31 +338,44 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   }, [effectiveScene, cleanCharName]);
 
   const suggestedQueries = React.useMemo(() => {
+    const isFilmMode = settings?.storyMode === 'film-cast';
     const list: string[] = [
       cleanCharName,
       ...(sceneSpecificQuery ? [sceneSpecificQuery] : []),
-      `${cleanCharName} shorts`,
-      `${cleanCharName} tiktok`,
-      `${cleanCharName} instagram reels`,
+      ...(isFilmMode
+        ? [
+            `${cleanCharName} best scenes`,
+            `${cleanCharName} cast then and now`,
+            `${cleanCharName} behind the scenes`,
+            `${cleanCharName} shorts`,
+            `${cleanCharName} tóm tắt phim`,
+          ]
+        : [
+            `${cleanCharName} shorts`,
+            `${cleanCharName} tiktok`,
+            `${cleanCharName} instagram reels`,
+          ]),
     ];
-    const lowerChar = cleanCharName.toLowerCase();
-    if (lowerChar.includes('will sampson')) {
-      list.push(
-        `Will Sampson One Flew Over the Cuckoo's Nest`,
-        `Will Sampson The Outlaw Josey Wales`,
-        `Will Sampson Interview Tribute`
-      );
-    } else if (lowerChar.includes('lorne greene')) {
-      list.push(`${cleanCharName} Bonanza Ben Cartwright`, `${cleanCharName} Ponderosa`);
-    } else if (lowerChar.includes('clayton moore')) {
-      list.push(`${cleanCharName} The Lone Ranger`, `${cleanCharName} Lone Ranger interview`);
-    } else if (lowerChar.includes('yul brynner')) {
-      list.push(`${cleanCharName} The Magnificent Seven`, `${cleanCharName} The King and I`);
-    } else {
-      list.push(`${cleanCharName} movie clips`, `${cleanCharName} interview`);
+    if (!isFilmMode) {
+      const lowerChar = cleanCharName.toLowerCase();
+      if (lowerChar.includes('will sampson')) {
+        list.push(
+          `Will Sampson One Flew Over the Cuckoo's Nest`,
+          `Will Sampson The Outlaw Josey Wales`,
+          `Will Sampson Interview Tribute`
+        );
+      } else if (lowerChar.includes('lorne greene')) {
+        list.push(`${cleanCharName} Bonanza Ben Cartwright`, `${cleanCharName} Ponderosa`);
+      } else if (lowerChar.includes('clayton moore')) {
+        list.push(`${cleanCharName} The Lone Ranger`, `${cleanCharName} Lone Ranger interview`);
+      } else if (lowerChar.includes('yul brynner')) {
+        list.push(`${cleanCharName} The Magnificent Seven`, `${cleanCharName} The King and I`);
+      } else {
+        list.push(`${cleanCharName} movie clips`, `${cleanCharName} interview`);
+      }
     }
     return Array.from(new Set(list)).slice(0, 7);
-  }, [cleanCharName, sceneSpecificQuery]);
+  }, [cleanCharName, sceneSpecificQuery, settings?.storyMode]);
 
   const handleSelectPartScene = (targetSc: StoryScene, runPartSearch = false) => {
     setSelectedModalSceneId(targetSc.id);

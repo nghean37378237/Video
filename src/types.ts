@@ -8,6 +8,8 @@ export type FrameStyle = 'full-bleed' | 'rounded-frame' | 'cinema-letterbox';
 
 export type AspectRatioOption = '3:4' | '9:16' | '16:9';
 
+export type StoryTopicMode = 'biography' | 'film-cast';
+
 export type PresetId = 'will-sampson' | 'lorne-greene' | 'clayton-moore' | 'yul-brynner';
 
 export interface VaultItem {
@@ -83,6 +85,7 @@ export type TransitionStyle =
 
 export interface ProjectSettings {
   projectTitle: string;
+  storyMode?: StoryTopicMode;
   activePresetId: PresetId;
   referenceVideoUrl: string;
   aspectRatio: AspectRatioOption;
