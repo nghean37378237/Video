@@ -203,6 +203,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [cutFocusX, setCutFocusX] = useState<'center' | 'left' | 'right'>('center');
   const [show34Guide, setShow34Guide] = useState<boolean>(true);
 
+  // Local Video File Upload & Precision Segment Trimmer (100% immune to YouTube/Cloud IP blocks)
+  const [localCutFile, setLocalCutFile] = useState<File | null>(null);
+  const [localCutPreviewUrl, setLocalCutPreviewUrl] = useState<string | null>(null);
+  const [localCutStartSec, setLocalCutStartSec] = useState<number>(0);
+  const [localCutEndSec, setLocalCutEndSec] = useState<number>(10);
+  const [localCutActualDur, setLocalCutActualDur] = useState<number>(0);
+  const [localCutTargetSceneId, setLocalCutTargetSceneId] = useState<string>('');
+  const localCutVideoRef = React.useRef<HTMLVideoElement | null>(null);
+
   const formatMmSs = (sec: number): string => {
     const clean = Math.max(0, Math.floor(sec || 0));
     const m = Math.floor(clean / 60);
@@ -921,15 +930,86 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
+      } else {
+        const errData = await res.json().catch(() => null);
+        setJustCutBanner(
+          errData?.error ||
+            '⚠️ Không thể tải luồng MP4 từ video này để cắt. Hãy chọn video có nhãn "✂️ Cắt Trực Tiếp MP4" (Dailymotion / TikTok / Archive) hoặc up file MP4 từ máy để cắt chuẩn 100%!'
+        );
+        resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      // Fallback if cut endpoint didn't return cuts (skip second redundant server cut call!)
-      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec, true);
-      if (closeAfter) onClose();
     } catch {
-      onSelectVideoForScene(chosenSceneId, vid, startSec, endSec, true);
-      if (closeAfter) onClose();
+      setJustCutBanner(
+        '⏱️ Quá thời gian chờ tải nguồn video để cắt. Hãy chọn video "✂️ Cắt Trực Tiếp MP4" hoặc up file MP4 từ máy!'
+      );
+      resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       clearTimeout(cutTimeout);
+      setIsCuttingYouTube(false);
+      setCuttingCardId(null);
+    }
+  };
+
+  const handleCutLocalUploadedVideo = async (closeAfter = false) => {
+    if (!localCutFile || isCuttingYouTube || !onInsertCutYouTubeClips) return;
+    const chosenSceneId =
+      localCutTargetSceneId ||
+      effectiveScene?.id ||
+      scene?.id ||
+      activeSceneId ||
+      selectableScenes[0]?.id ||
+      '';
+    const startSec = Math.max(0, Math.round(localCutStartSec));
+    const endSec = Math.max(startSec + 3, Math.round(localCutEndSec));
+    setIsCuttingYouTube(true);
+    setCuttingCardId('__LOCAL_UPLOAD__');
+    try {
+      const params = new URLSearchParams({
+        startSec: String(startSec),
+        endSec: String(endSec),
+        title: localCutFile.name.replace(/\.[^.]+$/, ''),
+        targetSceneId: chosenSceneId,
+        characterName: activeCharName,
+        frameMode: cutFrameMode,
+        focusX: cutFocusX,
+      });
+      const res = await fetch(`/api/youtube/cut-uploaded-raw?${params.toString()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: localCutFile,
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(data?.cuts) && data.cuts.length > 0) {
+        const cutObj: CutYouTubeResultItem = {
+          ...data.cuts[0],
+          characterName: activeCharName,
+          targetSceneId: chosenSceneId,
+        };
+        onInsertCutYouTubeClips([cutObj], chosenSceneId);
+        const nextSaved: CutYouTubeResultItem[] = Array.isArray(data?.savedCuts)
+          ? data.savedCuts
+          : [cutObj, ...savedCuts];
+        setSavedCuts(nextSaved);
+        try {
+          localStorage.setItem('legendcut_saved_cuts_list_v1', JSON.stringify(nextSaved));
+        } catch {}
+        setLatestAcceptedCut(cutObj);
+        setSavedCutTargetScenes((prev) => ({ ...prev, [cutObj.id]: chosenSceneId }));
+        setSelectedModalSceneId(chosenSceneId);
+        setJustCutBanner(
+          `✅ ĐÃ CẮT VIDEO MÁY (${startSec}s → ${endSec}s) & THAY VÀO ${getSceneBadgeById(chosenSceneId).toUpperCase()}!`
+        );
+        if (closeAfter) {
+          onClose();
+          return;
+        }
+        resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setJustCutBanner(data?.error || '⚠️ Không thể cắt file video vừa tải lên.');
+      }
+    } catch {
+      setJustCutBanner('⚠️ Lỗi kết nối khi gửi file video lên máy chủ để cắt.');
+    } finally {
       setIsCuttingYouTube(false);
       setCuttingCardId(null);
     }
@@ -2460,12 +2540,179 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               {/* SECTION A: Aggregated YouTube Shorts + TikTok + Instagram Reels + YouTube Picker */}
               {(filterTab === 'youtube' || filterTab === 'all') && (
                 <div className="space-y-3">
+                  {/* Direct Local Video Upload & Segment Cutter Bar */}
+                  <div className="p-3 rounded-lg bg-gradient-to-r from-[#0F1E2E] to-[#111827] border border-emerald-500/40 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                        <Scissors className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>
+                          ✂️ Cắt Trực Tiếp Từ Video Có Sẵn Trên Máy (MP4 / MOV / WebM — Chuẩn 100% Không Lo Chặn Mạng):
+                        </span>
+                      </div>
+                      <label className="px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer flex items-center gap-1.5 shadow transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{localCutFile ? '🔄 Đổi Video Máy Khác' : '📁 Chọn Video MP4 Từ Máy Để Cắt'}</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            if (localCutPreviewUrl) URL.revokeObjectURL(localCutPreviewUrl);
+                            const blobUrl = URL.createObjectURL(f);
+                            const tgtId =
+                              effectiveScene?.id ||
+                              scene?.id ||
+                              activeSceneId ||
+                              selectableScenes[0]?.id ||
+                              '';
+                            const dur = getSceneDurationById(tgtId);
+                            setLocalCutFile(f);
+                            setLocalCutPreviewUrl(blobUrl);
+                            setLocalCutStartSec(0);
+                            setLocalCutEndSec(dur);
+                            setLocalCutTargetSceneId(tgtId);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {localCutFile && localCutPreviewUrl && (
+                      <div className="flex flex-col md:flex-row items-stretch gap-3 p-2.5 rounded-lg bg-[#090E17] border border-emerald-500/30">
+                        <div className="w-full md:w-52 h-36 rounded overflow-hidden bg-black border border-slate-700 shrink-0">
+                          <video
+                            ref={localCutVideoRef}
+                            src={localCutPreviewUrl}
+                            controls
+                            onLoadedMetadata={(e) => {
+                              const d = Math.floor(e.currentTarget.duration || 0);
+                              if (d > 0) {
+                                setLocalCutActualDur(d);
+                                const tgtId =
+                                  localCutTargetSceneId || effectiveScene?.id || selectableScenes[0]?.id || '';
+                                const targetDur = getSceneDurationById(tgtId);
+                                setLocalCutEndSec(Math.min(d, targetDur));
+                              }
+                            }}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="flex-1 flex flex-col justify-between gap-2 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-bold text-slate-200 truncate">
+                              🎞️ {localCutFile.name} {localCutActualDur > 0 ? `(${localCutActualDur}s)` : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cur = Math.max(0, Math.floor(localCutVideoRef.current?.currentTime || 0));
+                                const tgtId =
+                                  localCutTargetSceneId || effectiveScene?.id || selectableScenes[0]?.id || '';
+                                const targetDur = getSceneDurationById(tgtId);
+                                setLocalCutStartSec(cur);
+                                setLocalCutEndSec(
+                                  localCutActualDur > 0
+                                    ? Math.min(localCutActualDur, cur + targetDur)
+                                    : cur + targetDur
+                                );
+                              }}
+                              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/50 text-[11px] font-bold"
+                            >
+                              📍 Lấy Mốc Đang Xem
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {selectableScenes.length > 0 && (
+                              <select
+                                value={localCutTargetSceneId || effectiveScene?.id || selectableScenes[0]?.id || ''}
+                                onChange={(e) => {
+                                  const nextId = e.target.value;
+                                  const d = getSceneDurationById(nextId);
+                                  setLocalCutTargetSceneId(nextId);
+                                  setLocalCutEndSec(localCutStartSec + d);
+                                }}
+                                className="flex-1 min-w-[180px] bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-bold text-amber-300"
+                              >
+                                {selectableScenes.map((sc) => (
+                                  <option key={sc.id} value={sc.id}>
+                                    Phần #{String(sc.order).padStart(2, '0')} ({Math.round(sc.durationSec || 10)}s) — {sc.title}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded px-2 py-1">
+                              <span className="text-slate-400 text-[11px]">Từ</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={localCutStartSec}
+                                onChange={(e) => {
+                                  const v = Math.max(0, parseInt(e.target.value || '0', 10));
+                                  const tgtId =
+                                    localCutTargetSceneId || effectiveScene?.id || selectableScenes[0]?.id || '';
+                                  setLocalCutStartSec(v);
+                                  setLocalCutEndSec(v + getSceneDurationById(tgtId));
+                                  if (localCutVideoRef.current) localCutVideoRef.current.currentTime = v;
+                                }}
+                                className="w-12 bg-slate-950 border border-slate-700 rounded px-1 text-center font-mono font-bold text-amber-300"
+                              />
+                              <span className="text-slate-400 text-[11px]">s →</span>
+                              <input
+                                type="number"
+                                min={localCutStartSec + 3}
+                                value={localCutEndSec}
+                                onChange={(e) => {
+                                  const v = Math.max(localCutStartSec + 3, parseInt(e.target.value || '10', 10));
+                                  setLocalCutEndSec(v);
+                                }}
+                                className="w-12 bg-slate-950 border border-slate-700 rounded px-1 text-center font-mono font-bold text-emerald-300"
+                              />
+                              <span className="text-slate-400 text-[11px]">s</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isCuttingYouTube}
+                              onClick={() => handleCutLocalUploadedVideo(false)}
+                              className="flex-1 py-1.5 px-3 rounded-md bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5"
+                            >
+                              {isCuttingYouTube && cuttingCardId === '__LOCAL_UPLOAD__' ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Đang cắt video máy 3:4 HD...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Scissors className="w-3.5 h-3.5" />
+                                  <span>✂️ Cắt Video Máy ({localCutStartSec}s→{localCutEndSec}s) &amp; Chèn Vào Phần</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isCuttingYouTube}
+                              onClick={() => handleCutLocalUploadedVideo(true)}
+                              className="py-1.5 px-3 rounded-md bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-400/50 font-bold text-xs"
+                            >
+                              ⚡ Cắt &amp; Đóng
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-2 bg-[#111827] px-3.5 py-2.5 rounded-lg border border-slate-800">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-xs font-bold text-red-300 flex items-center gap-1.5">
                         <Youtube className="w-4 h-4 text-red-500" />
                         <span>
-                          Kho Tổng Hợp Video Thực Tế Trên YouTube, TikTok &amp; Instagram (Chọn &amp; Cắt Bất Kỳ Đoạn Nào):
+                          Kho Video Thực Tế (Ưu tiên nguồn ✂️ Cắt Trực Tiếp MP4: Dailymotion · TikTok · Archive.org):
                         </span>
                       </h3>
                       <div className="flex flex-wrap items-center gap-1">
@@ -2788,14 +3035,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                           : 'object-center'
                                       }`}
                                     />
-                                  ) : isPreviewing && yt.youtubeId ? (
+                                  ) : isPreviewing && (yt.youtubeId || yt.dmId) ? (
                                     <div className="relative w-full h-full bg-black">
                                       <iframe
-                                        src={`https://www.youtube.com/embed/${yt.youtubeId}?${
-                                          isShortFormPlatform
-                                            ? 'autoplay=1&rel=0&playsinline=1'
-                                            : `start=${startSec}&end=${endSec}&autoplay=1&rel=0`
-                                        }`}
+                                        src={
+                                          yt.dmId && !yt.youtubeId
+                                            ? `https://www.dailymotion.com/embed/video/${yt.dmId}?start=${startSec}&autoplay=1`
+                                            : `https://www.youtube.com/embed/${yt.youtubeId}?${
+                                                isShortFormPlatform
+                                                  ? 'autoplay=1&rel=0&playsinline=1'
+                                                  : `start=${startSec}&end=${endSec}&autoplay=1&rel=0`
+                                              }`
+                                        }
                                         title={yt.title}
                                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                         allowFullScreen
@@ -2850,7 +3101,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          if (yt.youtubeId) {
+                                          if (yt.youtubeId || yt.dmId) {
                                             setPreviewingYtId(yt.id);
                                           } else if (cleanYtDirectUrl) {
                                             setPreviewUseDirectMp4((prev) => ({

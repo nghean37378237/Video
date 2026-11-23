@@ -233,7 +233,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             { once: true }
           );
         }
-        vid.src = url;
+        const cleanVidSrc = url.includes('/api/youtube/cut-file/') ? url.split('#')[0] : url;
+        vid.src = cleanVidSrc;
         vid.load();
         videoPoolRef.current.set(url, vid);
       }
@@ -352,7 +353,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             : Math.min(vidDur, trimStart + Math.max(3, info.sceneDurationSec));
         const clipWindowDur = Math.max(0.5, trimEnd - trimStart);
         const targetTime = trimStart + (localTimeSec % clipWindowDur);
-        if (Math.abs(activeVidEl.currentTime - targetTime) > 0.35) {
+        const driftThreshold = isPlaying ? 1.45 : 0.25;
+        if (
+          activeVidEl.readyState >= 1 &&
+          !activeVidEl.seeking &&
+          Math.abs(activeVidEl.currentTime - targetTime) > driftThreshold
+        ) {
           try {
             activeVidEl.currentTime = targetTime;
           } catch {

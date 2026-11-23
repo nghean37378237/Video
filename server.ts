@@ -5321,10 +5321,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               if (dmRes.status !== "fulfilled" || !dmRes.value) continue;
               for (const item of dmRes.value?.list || []) {
                 if (!item?.id || seenDm.has(item.id) || (item.duration || 0) < 12) continue;
+                const dmTitle = String(item.title || "");
+                if (!isVideoRelevantToSubject(dmTitle, cleanChar, rawQuery)) continue;
                 seenDm.add(item.id);
                 list.push({
                   dmId: String(item.id),
-                  title: String(item.title || cleanChar),
+                  title: dmTitle || cleanChar,
                   durationSec: Number(item.duration) || 120,
                   thumbnailUrl: String(item.thumbnail_720_url || ""),
                   channel: String(item["owner.screenname"] || "Film Archive"),
@@ -5389,9 +5391,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         if (!r.rawMp4Url || seenStreamUrls.has(r.rawMp4Url)) continue;
         seenStreamUrls.add(r.rawMp4Url);
         curatedReels.push(r);
-      }
-      if (curatedReels.length === 0 && dmResults.length === 0) {
-        curatedReels = VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
       }
 
       const pickMatchedReelAndDm = (titleText: string, itemIdx: number) => {
@@ -5733,37 +5732,36 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         });
       });
 
-      // 6. Include Dailymotion Film Clips as directly cuttable items (supports HLS .m3u8 FFmpeg cut + fallback MP4 stream)
-      dmResults.forEach((dm, idx) => {
+      // 6. Include Dailymotion Film Clips as directly cuttable items FIRST in youtubeLongItems (100% real HLS .m3u8 FFmpeg cut for the exact character!)
+      const dmCards = dmResults.map((dm, idx) => {
         const isShortDm = dm.durationSec <= 75;
-        const matchedReel = curatedReels[(idx + pageIdx) % curatedReels.length];
-        const suggestedStart = computeReelStartSec(matchedReel, idx + 3);
+        const matchedReel = curatedReels.length > 0 ? curatedReels[(idx + pageIdx) % curatedReels.length] : undefined;
+        const suggestedStart = Math.min(
+          Math.max(4, Math.floor((dm.durationSec || 60) * 0.25)),
+          Math.max(6, (dm.durationSec || 60) - 14)
+        );
         const mins = Math.floor(dm.durationSec / 60);
         const secs = dm.durationSec % 60;
-        const fallbackYtId =
-          finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.youtubeId || "";
-        youtubeLongItems.push({
+        return {
           id: `dm-vid-${dm.dmId}-p${pageIdx}-${idx}`,
-          youtubeId: fallbackYtId,
+          youtubeId: "",
           tiktokUrl: "",
           instagramUrl: "",
           dmId: dm.dmId,
           archiveMp4Url: matchedReel?.rawMp4Url || "",
           title: dm.title,
           channel: `${dm.channel} · Dailymotion`,
-          durationSec: Math.max(180, dm.durationSec || 180),
+          durationSec: Math.max(20, dm.durationSec || 120),
           durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
-          viewsLabel: isShortDm ? "Video Ngắn" : "Cảnh Phim",
-          thumbnailUrl:
-            dm.thumbnailUrl ||
-            finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
-            "",
+          viewsLabel: isShortDm ? "Video Ngắn · Cắt MP4 100%" : "Cảnh Phim · Cắt MP4 100%",
+          thumbnailUrl: dm.thumbnailUrl || "",
           youtubeUrl: `https://www.dailymotion.com/video/${dm.dmId}`,
           suggestedTrimStartSec: suggestedStart,
           sourcePlatform: "youtube" as const,
-          platformBadge: "🎬 Cảnh Phim",
-        });
+          platformBadge: "✂️ Cắt Trực Tiếp MP4",
+        };
       });
+      youtubeLongItems.unshift(...dmCards);
 
       // Order & interleave results: explicit short-form intent (TikTok/Instagram/Shorts/Social mode) ALWAYS wins over stale prior depthMode!
       const combinedVideos: any[] = [];
@@ -5808,11 +5806,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
         } else {
-          // Balanced deep interleaving across all external sources
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          // Balanced deep interleaving: prioritize 100% directly-cuttable Dailymotion / Archive / TikTok streams first, then Shorts & Reels
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
           if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
         }
       }
@@ -5854,22 +5852,20 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const combinedHint = `${rawCharInput} ${clips.map((c: any) => c?.title || "").join(" ")} ${characterName}`.toLowerCase();
 
       // Match against known actors in VERIFIED_ACTOR_REAL_VIDEO_REELS prioritizing searchQuery & clip title over a stale default characterName
-      const matchedCuratedKey =
-        Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find((k) =>
-          `${rawCharInput} ${clips[0]?.title || ""}`.toLowerCase().includes(k)
-        ) ||
-        Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find((k) => combinedHint.includes(k));
+      const matchedCuratedKey = Object.keys(VERIFIED_ACTOR_REAL_VIDEO_REELS).find((k) =>
+        `${rawCharInput} ${clips[0]?.title || ""}`.toLowerCase().includes(k)
+      );
 
-      const cleanChar = matchedCuratedKey
+      const cleanChar = rawCharInput || (matchedCuratedKey
         ? matchedCuratedKey
             .split(" ")
             .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
             .join(" ")
-        : rawCharInput || "Clint Eastwood";
+        : "Movie Star");
 
       const curatedReels = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
-        : VERIFIED_ACTOR_REAL_VIDEO_REELS["clint eastwood"];
+        : [];
 
       const ytDlpBin = await ensureYtDlpBinary();
 
@@ -5930,13 +5926,14 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         vfFilter: string,
         outMp4: string,
         outJpg: string,
-        timeoutMs = 11000
+        timeoutMs = 15000
       ): Promise<boolean> => {
         if (!srcUrl) return false;
         const cleanSrc = /\.ogv(\?|#|$)/i.test(srcUrl)
           ? srcUrl.replace(/\.ogv(\?|#|$)/i, ".mp4$1")
           : srcUrl;
         const isRemoteHttp = cleanSrc.startsWith("http://") || cleanSrc.startsWith("https://");
+        const isHlsPlaylist = /\.m3u8(\?|#|$)/i.test(cleanSrc);
         try {
           await execFileAsync(
             "ffmpeg",
@@ -5947,15 +5944,19 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               ...(isRemoteHttp
                 ? [
                     "-rw_timeout",
-                    "5000000",
-                    "-reconnect",
-                    "1",
-                    "-reconnect_streamed",
-                    "1",
-                    "-reconnect_delay_max",
-                    "2",
+                    "8000000",
                     "-user_agent",
                     BROWSER_USER_AGENT,
+                    ...(!isHlsPlaylist
+                      ? [
+                          "-reconnect",
+                          "1",
+                          "-reconnect_streamed",
+                          "1",
+                          "-reconnect_delay_max",
+                          "2",
+                        ]
+                      : []),
                   ]
                 : []),
               "-fflags",
@@ -5989,7 +5990,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             ],
             { timeout: timeoutMs }
           );
-          if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 15000) {
+          if (fs.existsSync(outMp4) && fs.statSync(outMp4).size > 20000) {
             const thumbSeek = Math.min(2.4, Math.max(0.8, Number((durSec * 0.35).toFixed(1))));
             await execFileAsync(
               "ffmpeg",
@@ -6005,7 +6006,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 "3",
                 outJpg,
               ],
-              { timeout: 2500 }
+              { timeout: 3000 }
             ).catch(() => {});
             return true;
           }
@@ -6020,16 +6021,85 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         return false;
       };
 
-      // Lazy live lookup of Dailymotion candidates (with duration >= 15s) for the active subject
-      let liveSubjectDmListPromise: Promise<Array<{ id: string; duration: number }>> | null = null;
-      const getSubjectDmFallbacks = () => {
-        if (!liveSubjectDmListPromise) {
-          liveSubjectDmListPromise = (async () => {
+      const downloadAndCutSocialWithYtDlp = async (
+        pageUrl: string,
+        seekSec: number,
+        durSec: number,
+        vfFilter: string,
+        outMp4: string,
+        outJpg: string
+      ): Promise<boolean> => {
+        if (!ytDlpBin || !pageUrl) return false;
+        const isYtUrl = /youtube\.com|youtu\.be/i.test(pageUrl);
+        if (isYtUrl && Date.now() - lastYtDlpYouTubeBlockedAt < 5 * 60 * 1000) {
+          return false;
+        }
+        const tmpRaw = path.join("/tmp", `ytdlp_src_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp4`);
+        try {
+          await execFileAsync(
+            ytDlpBin,
+            [
+              "--no-warnings",
+              "--no-playlist",
+              "--socket-timeout",
+              "5",
+              "--retries",
+              "1",
+              "-f",
+              "best[ext=mp4][height<=720]/best[height<=720]/best",
+              "-o",
+              tmpRaw,
+              pageUrl,
+            ],
+            { timeout: 14000 }
+          );
+          if (fs.existsSync(tmpRaw) && fs.statSync(tmpRaw).size > 20000) {
+            // Probe actual duration so seekSec never exceeds video length
+            let actualDur = 0;
             try {
+              const { stdout: probeOut } = await execFileAsync(
+                "ffprobe",
+                ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", tmpRaw],
+                { timeout: 3000 }
+              );
+              actualDur = parseFloat(probeOut.trim()) || 0;
+            } catch {}
+            const safeSeek = actualDur > durSec + 1
+              ? Math.min(seekSec, Math.max(0, Math.floor(actualDur - durSec - 0.5)))
+              : 0;
+            return await runFastFfmpegCut(
+              tmpRaw,
+              safeSeek,
+              durSec,
+              vfFilter,
+              outMp4,
+              outJpg,
+              12000
+            );
+          }
+          return false;
+        } catch (err: any) {
+          const msg = `${err?.stderr || ""} ${err?.message || ""}`;
+          if (isYtUrl && /bot|Sign in|403|HTTP Error 429|timeout/i.test(msg)) {
+            lastYtDlpYouTubeBlockedAt = Date.now();
+          }
+          return false;
+        } finally {
+          try {
+            if (fs.existsSync(tmpRaw)) fs.unlinkSync(tmpRaw);
+          } catch {}
+        }
+      };
+
+      // Lazy live lookup of Dailymotion candidates (strictly verified to match the searched subject)
+      let liveSubjectDmListPromise: Promise<Array<{ id: string; duration: number; title: string }>> | null = null;
+      const getSubjectDmFallbacks = (specificTitle?: string) => {
+        if (specificTitle) {
+          return (async () => {
+            try {
+              const q = `${cleanChar} ${specificTitle.replace(/#\S+/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).slice(0, 4).join(" ")}`.trim();
               const r = await fetch(
-                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                  cleanChar
-                )}&limit=10&fields=id,duration`,
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&limit=8&fields=id,title,duration`,
                 {
                   headers: { "User-Agent": BROWSER_USER_AGENT },
                   signal: AbortSignal.timeout(3000),
@@ -6038,8 +6108,30 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               if (!r.ok) return [];
               const j: any = await r.json();
               return (j?.list || [])
-                .filter((it: any) => it?.id && (it?.duration || 0) >= 15)
-                .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60 }));
+                .filter((it: any) => it?.id && (it?.duration || 0) >= 12 && isVideoRelevantToSubject(String(it.title || ""), cleanChar, cleanChar))
+                .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60, title: String(it.title || "") }));
+            } catch {
+              return [];
+            }
+          })();
+        }
+        if (!liveSubjectDmListPromise) {
+          liveSubjectDmListPromise = (async () => {
+            try {
+              const r = await fetch(
+                `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                  cleanChar
+                )}&limit=15&fields=id,title,duration`,
+                {
+                  headers: { "User-Agent": BROWSER_USER_AGENT },
+                  signal: AbortSignal.timeout(3500),
+                }
+              );
+              if (!r.ok) return [];
+              const j: any = await r.json();
+              return (j?.list || [])
+                .filter((it: any) => it?.id && (it?.duration || 0) >= 12 && isVideoRelevantToSubject(String(it.title || ""), cleanChar, cleanChar))
+                .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60, title: String(it.title || "") }));
             } catch {
               return [];
             }
@@ -6096,23 +6188,51 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             isPlayableDirectMediaUrl(u)
           ) || "";
           const socialUrl = tiktokUrl || instagramUrl || youtubeUrl;
-
-          // Instant cut: Skip slow yt-dlp page resolution and use verified direct archival MP4 streams or fast fallback for instant 0.5s response
           const explicitDmId = String(clip?.dmId || "").trim();
-          const targetMp4Source = directCandidate || curatedReels[idx % curatedReels.length]?.rawMp4Url || "https://archive.org/download/title-60/TITLE60.ia.mp4";
-          
-          usedSourceUrl = targetMp4Source;
-          cutSucceeded = await runFastFfmpegCut(
-            targetMp4Source,
-            Math.min(25, Math.max(2, trimStartSec % 30)),
-            durationSec,
-            vf34Filter,
-            outMp4Path,
-            outJpgPath,
-            5000
-          );
 
-          // 1. Try explicit direct MP4/WebM URL (Archive.org / Wikimedia)
+          // 1. PRIORITY 1: Exact TikTok / Instagram URL -> download real MP4 via yt-dlp & cut exact [start -> end] with FFmpeg
+          const directSocialTarget = tiktokUrl || instagramUrl;
+          if (!cutSucceeded && directSocialTarget) {
+            usedSourceUrl = directSocialTarget;
+            cutSucceeded = await downloadAndCutSocialWithYtDlp(
+              directSocialTarget,
+              trimStartSec,
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath
+            );
+          }
+
+          // 2. PRIORITY 2: Exact Dailymotion ID -> resolve real HLS .m3u8 stream & cut exact [start -> end] with FFmpeg
+          if (!cutSucceeded && explicitDmId && !dmRejectedIdsCache.has(explicitDmId)) {
+            const explicitDmStream = await resolveDailymotionStreamUrl(explicitDmId);
+            if (explicitDmStream) {
+              usedSourceUrl = explicitDmStream;
+              cutSucceeded = await runFastFfmpegCut(
+                explicitDmStream,
+                trimStartSec,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                15000
+              );
+              if (!cutSucceeded && trimStartSec > 35) {
+                cutSucceeded = await runFastFfmpegCut(
+                  explicitDmStream,
+                  Math.min(14, trimStartSec % 25),
+                  durationSec,
+                  vf34Filter,
+                  outMp4Path,
+                  outJpgPath,
+                  14000
+                );
+              }
+            }
+          }
+
+          // 3. PRIORITY 3: Exact Direct MP4/WebM URL (Archive.org / Wikimedia / Uploaded)
           if (!cutSucceeded && directCandidate) {
             usedSourceUrl = directCandidate;
             cutSucceeded = await runFastFfmpegCut(
@@ -6122,47 +6242,49 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               vf34Filter,
               outMp4Path,
               outJpgPath,
-              11500
+              15000
             );
             if (!cutSucceeded && trimStartSec > 45) {
               cutSucceeded = await runFastFfmpegCut(
                 directCandidate,
-                Math.min(18, trimStartSec % 30),
+                Math.min(16, trimStartSec % 28),
                 durationSec,
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                9500
+                14000
               );
             }
           }
 
-          // 2. Try Dailymotion HLS stream (super fast ~2-3s cuts!) using pre-resolved explicit dmId or live subject DM candidates
+          // 4. PRIORITY 4: YouTube card -> try yt-dlp download if not IP-blocked; otherwise match EXACT subject on Dailymotion / Archive.org
+          if (!cutSucceeded && youtubeUrl && /youtube\.com|youtu\.be/i.test(youtubeUrl)) {
+            cutSucceeded = await downloadAndCutSocialWithYtDlp(
+              youtubeUrl,
+              trimStartSec,
+              durationSec,
+              vf34Filter,
+              outMp4Path,
+              outJpgPath
+            );
+            if (cutSucceeded) {
+              usedSourceUrl = youtubeUrl;
+            }
+          }
+
+          // 5. Fallback to Dailymotion videos STRICTLY matching cleanChar (e.g. Keanu Reeves)
           if (!cutSucceeded) {
-            const explicitDmId = String(clip?.dmId || "").trim();
-            const [explicitDmStream, subjectDmList] = await Promise.all([
-              explicitDmId ? resolveDailymotionStreamUrl(explicitDmId) : Promise.resolve(null),
+            const [titleMatchedDm, subjectDmList] = await Promise.all([
+              getSubjectDmFallbacks(title),
               getSubjectDmFallbacks(),
             ]);
-
-            if (explicitDmStream) {
-              usedSourceUrl = explicitDmStream;
-              const safeDmSeek = trimStartSec > 45 ? Math.min(16, trimStartSec % 30) : trimStartSec;
-              cutSucceeded = await runFastFfmpegCut(
-                explicitDmStream,
-                safeDmSeek,
-                durationSec,
-                vf34Filter,
-                outMp4Path,
-                outJpgPath,
-                10500
-              );
-            }
-
-            const extraDmCandidates = subjectDmList
-              .filter((d) => d.id !== explicitDmId && !dmRejectedIdsCache.has(d.id))
-              .slice(0, 2);
-            for (const dmCand of extraDmCandidates) {
+            const mergedDm = [...titleMatchedDm, ...subjectDmList].filter(
+              (d, i, arr) =>
+                d.id !== explicitDmId &&
+                !dmRejectedIdsCache.has(d.id) &&
+                arr.findIndex((x) => x.id === d.id) === i
+            );
+            for (const dmCand of mergedDm.slice(0, 3)) {
               if (cutSucceeded) break;
               const dmStream = await resolveDailymotionStreamUrl(dmCand.id);
               if (dmStream) {
@@ -6176,81 +6298,64 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   vf34Filter,
                   outMp4Path,
                   outJpgPath,
-                  10500
+                  15000
                 );
               }
             }
           }
 
-          // 3. Final verified Archive.org fallback (fast seek)
+          // 6. Fallback to live Internet Archive videos STRICTLY matching cleanChar
           if (!cutSucceeded) {
             const liveArch = await searchRealArchivalVideos(
               cleanChar,
-              2,
+              3,
               new Set<string>(),
               cleanChar
             ).catch(() => []);
-            const liveMp4 = liveArch
+            const liveMp4s = liveArch
               .map((a) => {
                 const m = a.videoUrl.match(/[?&]url=([^&#]+)/);
                 return m ? decodeURIComponent(m[1]) : "";
               })
-              .find((u) => isPlayableDirectMediaUrl(u) && u !== directCandidate);
-            const finalMp4 = liveMp4 || curatedReels[idx % curatedReels.length]?.rawMp4Url || "";
-            if (finalMp4 && isPlayableDirectMediaUrl(finalMp4)) {
-              usedSourceUrl = finalMp4;
-              const safeSeek = Math.min(20, Math.max(2, trimStartSec % 35));
+              .filter((u) => isPlayableDirectMediaUrl(u) && u !== directCandidate);
+            for (const archMp4 of liveMp4s.slice(0, 2)) {
+              if (cutSucceeded) break;
+              usedSourceUrl = archMp4;
+              const safeSeek = Math.min(24, Math.max(4, trimStartSec % 35));
               cutSucceeded = await runFastFfmpegCut(
-                finalMp4,
+                archMp4,
                 safeSeek,
                 durationSec,
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                11000
+                14000
               );
             }
           }
 
-          // 4. Guaranteed Bulletproof Local Archival Fallback & Lavfi Synthesizer: If all online sources timed out or blocked, instantly generate or cut a guaranteed working MP4!
-          if (!cutSucceeded || !fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 15000) {
-            const fallbackMp4 = curatedReels[0]?.rawMp4Url || "https://archive.org/download/title-60/TITLE60.ia.mp4";
-            usedSourceUrl = fallbackMp4;
-            cutSucceeded = await runFastFfmpegCut(
-              fallbackMp4,
-              18 + (idx * 5) % 25,
-              durationSec,
-              vf34Filter,
-              outMp4Path,
-              outJpgPath,
-              8000
-            );
+          // 7. Only if matched actor has verified curated MP4 reels, try those
+          if (!cutSucceeded && curatedReels.length > 0) {
+            const fallbackMp4 = curatedReels[idx % curatedReels.length]?.rawMp4Url || "";
+            if (fallbackMp4 && isPlayableDirectMediaUrl(fallbackMp4)) {
+              usedSourceUrl = fallbackMp4;
+              cutSucceeded = await runFastFfmpegCut(
+                fallbackMp4,
+                16 + ((idx * 7) % 24),
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                14000
+              );
+            }
           }
 
-          if (!cutSucceeded || !fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 15000) {
+          if (!cutSucceeded || !fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 20000) {
             try {
-              await execFileAsync(
-                "ffmpeg",
-                [
-                  "-y",
-                  "-f",
-                  "lavfi",
-                  "-i",
-                  `color=c=navy:s=720x960:r=24:d=${durationSec}`,
-                  "-vf",
-                  `drawtext=fontcolor=white:fontsize=32:x=(w-text_w)/2:y=(h-text_h)/2:text='${cleanChar.replace(/'/g, "")}'`,
-                  "-c:v",
-                  "libx264",
-                  "-pix_fmt",
-                  "yuv420p",
-                  outMp4Path,
-                ],
-                { timeout: 4000 }
-              );
-              cutSucceeded = fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 10000;
-            } catch {
-              cutSucceeded = false;
-            }
+              if (fs.existsSync(outMp4Path)) fs.unlinkSync(outMp4Path);
+            } catch {}
+            return null;
           }
 
           let thumbnailUrl = String(clip?.thumbnailUrl || "");
@@ -6260,12 +6365,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             try {
               fs.unlinkSync(outJpgPath);
             } catch {}
-          } else if (cutSucceeded && fs.existsSync(outMp4Path)) {
+          } else {
             try {
               await execFileAsync(
                 "ffmpeg",
                 ["-y", "-ss", "1", "-i", outMp4Path, "-frames:v", "1", "-q:v", "3", outJpgPath],
-                { timeout: 2000 }
+                { timeout: 2500 }
               );
               if (fs.existsSync(outJpgPath)) {
                 const jBuf = fs.readFileSync(outJpgPath);
@@ -6275,28 +6380,6 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             } catch {}
           }
 
-          if (cutSucceeded && fs.existsSync(outMp4Path)) {
-            return {
-              id: `yt-cut-${Date.now()}-${idx}`,
-              targetSceneId,
-              characterName: cleanChar,
-              title,
-              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
-              sourceVideoUrl: usedSourceUrl || directCandidate || socialUrl,
-              thumbnailUrl: thumbnailUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80`,
-              trimStartSec: 0,
-              trimEndSec: durationSec,
-              originalStartSec: trimStartSec,
-              originalEndSec: trimEndSec,
-              durationSec,
-              width: 720,
-              height: 960,
-              frameMode: clipFrameMode,
-              focusX: clipFocusX,
-              sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
-            };
-          }
-
           return {
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
@@ -6304,7 +6387,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             title,
             videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
             sourceVideoUrl: usedSourceUrl || directCandidate || socialUrl,
-            thumbnailUrl: thumbnailUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80`,
+            thumbnailUrl: thumbnailUrl || String(clip?.thumbnailUrl || ""),
             trimStartSec: 0,
             trimEndSec: durationSec,
             originalStartSec: trimStartSec,
@@ -6351,6 +6434,120 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       });
     }
   });
+
+  // 2j. Cut Any Local Uploaded Video File (MP4/MOV/WebM) Directly Into 3:4 HD Segment (Zero Cloud IP Limits!)
+  app.post(
+    "/api/youtube/cut-uploaded-raw",
+    express.raw({ type: ["video/*", "application/octet-stream"], limit: "120mb" }),
+    async (req, res) => {
+      const tmpInput = path.join("/tmp", `upload_cut_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mp4`);
+      try {
+        const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || "");
+        if (!bodyBuf || bodyBuf.length < 10000) {
+          res.status(400).json({ error: "File video tải lên không hợp lệ hoặc bị trống." });
+          return;
+        }
+        fs.writeFileSync(tmpInput, bodyBuf);
+
+        const startSec = Math.max(0, Math.round(Number(req.query.startSec) || 0));
+        const endSec = Math.max(startSec + 3, Math.round(Number(req.query.endSec) || startSec + 10));
+        const durSec = Math.max(3, Math.min(25, endSec - startSec));
+        const frameMode = String(req.query.frameMode || "3:4-sharp");
+        const focusX = String(req.query.focusX || "center");
+        const targetSceneId = req.query.targetSceneId ? String(req.query.targetSceneId) : undefined;
+        const characterName = String(req.query.characterName || "Video Upload").trim();
+        const title = String(req.query.title || `Video Máy (${startSec}s→${startSec + durSec}s)`).trim();
+
+        const vfFilter = buildSharp34VideoFilter(frameMode, focusX);
+        const fileId = `yt_cut_${Date.now()}_local_${startSec}s_${startSec + durSec}s`;
+        const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+        const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+
+        await execFileAsync(
+          "ffmpeg",
+          [
+            "-y",
+            "-threads",
+            "2",
+            "-ss",
+            String(startSec),
+            "-i",
+            tmpInput,
+            "-t",
+            String(durSec),
+            "-vf",
+            vfFilter,
+            "-r",
+            "24",
+            "-g",
+            "24",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "fastdecode",
+            "-crf",
+            "21",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            outMp4Path,
+          ],
+          { timeout: 25000 }
+        );
+
+        if (!fs.existsSync(outMp4Path) || fs.statSync(outMp4Path).size < 15000) {
+          res.status(422).json({ error: "Không thể cắt file video này bằng FFmpeg. Vui lòng thử file MP4 khác!" });
+          return;
+        }
+
+        let thumbnailUrl = "";
+        try {
+          await execFileAsync(
+            "ffmpeg",
+            ["-y", "-ss", String(Math.min(1.5, durSec * 0.3)), "-i", outMp4Path, "-frames:v", "1", "-q:v", "3", outJpgPath],
+            { timeout: 3000 }
+          );
+          if (fs.existsSync(outJpgPath)) {
+            thumbnailUrl = `data:image/jpeg;base64,${fs.readFileSync(outJpgPath).toString("base64")}`;
+            fs.unlinkSync(outJpgPath);
+          }
+        } catch {}
+
+        const cutObj = {
+          id: `yt-cut-${Date.now()}-local`,
+          targetSceneId,
+          characterName,
+          title,
+          videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=1&seg=${startSec}-${startSec + durSec}`,
+          sourceVideoUrl: "local-upload",
+          thumbnailUrl,
+          trimStartSec: 0,
+          trimEndSec: durSec,
+          originalStartSec: startSec,
+          originalEndSec: startSec + durSec,
+          durationSec: durSec,
+          width: 720,
+          height: 960,
+          frameMode,
+          focusX,
+          sourceLabel: `✂️ Cắt từ Video Máy (${startSec}s → ${startSec + durSec}s)`,
+        };
+
+        const savedManifest = saveCutsToManifest([cutObj]);
+        res.json({ cuts: [cutObj], savedCuts: savedManifest });
+      } catch (err: any) {
+        res.status(500).json({ error: err?.message || "Lỗi khi cắt video tải lên." });
+      } finally {
+        try {
+          if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
+        } catch {}
+      }
+    }
+  );
 
   // 3. Auto-Fetch Real Historical Archival Photos & Videos from Bing Web Images, Wikimedia Commons & Wikipedia
   app.post("/api/archival/fetch-photos", async (req, res) => {
