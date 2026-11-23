@@ -532,6 +532,37 @@ export default function App() {
 
       setScenes(nextScenes);
 
+      // Persist trimmed real-video scene assignments so reloads or hydration never overwrite them
+      if (updatedSceneIndices.length > 0) {
+        try {
+          const existingRaw = localStorage.getItem('legendcut_user_cut_scenes_v1');
+          const savedMap: Record<string, Partial<StoryScene>> = existingRaw
+            ? JSON.parse(existingRaw)
+            : {};
+          updatedSceneIndices.forEach((idx) => {
+            const updatedSc = nextScenes[idx];
+            if (updatedSc) {
+              savedMap[updatedSc.id] = {
+                sceneType: updatedSc.sceneType,
+                mediaId: updatedSc.mediaId,
+                mediaUrl: updatedSc.mediaUrl,
+                mediaKind: updatedSc.mediaKind,
+                videoTrimStartSec: updatedSc.videoTrimStartSec,
+                videoTrimEndSec: updatedSc.videoTrimEndSec,
+                characterRefPhotoUrl: updatedSc.characterRefPhotoUrl,
+                hasRealPhoto: updatedSc.hasRealPhoto,
+                realPhotoTitle: updatedSc.realPhotoTitle,
+                frameStyle: updatedSc.frameStyle,
+                showBottomSubtitles: updatedSc.showBottomSubtitles,
+              };
+            }
+          });
+          localStorage.setItem('legendcut_user_cut_scenes_v1', JSON.stringify(savedMap));
+        } catch {
+          // ignore
+        }
+      }
+
       // Jump playhead to the first inserted real video scene and start playing so the user sees it immediately
       if (updatedSceneIndices.length > 0) {
         const firstIdx = updatedSceneIndices[0];

@@ -102,7 +102,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     }
   }, [currentTimeSec, isPlaying, isExporting]);
 
-  // Anchor wall-clock timer whenever play state toggles
+  // Anchor wall-clock timer whenever play state toggles or single-scene stop changes
   useEffect(() => {
     if (isPlaying) {
       playAnchorMediaTimeRef.current = playheadRef.current;
@@ -110,7 +110,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     } else {
       playAnchorWallTimeRef.current = null;
     }
-  }, [isPlaying]);
+  }, [isPlaying, singleSceneStopTimeSec]);
 
   const getCanvasDimensions = () => {
     if (settings.aspectRatio === '9:16') return { width: 720, height: 1280 };
@@ -234,6 +234,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
           );
         }
         const cleanVidSrc = url.includes('/api/youtube/cut-file/') ? url.split('#')[0] : url;
+        vid.addEventListener('error', () => {
+          if (videoPoolRef.current.get(url) === vid) {
+            videoPoolRef.current.delete(url);
+          }
+        });
         vid.src = cleanVidSrc;
         vid.load();
         videoPoolRef.current.set(url, vid);

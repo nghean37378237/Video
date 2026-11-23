@@ -3684,9 +3684,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     const subjectFullPhrase = subjectTokens.slice(0, 3).join(" ");
     const lowerSubject = subjectFullPhrase.toLowerCase();
 
-    // Ban any text-heavy video, title card, credits sequence, subtitled clip, podcast, review, or unrelated military/ship video
+    // Ban any text-heavy video, title card, credits sequence, subtitled clip, podcast, review, or unrelated military/ship/ceremony video
     const bannedVideoWords =
-      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken|uss|hms|radar|destroyer|ship|aircraft|airport|station|county|highway|bridge|title_card|title\s+card|intertitle|credits|opening_titles|subtitled|subtitles|caption|captioned|watermark|slideshow|lyric|lyrics|karaoke|text|poster|promo_banner|venom|podcast|review|reaction|bumper|horror|compilation|countdown)\b/i;
+      /\b(collage|montage|logo|icon|map|animation|cartoon|rotating|globe|pronunciation|audio|spoken|uss|hms|radar|destroyer|ship|aircraft|airport|station|county|highway|bridge|title_card|title\s+card|intertitle|credits|opening_titles|subtitled|subtitles|caption|captioned|watermark|slideshow|lyric|lyrics|karaoke|text|poster|promo_banner|venom|podcast|review|reaction|bumper|horror|compilation|countdown|spouses|marfork|marine_corps|ceremony|parade|sermon|briefing|press_conference)\b/i;
 
     const candidates: {
       title: string;
@@ -3728,7 +3728,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
     const searchPhrases = ACTOR_ICONIC_FILM_QUERIES[lowerSubject] || [subjectFullPhrase];
 
-    // 1. Search Wikimedia Commons video files (multi-phrase + offset-aware)
+    // 1. Search Wikimedia Commons video files (multi-phrase + offset-aware; strictly skip .ogv because Wikimedia has no .mp4 transcode & .ogv stalls HTTP seek)
     for (const phrase of searchPhrases.slice(0, 3)) {
       if (candidates.length >= limit) break;
       try {
@@ -3768,17 +3768,18 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               .replace(/_/g, " ");
             const titleKey = normalizeTitleKey(cleanTitle);
 
+            const cleanUrlPath = (videoUrl || "").split("?")[0].toLowerCase();
             if (
               !videoUrl ||
               !thumbUrl ||
               usedSourceUrls.has(videoUrl) ||
               (titleKey && usedTitleKeys.has(titleKey)) ||
+              cleanUrlPath.endsWith(".ogv") ||
+              mime.includes("ogg") ||
               (!mime.includes("webm") &&
                 !mime.includes("mp4") &&
-                !mime.includes("ogg") &&
-                !videoUrl.endsWith(".webm") &&
-                !videoUrl.endsWith(".mp4") &&
-                !videoUrl.endsWith(".ogv")) ||
+                !cleanUrlPath.endsWith(".webm") &&
+                !cleanUrlPath.endsWith(".mp4")) ||
               bannedVideoWords.test(rawTitle) ||
               bannedVideoWords.test(cleanTitle)
             ) {
@@ -4132,18 +4133,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   app.post("/api/archival/fetch-and-trim-videos", async (req, res) => {
     try {
       const {
-        query = "Will Sampson",
-        count = 3,
+        query,
+        characterName,
+        count,
+        desiredCount: bodyDesiredCount,
         sceneDurations = [],
+        sceneDurationSec,
         cycleOffset = 0,
       } = req.body || {};
-      const cleanQuery = String(query || "Will Sampson").trim();
-      const desiredCount = Math.max(1, Math.min(6, Number(count) || 3));
+      const cleanQuery = String(query || characterName || "Will Sampson").trim();
+      const desiredCount = Math.max(1, Math.min(6, Number(count || bodyDesiredCount) || 3));
 
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();
 
-      const [videos, primaryPhotos, filmPhotos] = await Promise.all([
+      const [videos, primaryPhotos, filmPhotos, dmCandidates] = await Promise.all([
         searchRealArchivalVideos(
           cleanQuery,
           desiredCount,
@@ -4160,6 +4164,37 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           cleanQuery.split(/\s+/)[0],
           usedTitles
         ),
+        (async () => {
+          try {
+            const dmPage = (Number(cycleOffset) || 0) + 1;
+            const r = await fetch(
+              `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+                cleanQuery
+              )}&limit=12&page=${dmPage}&fields=id,title,duration,thumbnail_720_url`,
+              {
+                headers: { "User-Agent": BROWSER_USER_AGENT },
+                signal: AbortSignal.timeout(3500),
+              }
+            );
+            if (!r.ok) return [];
+            const d: any = await r.json();
+            return (d?.list || [])
+              .filter(
+                (it: any) =>
+                  it?.id &&
+                  (it?.duration || 0) >= 15 &&
+                  isVideoRelevantToSubject(String(it.title || ""), cleanQuery, cleanQuery)
+              )
+              .map((it: any) => ({
+                dmId: String(it.id),
+                title: String(it.title || cleanQuery),
+                durationSec: Number(it.duration) || 60,
+                thumbnailUrl: String(it.thumbnail_720_url || ""),
+              }));
+          } catch {
+            return [];
+          }
+        })(),
       ]);
 
       const combinedPhotos = [...primaryPhotos, ...filmPhotos];
@@ -4169,60 +4204,59 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       );
       const curatedReels = matchedCuratedKey
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
-        : VERIFIED_ACTOR_REAL_VIDEO_REELS["will sampson"];
+        : [];
 
-      const usedRandomOffsets: number[] = [];
-      const pickDistinctRandomOffset = (fallbackIdx: number): number => {
-        for (let attempt = 0; attempt < 12; attempt++) {
-          const candidate = 14 + Math.floor(Math.random() * 155);
-          if (usedRandomOffsets.every((prev) => Math.abs(prev - candidate) >= 14)) {
-            usedRandomOffsets.push(candidate);
-            return candidate;
-          }
-        }
-        const fallback = 22 + fallbackIdx * 34;
-        usedRandomOffsets.push(fallback);
-        return fallback;
-      };
-
-      const videoCuts = await Promise.all(
-        videos.map(async (v, idx) => {
+      const totalTargets = Math.max(desiredCount, Math.min(desiredCount, dmCandidates.length || videos.length));
+      const videoCutsRaw = await Promise.all(
+        Array.from({ length: totalTargets }).map(async (_, idx) => {
           const dur =
             Array.isArray(sceneDurations) && Number(sceneDurations[idx]) > 3
               ? Math.round(Number(sceneDurations[idx]))
-              : 8;
-          const startSec = pickDistinctRandomOffset(idx);
-          const endSec = startSec + dur;
+              : Number(sceneDurationSec) > 3
+              ? Math.round(Number(sceneDurationSec))
+              : 10;
           const distinctPhoto =
             combinedPhotos[(idx + Number(cycleOffset || 0)) % Math.max(1, combinedPhotos.length)];
 
-          const reel = curatedReels[(idx + Number(cycleOffset || 0)) % curatedReels.length];
-          const rawMp4Source = reel?.rawMp4Url || "";
-          const fileId = `arch_cut_${Date.now()}_${idx}_${startSec}s_${endSec}s`;
-          const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
-          const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+          const dmCand = dmCandidates[idx % Math.max(1, dmCandidates.length)];
+          const archVid = videos[idx % Math.max(1, videos.length)];
+          const curatedReel = curatedReels[idx % Math.max(1, curatedReels.length)];
 
-          let cutSucceeded = false;
-          if (rawMp4Source) {
+          const cutMp4File = async (srcUrl: string, startSec: number, tagIdx: number) => {
+            const fileId = `arch_cut_${Date.now()}_${tagIdx}_${startSec}s_${startSec + dur}s`;
+            const outMp4Path = path.join(YT_CUTS_DIR, `${fileId}.mp4`);
+            const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
+            const isHls = /\.m3u8(\?|#|$)/i.test(srcUrl);
             try {
               await execFileAsync(
                 "ffmpeg",
                 [
                   "-y",
+                  "-threads",
+                  "2",
+                  "-rw_timeout",
+                  "7000000",
+                  "-user_agent",
+                  BROWSER_USER_AGENT,
+                  ...(!isHls ? ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"] : []),
+                  "-fflags",
+                  "+fastseek",
                   "-ss",
                   String(startSec),
                   "-i",
-                  rawMp4Source,
+                  srcUrl,
                   "-t",
                   String(dur),
                   "-vf",
                   buildSharp34VideoFilter("3:4-sharp", "center"),
+                  "-r",
+                  "24",
                   "-c:v",
                   "libx264",
                   "-preset",
-                  "veryfast",
+                  "ultrafast",
                   "-crf",
-                  "18",
+                  "21",
                   "-pix_fmt",
                   "yuv420p",
                   "-movflags",
@@ -4230,16 +4264,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   "-an",
                   outMp4Path,
                 ],
-                { timeout: 14000 }
+                { timeout: 14500 }
               );
-              if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 12000) {
-                cutSucceeded = true;
+              if (fs.existsSync(outMp4Path) && fs.statSync(outMp4Path).size > 20000) {
                 await execFileAsync(
                   "ffmpeg",
                   [
                     "-y",
                     "-ss",
-                    String(Math.min(2, Math.max(0.5, dur * 0.3))),
+                    String(Math.min(2, Math.max(0.6, dur * 0.35))),
                     "-i",
                     outMp4Path,
                     "-frames:v",
@@ -4248,54 +4281,77 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                     "3",
                     outJpgPath,
                   ],
-                  { timeout: 3500 }
+                  { timeout: 3000 }
                 ).catch(() => {});
+                let frameThumb = dmCand?.thumbnailUrl || archVid?.dataUrl || distinctPhoto?.dataUrl || "";
+                if (fs.existsSync(outJpgPath)) {
+                  frameThumb = `data:image/jpeg;base64,${fs.readFileSync(outJpgPath).toString("base64")}`;
+                  try { fs.unlinkSync(outJpgPath); } catch {}
+                }
+                return {
+                  fileId,
+                  frameThumb,
+                };
               }
             } catch {
-              // fallback to range stream if ffmpeg times out
+              try { if (fs.existsSync(outMp4Path)) fs.unlinkSync(outMp4Path); } catch {}
             }
-          }
-
-          let frameThumb = v.dataUrl || distinctPhoto?.dataUrl || "";
-          if (fs.existsSync(outJpgPath)) {
-            const jpgBuf = fs.readFileSync(outJpgPath);
-            frameThumb = `data:image/jpeg;base64,${jpgBuf.toString("base64")}`;
-            try {
-              fs.unlinkSync(outJpgPath);
-            } catch {
-              // ignore
-            }
-          }
-
-          if (cutSucceeded) {
-            return {
-              title: v.title,
-              videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}`,
-              dataUrl: frameThumb,
-              trimStartSec: 0,
-              trimEndSec: dur,
-              originalStartSec: startSec,
-              originalEndSec: endSec,
-              width: 640,
-              height: 360,
-              sourceLabel: `✂️ Đã cắt riêng đoạn ${startSec}s → ${endSec}s`,
-            };
-          }
-
-          return {
-            title: v.title,
-            videoUrl: v.videoUrl,
-            dataUrl: frameThumb,
-            trimStartSec: startSec,
-            trimEndSec: endSec,
-            originalStartSec: startSec,
-            originalEndSec: endSec,
-            width: v.width,
-            height: v.height,
-            sourceLabel: `✂️ Đã cắt riêng đoạn ${startSec}s → ${endSec}s`,
+            return null;
           };
+
+          // 1. Try Dailymotion stream matching the exact character/topic first (fast HLS 3:4 HD MP4!)
+          if (dmCand) {
+            const dmStream = await resolveDailymotionStreamUrl(dmCand.dmId);
+            if (dmStream) {
+              const safeMax = Math.max(4, dmCand.durationSec - dur - 2);
+              const startSec = Math.min(safeMax, dmCand.durationSec > 90 ? 18 + ((idx * 17) % 45) : 6 + ((idx * 7) % Math.max(4, safeMax - 4)));
+              const cutRes = await cutMp4File(dmStream, startSec, idx);
+              if (cutRes) {
+                return {
+                  title: dmCand.title,
+                  videoUrl: `/api/youtube/cut-file/${cutRes.fileId}.mp4#cut=${idx + 1}&seg=${startSec}-${startSec + dur}`,
+                  dataUrl: cutRes.frameThumb,
+                  trimStartSec: 0,
+                  trimEndSec: dur,
+                  durationSec: dur,
+                  originalStartSec: startSec,
+                  originalEndSec: startSec + dur,
+                  width: 720,
+                  height: 960,
+                  sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${startSec}s → ${startSec + dur}s)`,
+                };
+              }
+            }
+          }
+
+          // 2. Try Archive.org / Wikimedia MP4 stream
+          const archRawMatch = archVid?.videoUrl?.match(/[?&]url=([^&#]+)/);
+          const archRawUrl = archRawMatch ? decodeURIComponent(archRawMatch[1]) : curatedReel?.rawMp4Url || "";
+          if (archRawUrl && !/\.ogv(\?|#|$)/i.test(archRawUrl)) {
+            const startSec = 22 + ((idx * 19 + Number(cycleOffset || 0) * 13) % 90);
+            const cutRes = await cutMp4File(archRawUrl, startSec, idx);
+            if (cutRes) {
+              return {
+                title: archVid?.title || curatedReel?.title || cleanQuery,
+                videoUrl: `/api/youtube/cut-file/${cutRes.fileId}.mp4#cut=${idx + 1}&seg=${startSec}-${startSec + dur}`,
+                dataUrl: cutRes.frameThumb,
+                trimStartSec: 0,
+                trimEndSec: dur,
+                durationSec: dur,
+                originalStartSec: startSec,
+                originalEndSec: startSec + dur,
+                width: 720,
+                height: 960,
+                sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${startSec}s → ${startSec + dur}s)`,
+              };
+            }
+          }
+
+          return null;
         })
       );
+
+      const videoCuts = videoCutsRaw.filter((v): v is NonNullable<typeof v> => Boolean(v));
 
       res.json({
         videoCuts,
@@ -5393,27 +5449,39 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         curatedReels.push(r);
       }
 
-      const pickMatchedReelAndDm = (titleText: string, itemIdx: number) => {
-        const lowerTitle = titleText.toLowerCase();
-        let matchedReel = curatedReels.find(
-          (r) =>
-            (lowerTitle.includes("josey wales") && r.title.toLowerCase().includes("josey wales")) ||
-            (lowerTitle.includes("white buffalo") && r.title.toLowerCase().includes("white buffalo")) ||
-            (lowerTitle.includes("cuckoo") && r.title.toLowerCase().includes("cuckoo")) ||
-            (lowerTitle.includes("bonanza") && r.title.toLowerCase().includes("bonanza")) ||
-            (lowerTitle.includes("lone ranger") && r.title.toLowerCase().includes("lone ranger")) ||
-            (lowerTitle.includes("magnificent seven") && r.title.toLowerCase().includes("magnificent seven")) ||
-            (lowerTitle.includes("bullitt") && r.title.toLowerCase().includes("bullitt")) ||
-            (lowerTitle.includes("charade") && r.title.toLowerCase().includes("charade")) ||
-            (lowerTitle.includes("fist of fury") && r.title.toLowerCase().includes("fist of fury")) ||
-            (lowerTitle.includes("fistful") && r.title.toLowerCase().includes("fistful"))
-        );
-        if (!matchedReel && curatedReels.length > 0) {
-          matchedReel = curatedReels[(itemIdx + pageIdx * 3) % curatedReels.length];
-        }
-        const pairedDmId =
-          dmResults.length > 0 ? dmResults[itemIdx % dmResults.length].dmId : "";
-        return { matchedReel, pairedDmId };
+      // Helper: Only pair a Dailymotion or Archive item onto a YouTube/Social card if it specifically matches that clip's movie/topic keywords
+      const subjectTokensLower = extractSubjectIdentityTokens(cleanChar);
+      const findSpecificTitleMatch = (titleText: string) => {
+        const titleWords = titleText
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .split(/\s+/)
+          .filter(
+            (w) =>
+              w.length >= 4 &&
+              !GENERIC_QUERY_STOPWORDS.has(w) &&
+              !subjectTokensLower.includes(w) &&
+              !/^(shorts|tiktok|instagram|reels|youtube|video|official|hd|4k|19\d{2}|20\d{2}|edit|viral|moments|duke|tribute)$/.test(
+                w
+              )
+          );
+        if (titleWords.length === 0) return { matchedReel: undefined, pairedDmId: "", pairedDmTitle: "" };
+
+        const matchedDm = dmResults.find((dm) => {
+          const dTitle = dm.title.toLowerCase();
+          return titleWords.some((tw) => dTitle.includes(tw));
+        });
+        const matchedReel = curatedReels.find((r) => {
+          const rTitle = r.title.toLowerCase();
+          return titleWords.some((tw) => rTitle.includes(tw));
+        });
+        return {
+          matchedReel,
+          pairedDmId: matchedDm?.dmId || "",
+          pairedDmTitle: matchedDm?.title || "",
+        };
       };
 
       const computeReelStartSec = (
@@ -5422,8 +5490,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         isShortForm = false
       ): number => {
         if (isShortForm) {
-          // Short-form clips (Shorts / TikTok / IG Reels) should start quickly inside 2s–26s, never 302s!
-          const shortFormOffsets = [2, 6, 10, 14, 18, 22, 26];
+          const shortFormOffsets = [4, 8, 12, 16, 20, 24];
           return shortFormOffsets[(slotIdx + pageIdx * 2) % shortFormOffsets.length];
         }
         const base = Math.min(90, reel?.trimStartSec ?? 22);
@@ -5433,10 +5500,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           return shortOffsets[(slotIdx + pageIdx * 2) % shortOffsets.length];
         }
         const offsets = [0, 18, 36, 54, 72, 95, 118, 142];
-        return Math.max(10, base + offsets[(slotIdx + pageIdx * 3) % offsets.length]);
+        return Math.max(12, base + offsets[(slotIdx + pageIdx * 3) % offsets.length]);
       };
 
       const seenYtIds = new Set<string>();
+      const dmCuttableItems: any[] = [];
       const shortsItems: any[] = [];
       const tiktokItems: any[] = [];
       const instagramItems: any[] = [];
@@ -5446,8 +5514,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       // Handle direct pasted URLs at the very top of their respective platform lists
       if (pastedYtId) {
         seenYtIds.add(pastedYtId);
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(cleanChar, 0);
-        const directStartSec = computeReelStartSec(matchedReel, 0, isPastedShort);
+        const { matchedReel, pairedDmId, pairedDmTitle } = findSpecificTitleMatch(cleanChar);
+        const hasMatch = Boolean(pairedDmId || matchedReel?.rawMp4Url);
         if (isPastedShort) {
           shortsItems.push({
             id: `yt-short-direct-${pastedYtId}`,
@@ -5463,9 +5531,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             viewsLabel: "Link trực tiếp",
             thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
             youtubeUrl: `https://www.youtube.com/shorts/${pastedYtId}`,
-            suggestedTrimStartSec: directStartSec,
+            suggestedTrimStartSec: 4,
             sourcePlatform: "shorts" as const,
-            platformBadge: "📱 YouTube Short",
+            isDirectCuttable: hasMatch,
+            matchedSourceTitle: pairedDmTitle || matchedReel?.title || "",
+            platformBadge: hasMatch ? "✅ Cắt Bản MP4 Khớp" : "📺 YouTube Short (Tìm bản MP4)",
           });
         } else {
           youtubeLongItems.push({
@@ -5482,14 +5552,15 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             viewsLabel: "Link trực tiếp",
             thumbnailUrl: `https://i.ytimg.com/vi/${pastedYtId}/hqdefault.jpg`,
             youtubeUrl: `https://www.youtube.com/watch?v=${pastedYtId}`,
-            suggestedTrimStartSec: directStartSec,
+            suggestedTrimStartSec: 12,
             sourcePlatform: "youtube" as const,
-            platformBadge: "🎬 YouTube",
+            isDirectCuttable: hasMatch,
+            matchedSourceTitle: pairedDmTitle || matchedReel?.title || "",
+            platformBadge: hasMatch ? "✅ Cắt Bản MP4 Khớp" : "📺 YouTube (Tìm bản MP4)",
           });
         }
       }
 
-      // Helper to collect candidates from a specific InnerTube page
       const collectFromPage = (
         page: Awaited<ReturnType<typeof fetchYouTubeSearchDataFast>>,
         maxShortDur = 110
@@ -5539,33 +5610,126 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       const rawShortsCandidates = [
         ...collectFromPage(ytShortsPage, 90),
         ...collectFromPage(ytMoviesPage, 75),
+        ...collectFromPage(ytTikTokPage, 120),
+        ...collectFromPage(ytInstagramPage, 120),
       ];
-      const rawTikTokCandidates = collectFromPage(ytTikTokPage, 120);
-      const rawInstagramCandidates = collectFromPage(ytInstagramPage, 120);
 
-      // Expand per-platform caps up to 20 each for rich deep short-form results
-      const overflowPool = [
-        ...rawShortsCandidates.slice(20),
-        ...rawTikTokCandidates.slice(20),
-        ...rawInstagramCandidates.slice(20),
-      ];
-      const finalShortsRaw = rawShortsCandidates.slice(0, 20);
-      const finalTikTokRaw = rawTikTokCandidates.slice(0, 20);
-      const finalInstagramRaw = rawInstagramCandidates.slice(0, 20);
+      // 1. Format Dailymotion 100%-Cuttable Film & Interview Clips FIRST (no fake archiveMp4Url poisoning!)
+      dmResults.forEach((dm, idx) => {
+        const isShortDm = dm.durationSec <= 75;
+        const suggestedStart = dm.durationSec > 90
+          ? Math.min(Math.max(14, Math.floor(dm.durationSec * 0.2)), dm.durationSec - 14)
+          : Math.max(4, Math.min(Math.floor(dm.durationSec * 0.25), Math.max(4, dm.durationSec - 12)));
+        const mins = Math.floor(dm.durationSec / 60);
+        const secs = dm.durationSec % 60;
+        dmCuttableItems.push({
+          id: `dm-vid-${dm.dmId}-p${pageIdx}-${idx}`,
+          youtubeId: "",
+          tiktokUrl: "",
+          instagramUrl: "",
+          dmId: dm.dmId,
+          archiveMp4Url: "",
+          title: dm.title,
+          channel: `${dm.channel} · Dailymotion`,
+          durationSec: Math.max(20, dm.durationSec || 120),
+          durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
+          viewsLabel: isShortDm ? "Video Ngắn · Cắt MP4 100%" : "Cảnh Phim · Cắt MP4 100%",
+          thumbnailUrl: dm.thumbnailUrl || "",
+          youtubeUrl: `https://www.dailymotion.com/video/${dm.dmId}`,
+          suggestedTrimStartSec: suggestedStart,
+          sourcePlatform: "dailymotion" as const,
+          isDirectCuttable: true,
+          platformBadge: "✅ Cắt MP4 100% · Dailymotion",
+        });
+      });
 
-      while (finalTikTokRaw.length < 14 && overflowPool.length > 0) {
-        finalTikTokRaw.push(overflowPool.shift()!);
-      }
-      while (finalInstagramRaw.length < 14 && overflowPool.length > 0) {
-        finalInstagramRaw.push(overflowPool.shift()!);
-      }
-      while (finalShortsRaw.length < 14 && overflowPool.length > 0) {
-        finalShortsRaw.push(overflowPool.shift()!);
-      }
+      // 2. Real Archive.org & Wikimedia WebM/MP4 items (100% directly cuttable with native video scrubber!)
+      archivalPool.forEach((arch, idx) => {
+        if (/\.ogv(\?|#|$)/i.test(arch.rawMp4Url)) return;
+        archiveMp4Items.push({
+          id: `arch-mp4-${pageIdx}-${idx}-${Buffer.from(arch.rawMp4Url).toString("base64").slice(-10)}`,
+          youtubeId: "",
+          tiktokUrl: "",
+          instagramUrl: "",
+          dmId: "",
+          archiveMp4Url: arch.rawMp4Url,
+          title: arch.year ? `${arch.title} (${arch.year})` : arch.title,
+          channel: "Internet Archive · MP4 Gốc",
+          durationSec: 240,
+          durationLabel: "MP4 Gốc",
+          viewsLabel: "Kho Lưu Trữ Thế Giới",
+          thumbnailUrl:
+            arch.thumbnailUrl ||
+            dmCuttableItems[idx % Math.max(1, dmCuttableItems.length)]?.thumbnailUrl ||
+            "",
+          youtubeUrl: arch.rawMp4Url,
+          suggestedTrimStartSec: Math.max(20, arch.trimStartSec || 24),
+          sourcePlatform: "archive" as const,
+          isDirectCuttable: true,
+          platformBadge: "✅ Cắt MP4 100% · Archive.org",
+        });
+      });
 
-      // 1. Format YouTube Shorts items
-      finalShortsRaw.forEach((s, idx) => {
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(s.title, idx);
+      // 3. Genuine TikTok URLs discovered via Yahoo Search (100% downloadable & cuttable via yt-dlp -> FFmpeg)
+      yahooSocialLinks.ttUrls.slice(0, 12).forEach((ttLink, idx) => {
+        const ytThumbCand = rawShortsCandidates[idx % Math.max(1, rawShortsCandidates.length)];
+        tiktokItems.push({
+          id: `tt-real-${ttLink.id}-p${pageIdx}-${idx}`,
+          youtubeId: "",
+          tiktokId: ttLink.id,
+          tiktokUrl: ttLink.url,
+          instagramUrl: "",
+          dmId: "",
+          archiveMp4Url: "",
+          title: `${cleanChar} — Video TikTok (@${ttLink.author})`,
+          channel: `@${ttLink.author} · TikTok Gốc`,
+          durationSec: 40,
+          durationLabel: "0:40 (TikTok)",
+          viewsLabel: "TikTok Gốc · Cắt 100%",
+          thumbnailUrl:
+            ytThumbCand?.thumbnailUrl ||
+            dmCuttableItems[idx % Math.max(1, dmCuttableItems.length)]?.thumbnailUrl ||
+            "",
+          youtubeUrl: ttLink.url,
+          suggestedTrimStartSec: 2 + ((idx * 3) % 12),
+          sourcePlatform: "tiktok" as const,
+          isDirectCuttable: true,
+          platformBadge: "✅ Cắt MP4 100% · TikTok",
+        });
+      });
+
+      // 4. Genuine Instagram Reels URLs discovered via Yahoo Search
+      yahooSocialLinks.igUrls.slice(0, 10).forEach((igLink, idx) => {
+        const ytThumbCand = rawShortsCandidates[(idx + 1) % Math.max(1, rawShortsCandidates.length)];
+        instagramItems.push({
+          id: `ig-real-${igLink.code}-p${pageIdx}-${idx}`,
+          youtubeId: "",
+          tiktokUrl: "",
+          instagramId: igLink.code,
+          instagramUrl: igLink.url,
+          dmId: "",
+          archiveMp4Url: "",
+          title: `${cleanChar} — Instagram Reel (#${igLink.code.slice(0, 8)})`,
+          channel: "Instagram Reels Gốc",
+          durationSec: 38,
+          durationLabel: "0:38 (Reels)",
+          viewsLabel: "Instagram Gốc",
+          thumbnailUrl:
+            ytThumbCand?.thumbnailUrl ||
+            dmCuttableItems[idx % Math.max(1, dmCuttableItems.length)]?.thumbnailUrl ||
+            "",
+          youtubeUrl: igLink.url,
+          suggestedTrimStartSec: 2 + ((idx * 3) % 10),
+          sourcePlatform: "instagram" as const,
+          isDirectCuttable: true,
+          platformBadge: "📸 Instagram Reels · Cắt MP4",
+        });
+      });
+
+      // 5. YouTube Shorts cards (strictly only attach dmId/archiveMp4Url when title actually matches that specific clip!)
+      rawShortsCandidates.slice(0, 20).forEach((s, idx) => {
+        const { matchedReel, pairedDmId, pairedDmTitle } = findSpecificTitleMatch(s.title);
+        const hasSpecificMatch = Boolean(pairedDmId || matchedReel?.rawMp4Url);
         const startSec = computeReelStartSec(matchedReel, idx, true);
         shortsItems.push({
           id: `yt-short-${s.youtubeId}-p${pageIdx}-${idx}`,
@@ -5583,105 +5747,28 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           youtubeUrl: `https://www.youtube.com/shorts/${s.youtubeId}`,
           suggestedTrimStartSec: startSec,
           sourcePlatform: "shorts" as const,
-          platformBadge: "📱 YouTube Short",
+          isDirectCuttable: hasSpecificMatch,
+          matchedSourceTitle: pairedDmTitle || matchedReel?.title || "",
+          platformBadge: hasSpecificMatch
+            ? "✅ Cắt Bản MP4 Khớp · Short"
+            : "📺 YouTube Short (Tìm bản MP4)",
         });
       });
 
-      // 2. Format TikTok items (combining Yahoo-discovered real TikTok URLs + TikTok InnerTube video streams)
-      const maxTtCount = Math.min(16, Math.max(finalTikTokRaw.length, yahooSocialLinks.ttUrls.length));
-      for (let idx = 0; idx < maxTtCount; idx++) {
-        const ytCand = finalTikTokRaw[idx % Math.max(1, finalTikTokRaw.length)];
-        const ttLink = yahooSocialLinks.ttUrls[idx];
-        if (!ytCand && !ttLink) continue;
-        const titleText = ytCand?.title || `${cleanChar} — TikTok Edit (@${ttLink?.author || "tiktok"})`;
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 2);
-        const startSec = computeReelStartSec(matchedReel, idx + 2, true);
-        const cleanTitle = /tiktok/i.test(titleText) ? titleText : `${titleText} #TikTok`;
-        tiktokItems.push({
-          id: `tt-vid-${ttLink?.id || ytCand?.youtubeId || idx}-p${pageIdx}-${idx}`,
-          youtubeId: ytCand?.youtubeId || "",
-          tiktokId: ttLink?.id || "",
-          tiktokUrl: ttLink?.url || "",
-          instagramUrl: "",
-          dmId: pairedDmId,
-          archiveMp4Url: matchedReel?.rawMp4Url || "",
-          title: cleanTitle,
-          channel: ttLink?.author ? `@${ttLink.author} · TikTok` : "TikTok · Video Ngắn",
-          durationSec: Math.max(30, Math.min(90, ytCand?.durationSec || 42)),
-          durationLabel: "0:42 (TikTok)",
-          viewsLabel: ytCand?.viewsLabel || "TikTok",
-          thumbnailUrl:
-            ytCand?.thumbnailUrl ||
-            finalShortsRaw[idx % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
-            `https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg`,
-          youtubeUrl:
-            ttLink?.url ||
-            (ytCand?.youtubeId ? `https://www.youtube.com/shorts/${ytCand.youtubeId}` : ""),
-          suggestedTrimStartSec: startSec,
-          sourcePlatform: "tiktok" as const,
-          platformBadge: "🎵 TikTok",
-        });
-      }
-
-      // 3. Format Instagram Reels items
-      const maxIgCount = Math.min(16, Math.max(finalInstagramRaw.length, yahooSocialLinks.igUrls.length));
-      for (let idx = 0; idx < maxIgCount; idx++) {
-        const ytCand = finalInstagramRaw[idx % Math.max(1, finalInstagramRaw.length)];
-        const igLink = yahooSocialLinks.igUrls[idx];
-        if (!ytCand && !igLink) continue;
-        const titleText =
-          ytCand?.title || `${cleanChar} — Instagram Reel (#${igLink?.code || idx + 1})`;
-        const { matchedReel, pairedDmId } = pickMatchedReelAndDm(titleText, idx + 4);
-        const startSec = computeReelStartSec(matchedReel, idx + 4, true);
-        const cleanTitle = /instagram|reel/i.test(titleText)
-          ? titleText
-          : `${titleText} #InstagramReels`;
-        instagramItems.push({
-          id: `ig-reel-${igLink?.code || ytCand?.youtubeId || idx}-p${pageIdx}-${idx}`,
-          youtubeId: ytCand?.youtubeId || "",
-          tiktokUrl: "",
-          instagramId: igLink?.code || "",
-          instagramUrl: igLink?.url || "",
-          dmId: pairedDmId,
-          archiveMp4Url: matchedReel?.rawMp4Url || "",
-          title: cleanTitle,
-          channel: igLink?.code
-            ? `Instagram Reels (@${cleanChar.toLowerCase().replace(/\s+/g, "")})`
-            : "Instagram Reels",
-          durationSec: Math.max(30, Math.min(90, ytCand?.durationSec || 38)),
-          durationLabel: "0:38 (Reels)",
-          viewsLabel: ytCand?.viewsLabel || "Instagram Reels",
-          thumbnailUrl:
-            ytCand?.thumbnailUrl ||
-            finalShortsRaw[(idx + 1) % Math.max(1, finalShortsRaw.length)]?.thumbnailUrl ||
-            `https://i.ytimg.com/vi/tRmNS_-E1bM/hqdefault.jpg`,
-          youtubeUrl:
-            igLink?.url ||
-            (ytCand?.youtubeId ? `https://www.youtube.com/shorts/${ytCand.youtubeId}` : ""),
-          suggestedTrimStartSec: startSec,
-          sourcePlatform: "instagram" as const,
-          platformBadge: "📸 Instagram Reels",
-        });
-      }
-
-      // 4. Collect deep YouTube Movie Clips, Interviews, Documentaries, and Rare Footage across ALL 7 InnerTube pages
+      // 6. YouTube Long Movie Clips & Interviews
       for (const page of [
         ytMoviesPage,
         ytDeepMoviesPage,
         ytInterviewDocPage,
         ytFilmSpecificPage,
         ytShortsPage,
-        ytTikTokPage,
-        ytInstagramPage,
       ]) {
         for (const v of page.videos) {
           if (seenYtIds.has(v.youtubeId)) continue;
           if (!isVideoRelevantToSubject(v.title, cleanChar, rawQuery)) continue;
           seenYtIds.add(v.youtubeId);
-          const { matchedReel, pairedDmId } = pickMatchedReelAndDm(
-            v.title,
-            youtubeLongItems.length
-          );
+          const { matchedReel, pairedDmId, pairedDmTitle } = findSpecificTitleMatch(v.title);
+          const hasSpecificMatch = Boolean(pairedDmId || matchedReel?.rawMp4Url);
           const suggestedStart = computeReelStartSec(matchedReel, youtubeLongItems.length + 1);
           const isInterviewOrDoc = /\b(interview|documentary|biography|rare|behind\s+the\s+scenes|story|life|quotes)\b/i.test(
             v.title
@@ -5702,116 +5789,56 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             youtubeUrl: `https://www.youtube.com/watch?v=${v.youtubeId}`,
             suggestedTrimStartSec: suggestedStart,
             sourcePlatform: "youtube" as const,
-            platformBadge: isInterviewOrDoc ? "🎙️ Phỏng Vấn / Tư Liệu" : "🎬 YouTube",
+            isDirectCuttable: hasSpecificMatch,
+            matchedSourceTitle: pairedDmTitle || matchedReel?.title || "",
+            platformBadge: hasSpecificMatch
+              ? "✅ Cắt Bản MP4 Khớp"
+              : isInterviewOrDoc
+              ? "🎙️ Phỏng Vấn (YouTube)"
+              : "📺 YouTube (Tham khảo)",
           });
         }
       }
 
-      // 5. Include Real Internet Archive & Wikimedia MP4 films directly as external video cards
-      archivalPool.forEach((arch, idx) => {
-        archiveMp4Items.push({
-          id: `arch-mp4-${pageIdx}-${idx}-${Buffer.from(arch.rawMp4Url).toString("base64").slice(-10)}`,
-          youtubeId: "",
-          tiktokUrl: "",
-          instagramUrl: "",
-          dmId: dmResults[idx % Math.max(1, dmResults.length)]?.dmId || "",
-          archiveMp4Url: arch.rawMp4Url,
-          title: arch.year ? `${arch.title} (${arch.year})` : arch.title,
-          channel: "Internet Archive · MP4 Gốc",
-          durationSec: 240,
-          durationLabel: "MP4 Gốc",
-          viewsLabel: "Kho Lưu Trữ Thế Giới",
-          thumbnailUrl:
-            arch.thumbnailUrl ||
-            youtubeLongItems[idx % Math.max(1, youtubeLongItems.length)]?.thumbnailUrl ||
-            "",
-          youtubeUrl: arch.rawMp4Url,
-          suggestedTrimStartSec: arch.trimStartSec || 24,
-          sourcePlatform: "archive" as const,
-          platformBadge: "🎞️ Archive.org MP4",
-        });
-      });
-
-      // 6. Include Dailymotion Film Clips as directly cuttable items FIRST in youtubeLongItems (100% real HLS .m3u8 FFmpeg cut for the exact character!)
-      const dmCards = dmResults.map((dm, idx) => {
-        const isShortDm = dm.durationSec <= 75;
-        const matchedReel = curatedReels.length > 0 ? curatedReels[(idx + pageIdx) % curatedReels.length] : undefined;
-        const suggestedStart = Math.min(
-          Math.max(4, Math.floor((dm.durationSec || 60) * 0.25)),
-          Math.max(6, (dm.durationSec || 60) - 14)
-        );
-        const mins = Math.floor(dm.durationSec / 60);
-        const secs = dm.durationSec % 60;
-        return {
-          id: `dm-vid-${dm.dmId}-p${pageIdx}-${idx}`,
-          youtubeId: "",
-          tiktokUrl: "",
-          instagramUrl: "",
-          dmId: dm.dmId,
-          archiveMp4Url: matchedReel?.rawMp4Url || "",
-          title: dm.title,
-          channel: `${dm.channel} · Dailymotion`,
-          durationSec: Math.max(20, dm.durationSec || 120),
-          durationLabel: `${mins}:${String(secs).padStart(2, "0")}`,
-          viewsLabel: isShortDm ? "Video Ngắn · Cắt MP4 100%" : "Cảnh Phim · Cắt MP4 100%",
-          thumbnailUrl: dm.thumbnailUrl || "",
-          youtubeUrl: `https://www.dailymotion.com/video/${dm.dmId}`,
-          suggestedTrimStartSec: suggestedStart,
-          sourcePlatform: "youtube" as const,
-          platformBadge: "✂️ Cắt Trực Tiếp MP4",
-        };
-      });
-      youtubeLongItems.unshift(...dmCards);
-
-      // Order & interleave results: explicit short-form intent (TikTok/Instagram/Shorts/Social mode) ALWAYS wins over stale prior depthMode!
+      // Order & interleave results: ALWAYS put 100%-Cuttable streams (Dailymotion · TikTok · Archive.org) first in balanced search!
       const combinedVideos: any[] = [];
       const maxLen = Math.max(
-        shortsItems.length,
+        dmCuttableItems.length,
+        archiveMp4Items.length,
         tiktokItems.length,
         instagramItems.length,
-        youtubeLongItems.length,
-        archiveMp4Items.length
+        shortsItems.length,
+        youtubeLongItems.length
       );
 
       for (let i = 0; i < maxLen; i++) {
         if (wantsTikTokFirst) {
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < dmCuttableItems.length) combinedVideos.push(dmCuttableItems[i]);
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (depthMode !== "social" && i < youtubeLongItems.length) {
-            combinedVideos.push(youtubeLongItems[i]);
-          }
         } else if (wantsInstagramFirst) {
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
+          if (i < dmCuttableItems.length) combinedVideos.push(dmCuttableItems[i]);
           if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-          if (depthMode !== "social" && i < youtubeLongItems.length) {
-            combinedVideos.push(youtubeLongItems[i]);
-          }
         } else if (wantsShortsFirst || depthMode === "social") {
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
-          if (depthMode !== "social" && i < youtubeLongItems.length) {
-            combinedVideos.push(youtubeLongItems[i]);
-          }
+          if (i < dmCuttableItems.length) combinedVideos.push(dmCuttableItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
         } else if (depthMode === "archive") {
           if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
+          if (i < dmCuttableItems.length) combinedVideos.push(dmCuttableItems[i]);
           if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-        } else if (depthMode === "cinema" || depthMode === "interview" || depthMode === "rare") {
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
-          if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
-          if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
-          if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
         } else {
-          // Balanced deep interleaving: prioritize 100% directly-cuttable Dailymotion / Archive / TikTok streams first, then Shorts & Reels
-          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
+          // Balanced default: 100% Directly-Cuttable streams FIRST so user's top cards always cut accurately!
+          if (i < dmCuttableItems.length) combinedVideos.push(dmCuttableItems[i]);
           if (i < archiveMp4Items.length) combinedVideos.push(archiveMp4Items[i]);
           if (i < tiktokItems.length) combinedVideos.push(tiktokItems[i]);
-          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
           if (i < instagramItems.length) combinedVideos.push(instagramItems[i]);
+          if (i < shortsItems.length) combinedVideos.push(shortsItems[i]);
+          if (i < youtubeLongItems.length) combinedVideos.push(youtubeLongItems[i]);
         }
       }
 
@@ -6091,25 +6118,54 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         }
       };
 
-      // Lazy live lookup of Dailymotion candidates (strictly verified to match the searched subject)
+      // Lazy live lookup of Dailymotion candidates (strictly verified to match the searched subject & optional specific film/clip keywords)
       let liveSubjectDmListPromise: Promise<Array<{ id: string; duration: number; title: string }>> | null = null;
       const getSubjectDmFallbacks = (specificTitle?: string) => {
         if (specificTitle) {
           return (async () => {
             try {
-              const q = `${cleanChar} ${specificTitle.replace(/#\S+/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).slice(0, 4).join(" ")}`.trim();
-              const r = await fetch(
-                `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&limit=8&fields=id,title,duration`,
-                {
-                  headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3000),
-                }
+              const subjectToks = extractSubjectIdentityTokens(cleanChar);
+              const cleanedClipKeywords = specificTitle
+                .replace(/https?:\/\/\S+/gi, "")
+                .replace(/#\S+/g, "")
+                .replace(/["'“”‘’|💀🔫🔥🎬📱✅✂️]/g, " ")
+                .replace(/\b(the duke|you'll be|before i hit|ground|youtube|shorts|tiktok|reels|video|official|hd|4k|edit|viral|moments|best scenes)\b/gi, " ")
+                .replace(/[^\p{L}\p{N}\s]/gu, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+              const topicWords = cleanedClipKeywords
+                .split(/\s+/)
+                .filter((w) => w.length >= 3 && !subjectToks.includes(w.toLowerCase()));
+              const queries = Array.from(
+                new Set([
+                  `${cleanChar} ${topicWords.slice(0, 4).join(" ")}`.trim(),
+                  ...(topicWords.length > 0 ? [`${topicWords.slice(0, 3).join(" ")} ${cleanChar}`.trim()] : []),
+                ])
               );
-              if (!r.ok) return [];
-              const j: any = await r.json();
-              return (j?.list || [])
-                .filter((it: any) => it?.id && (it?.duration || 0) >= 12 && isVideoRelevantToSubject(String(it.title || ""), cleanChar, cleanChar))
-                .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60, title: String(it.title || "") }));
+              const seen = new Set<string>();
+              const matched: Array<{ id: string; duration: number; title: string; score: number }> = [];
+              for (const q of queries) {
+                const r = await fetch(
+                  `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&limit=10&fields=id,title,duration`,
+                  {
+                    headers: { "User-Agent": BROWSER_USER_AGENT },
+                    signal: AbortSignal.timeout(3000),
+                  }
+                );
+                if (!r.ok) continue;
+                const j: any = await r.json();
+                for (const it of j?.list || []) {
+                  if (!it?.id || seen.has(it.id) || (it?.duration || 0) < 12) continue;
+                  const t = String(it.title || "");
+                  if (!isVideoRelevantToSubject(t, cleanChar, cleanChar)) continue;
+                  seen.add(it.id);
+                  const tl = t.toLowerCase();
+                  const overlap = topicWords.filter((tw) => tl.includes(tw.toLowerCase())).length;
+                  matched.push({ id: String(it.id), duration: Number(it.duration) || 60, title: t, score: overlap });
+                }
+              }
+              matched.sort((a, b) => b.score - a.score);
+              return matched;
             } catch {
               return [];
             }
@@ -6163,10 +6219,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             clip?.youtubeUrl || (clip?.youtubeId ? `https://www.youtube.com/watch?v=${clip.youtubeId}` : "")
           ).trim();
           const videoUrlOpt = String(clip?.videoUrl || "").trim();
-          let explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
-          if (/\.ogv(\?|#|$)/i.test(explicitArchiveMp4)) {
-            explicitArchiveMp4 = explicitArchiveMp4.replace(/\.ogv(\?|#|$)/i, ".mp4$1");
-          }
+          const explicitArchiveMp4 = String(clip?.archiveMp4Url || "").trim();
 
           const clipFrameMode = String(clip?.frameMode || reqFrameMode || "3:4-sharp");
           const clipFocusX = String(clip?.focusX || reqFocusX || "center");
@@ -6183,9 +6236,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           const outJpgPath = path.join(YT_CUTS_DIR, `${fileId}.jpg`);
           let cutSucceeded = false;
           let usedSourceUrl = "";
+          let matchedSourceTitle = "";
 
-          const directCandidate = [explicitArchiveMp4, videoUrlOpt].find((u) =>
-            isPlayableDirectMediaUrl(u)
+          const directCandidate = [explicitArchiveMp4, videoUrlOpt].find(
+            (u) => isPlayableDirectMediaUrl(u) && !/\.ogv(\?|#|$)/i.test(u)
           ) || "";
           const socialUrl = tiktokUrl || instagramUrl || youtubeUrl;
           const explicitDmId = String(clip?.dmId || "").trim();
@@ -6216,9 +6270,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                15000
+                16000
               );
-              if (!cutSucceeded && trimStartSec > 35) {
+              if (!cutSucceeded && trimStartSec > 25) {
                 cutSucceeded = await runFastFfmpegCut(
                   explicitDmStream,
                   Math.min(14, trimStartSec % 25),
@@ -6232,7 +6286,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             }
           }
 
-          // 3. PRIORITY 3: Exact Direct MP4/WebM URL (Archive.org / Wikimedia / Uploaded)
+          // 3. PRIORITY 3: Exact Direct MP4/WebM URL (Archive.org / Wikimedia WebM / Uploaded)
           if (!cutSucceeded && directCandidate) {
             usedSourceUrl = directCandidate;
             cutSucceeded = await runFastFfmpegCut(
@@ -6242,12 +6296,12 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               vf34Filter,
               outMp4Path,
               outJpgPath,
-              15000
+              16000
             );
             if (!cutSucceeded && trimStartSec > 45) {
               cutSucceeded = await runFastFfmpegCut(
                 directCandidate,
-                Math.min(16, trimStartSec % 28),
+                Math.min(18, trimStartSec % 28),
                 durationSec,
                 vf34Filter,
                 outMp4Path,
@@ -6257,7 +6311,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             }
           }
 
-          // 4. PRIORITY 4: YouTube card -> try yt-dlp download if not IP-blocked; otherwise match EXACT subject on Dailymotion / Archive.org
+          // 4. PRIORITY 4: YouTube card -> try yt-dlp directly first; if blocked by YouTube bot-check, find title-matched Dailymotion/Archive clip
           if (!cutSucceeded && youtubeUrl && /youtube\.com|youtu\.be/i.test(youtubeUrl)) {
             cutSucceeded = await downloadAndCutSocialWithYtDlp(
               youtubeUrl,
@@ -6272,12 +6326,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             }
           }
 
-          // 5. Fallback to Dailymotion videos STRICTLY matching cleanChar (e.g. Keanu Reeves)
+          // 5. Title-Matched Dailymotion fallback (e.g. "El Dorado 1966 John Wayne" -> "John Wayne - El Dorado" x2lm9pk)
           if (!cutSucceeded) {
             const [titleMatchedDm, subjectDmList] = await Promise.all([
               getSubjectDmFallbacks(title),
               getSubjectDmFallbacks(),
             ]);
+            // Prioritize clips that actually matched topic keywords from the card's title
             const mergedDm = [...titleMatchedDm, ...subjectDmList].filter(
               (d, i, arr) =>
                 d.id !== explicitDmId &&
@@ -6289,8 +6344,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               const dmStream = await resolveDailymotionStreamUrl(dmCand.id);
               if (dmStream) {
                 usedSourceUrl = dmStream;
+                // Skip black intro cards on longer videos if user picked 0-5s on a Short
+                const minSafeStart = dmCand.duration > 100 && trimStartSec < 10 ? 12 : trimStartSec;
                 const maxSafeStart = Math.max(2, dmCand.duration - durationSec - 2);
-                const safeDmSeek = Math.min(trimStartSec, maxSafeStart);
+                const safeDmSeek = Math.min(minSafeStart, maxSafeStart);
                 cutSucceeded = await runFastFfmpegCut(
                   dmStream,
                   safeDmSeek,
@@ -6298,56 +6355,71 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   vf34Filter,
                   outMp4Path,
                   outJpgPath,
-                  15000
+                  16000
                 );
+                if (cutSucceeded) {
+                  matchedSourceTitle = dmCand.title;
+                }
               }
             }
           }
 
-          // 6. Fallback to live Internet Archive videos STRICTLY matching cleanChar
+          // 6. Live Internet Archive MP4 fallback STRICTLY matching cleanChar
           if (!cutSucceeded) {
             const liveArch = await searchRealArchivalVideos(
               cleanChar,
-              3,
+              4,
               new Set<string>(),
               cleanChar
             ).catch(() => []);
             const liveMp4s = liveArch
               .map((a) => {
                 const m = a.videoUrl.match(/[?&]url=([^&#]+)/);
-                return m ? decodeURIComponent(m[1]) : "";
+                return { url: m ? decodeURIComponent(m[1]) : "", title: a.title };
               })
-              .filter((u) => isPlayableDirectMediaUrl(u) && u !== directCandidate);
-            for (const archMp4 of liveMp4s.slice(0, 2)) {
+              .filter(
+                (a) =>
+                  isPlayableDirectMediaUrl(a.url) &&
+                  !/\.ogv(\?|#|$)/i.test(a.url) &&
+                  a.url !== directCandidate
+              );
+            for (const archCand of liveMp4s.slice(0, 2)) {
               if (cutSucceeded) break;
-              usedSourceUrl = archMp4;
-              const safeSeek = Math.min(24, Math.max(4, trimStartSec % 35));
+              usedSourceUrl = archCand.url;
+              const safeSeek = Math.max(18, Math.min(60, trimStartSec));
               cutSucceeded = await runFastFfmpegCut(
-                archMp4,
+                archCand.url,
                 safeSeek,
                 durationSec,
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                14000
+                15000
               );
+              if (cutSucceeded) {
+                matchedSourceTitle = archCand.title;
+              }
             }
           }
 
-          // 7. Only if matched actor has verified curated MP4 reels, try those
+          // 7. Only if matched actor has verified curated MP4 reels, try those at non-black offset >= 16s
           if (!cutSucceeded && curatedReels.length > 0) {
-            const fallbackMp4 = curatedReels[idx % curatedReels.length]?.rawMp4Url || "";
+            const pickedReel = curatedReels[idx % curatedReels.length];
+            const fallbackMp4 = pickedReel?.rawMp4Url || "";
             if (fallbackMp4 && isPlayableDirectMediaUrl(fallbackMp4)) {
               usedSourceUrl = fallbackMp4;
               cutSucceeded = await runFastFfmpegCut(
                 fallbackMp4,
-                16 + ((idx * 7) % 24),
+                Math.max(18, pickedReel.trimStartSec || 22),
                 durationSec,
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                14000
+                15000
               );
+              if (cutSucceeded) {
+                matchedSourceTitle = pickedReel.title;
+              }
             }
           }
 
@@ -6384,7 +6456,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             id: `yt-cut-${Date.now()}-${idx}`,
             targetSceneId,
             characterName: cleanChar,
-            title,
+            title: matchedSourceTitle && matchedSourceTitle !== title ? `${title} · [Nguồn: ${matchedSourceTitle}]` : title,
+            matchedSourceTitle: matchedSourceTitle || undefined,
             videoUrl: `/api/youtube/cut-file/${fileId}.mp4#cut=${idx + 1}&seg=${trimStartSec}-${trimEndSec}`,
             sourceVideoUrl: usedSourceUrl || directCandidate || socialUrl,
             thumbnailUrl: thumbnailUrl || String(clip?.thumbnailUrl || ""),
@@ -6397,7 +6470,9 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             height: 960,
             frameMode: clipFrameMode,
             focusX: clipFocusX,
-            sourceLabel: `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
+            sourceLabel: matchedSourceTitle
+              ? `✂️ Đã cắt Chuẩn 3:4 HD từ "${matchedSourceTitle}" (${trimStartSec}s → ${trimEndSec}s)`
+              : `✂️ Đã cắt Chuẩn 3:4 HD (${trimStartSec}s → ${trimEndSec}s)`,
           };
       };
 

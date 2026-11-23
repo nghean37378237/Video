@@ -526,6 +526,47 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       HM
                     </span>
                   </div>
+                ) : actualMediaKind === 'video' && scene.mediaUrl ? (
+                  <div
+                    onClick={(e) => {
+                      if (isVisualScene && onOpenSceneMediaSearch) {
+                        e.stopPropagation();
+                        onOpenSceneMediaSearch(scene.id);
+                      }
+                    }}
+                    title="Di chuột để xem chạy thử Video MP4 đã cắt — hoặc bấm để tìm & đổi đoạn Video khác"
+                    className="relative w-11 h-11 rounded overflow-hidden border border-sky-500/70 hover:border-amber-400 shrink-0 bg-black cursor-pointer group/thumb"
+                  >
+                    <video
+                      key={scene.mediaUrl}
+                      src={(scene.mediaUrl || '').split('#')[0]}
+                      poster={thumbUrl || undefined}
+                      preload="metadata"
+                      muted
+                      loop
+                      playsInline
+                      onMouseEnter={(e) => {
+                        e.currentTarget.play().catch(() => {});
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.pause();
+                        try {
+                          e.currentTarget.currentTime = 0.1;
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                    {isVisualScene && onOpenSceneMediaSearch && (
+                      <div className="pointer-events-none absolute inset-0 bg-black/45 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                        <Search className="w-3.5 h-3.5 text-amber-300" />
+                      </div>
+                    )}
+                    <span className="absolute bottom-0 right-0 px-1 text-[8px] font-bold uppercase leading-tight bg-sky-600 text-white">
+                      MP4
+                    </span>
+                  </div>
                 ) : thumbUrl ? (
                   <div
                     onClick={(e) => {
@@ -558,8 +599,6 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                       className={`absolute bottom-0 right-0 px-1 text-[8px] font-bold uppercase leading-tight ${
                         isMissingRealPhoto
                           ? 'bg-amber-500 text-slate-950'
-                          : actualMediaKind === 'video'
-                          ? 'bg-sky-600 text-white'
                           : isVideoSceneHoldingTempImage
                           ? 'bg-amber-500 text-slate-950'
                           : 'bg-emerald-600 text-white'
@@ -567,8 +606,6 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     >
                       {isMissingRealPhoto
                         ? 'KLING'
-                        : actualMediaKind === 'video'
-                        ? 'MP4'
                         : isVideoSceneHoldingTempImage
                         ? 'ẢNH GỐC'
                         : 'ẢNH THẬT'}
@@ -586,9 +623,10 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({
                     className="relative w-11 h-11 rounded overflow-hidden border border-sky-500/60 hover:border-amber-400 shrink-0 bg-black cursor-pointer"
                   >
                     <video
-                      src={`${scene.mediaUrl}#t=0.1`}
+                      src={`${(scene.mediaUrl || '').split('#')[0]}#t=0.1`}
                       preload="metadata"
                       muted
+                      loop
                       playsInline
                       className="w-full h-full object-cover"
                     />

@@ -61,8 +61,10 @@ export interface YouTubeSearchVideoItem {
   thumbnailUrl: string;
   youtubeUrl: string;
   suggestedTrimStartSec: number;
-  sourcePlatform?: 'shorts' | 'tiktok' | 'instagram' | 'youtube' | 'archive';
+  sourcePlatform?: 'shorts' | 'tiktok' | 'instagram' | 'youtube' | 'archive' | 'dailymotion';
   platformBadge?: string;
+  isDirectCuttable?: boolean;
+  matchedSourceTitle?: string;
 }
 
 export interface CutYouTubeResultItem {
@@ -83,6 +85,7 @@ export interface CutYouTubeResultItem {
   frameMode?: string;
   focusX?: string;
   sourceLabel: string;
+  matchedSourceTitle?: string;
 }
 
 export interface QueuedYouTubeSegment {
@@ -141,7 +144,15 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterTab, setFilterTab] = useState<'youtube' | 'all' | 'video' | 'image'>(initialTab);
   const [videoSourceSubFilter, setVideoSourceSubFilter] = useState<
-    'all' | 'short-all' | 'shorts' | 'tiktok' | 'instagram' | 'youtube-long' | 'archive'
+    | 'all'
+    | 'cuttable-100'
+    | 'dailymotion'
+    | 'short-all'
+    | 'shorts'
+    | 'tiktok'
+    | 'instagram'
+    | 'youtube-long'
+    | 'archive'
   >('all');
   const [searchDepth, setSearchDepth] = useState<
     'all' | 'cinema' | 'interview' | 'rare' | 'archive' | 'social'
@@ -1138,8 +1149,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                 `${getSceneBadgeById(c.targetSceneId || targetIdForSingle || scene?.id || '')} (${c.originalStartSec}s→${c.originalEndSec}s)`
             )
             .join(', ');
+          const matchedNote = data.cuts[0]?.matchedSourceTitle
+            ? ` [Nguồn MP4 khớp: "${data.cuts[0].matchedSourceTitle}"]`
+            : '';
           setJustCutBanner(
-            `✅ ĐÃ CHẤP NHẬN CẮT & THAY THẾ THÀNH CÔNG (${cutSummary})! Bạn có thể xem trước đoạn vừa cắt ngay bên dưới, bấm 1-Click để chuyển/gắn sang bất kỳ Phần nào, hoặc tải MP4 về máy!`
+            `✅ ĐÃ CHẤP NHẬN CẮT & THAY THẾ THÀNH CÔNG (${cutSummary})${matchedNote}! Bạn có thể xem trước đoạn vừa cắt ngay bên dưới, bấm 1-Click để chuyển/gắn sang bất kỳ Phần nào, hoặc tải MP4 về máy!`
           );
           if (closeAfter) {
             onClose();
@@ -1646,8 +1660,6 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                   setFilterTab('youtube');
                   if (mode.id === 'archive') {
                     setVideoSourceSubFilter('archive');
-                  } else if (mode.id === 'cinema' || mode.id === 'interview' || mode.id === 'rare') {
-                    setVideoSourceSubFilter('youtube-long');
                   } else if (mode.id === 'social') {
                     setVideoSourceSubFilter('short-all');
                   } else {
@@ -1816,6 +1828,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                       poster={latestAcceptedCut.thumbnailUrl}
                       controls
                       autoPlay
+                      muted
+                      loop
                       playsInline
                       className="w-full h-full object-cover"
                     />
@@ -1991,6 +2005,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               src={getPlayableCutVideoSrc(cut)}
                               poster={cut.thumbnailUrl}
                               controls
+                              muted
+                              playsInline
                               preload="metadata"
                               className="w-full h-full object-cover"
                             />
@@ -2729,6 +2745,46 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                         </button>
                         <button
                           type="button"
+                          onClick={() => setVideoSourceSubFilter('cuttable-100')}
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                            videoSourceSubFilter === 'cuttable-100'
+                              ? 'bg-emerald-400 text-slate-950 shadow'
+                              : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/25'
+                          }`}
+                        >
+                          ✅ Cắt MP4 100% (
+                          {
+                            youtubeVideos.filter(
+                              (v) =>
+                                v.isDirectCuttable === true ||
+                                v.sourcePlatform === 'dailymotion' ||
+                                v.sourcePlatform === 'archive' ||
+                                Boolean(v.dmId || v.tiktokUrl || v.instagramUrl || v.archiveMp4Url)
+                            ).length
+                          }
+                          )
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVideoSourceSubFilter('dailymotion')}
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                            videoSourceSubFilter === 'dailymotion'
+                              ? 'bg-cyan-400 text-slate-950'
+                              : 'bg-slate-900 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/20'
+                          }`}
+                        >
+                          🎬 Dailymotion MP4 (
+                          {
+                            youtubeVideos.filter(
+                              (v) =>
+                                v.sourcePlatform === 'dailymotion' ||
+                                (Boolean(v.dmId) && !v.youtubeId)
+                            ).length
+                          }
+                          )
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setVideoSourceSubFilter('short-all')}
                           className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
                             videoSourceSubFilter === 'short-all'
@@ -2736,7 +2792,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               : 'bg-slate-900 text-amber-300 border border-pink-500/40 hover:bg-pink-500/20'
                           }`}
                         >
-                          📲 Tất Cả Video Ngắn (
+                          📲 Video Ngắn (
                           {
                             youtubeVideos.filter(
                               (v) =>
@@ -2840,6 +2896,20 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
                   {(() => {
                     const filteredYoutubeList = youtubeVideos.filter((yt) => {
+                      if (videoSourceSubFilter === 'cuttable-100') {
+                        return (
+                          yt.isDirectCuttable === true ||
+                          yt.sourcePlatform === 'dailymotion' ||
+                          yt.sourcePlatform === 'archive' ||
+                          Boolean(yt.dmId || yt.tiktokUrl || yt.instagramUrl || yt.archiveMp4Url)
+                        );
+                      }
+                      if (videoSourceSubFilter === 'dailymotion') {
+                        return (
+                          yt.sourcePlatform === 'dailymotion' ||
+                          (Boolean(yt.dmId) && !yt.youtubeId)
+                        );
+                      }
                       if (videoSourceSubFilter === 'short-all') {
                         return (
                           yt.sourcePlatform === 'shorts' ||
@@ -2919,9 +2989,18 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                             yt.sourcePlatform === 'shorts' ||
                             yt.sourcePlatform === 'tiktok' ||
                             yt.sourcePlatform === 'instagram';
-                          // CRITICAL: For Short/TikTok/Instagram cards, default to showing the real Short/TikTok/IG thumbnail & playable embed
-                          // instead of auto-loading horizontal Archive.org film frames! User can switch to MP4 scrubber anytime with 1 click.
-                          const useDirectMp4Scrubber = isShortFormPlatform
+                          const isDailymotionCard =
+                            yt.sourcePlatform === 'dailymotion' ||
+                            (Boolean(yt.dmId) && !yt.youtubeId);
+                          const isCuttableDirect =
+                            yt.isDirectCuttable === true ||
+                            isDailymotionCard ||
+                            yt.sourcePlatform === 'archive' ||
+                            Boolean(
+                              yt.dmId || yt.tiktokUrl || yt.instagramUrl || yt.archiveMp4Url
+                            );
+                          // CRITICAL: Only use direct MP4 scrubber when the card actually has an Archive MP4 URL (never poison Dailymotion/Shorts cards)
+                          const useDirectMp4Scrubber = isShortFormPlatform || isDailymotionCard
                             ? previewUseDirectMp4[yt.id] === true
                             : previewUseDirectMp4[yt.id] !== false;
                           const cleanYtDirectUrl = yt.archiveMp4Url
@@ -2932,7 +3011,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                           const curYtPlayhead = ytPlayheadSec[yt.id] ?? startSec;
                           const realYtTotalDur = ytActualDurationSec[yt.id] || 0;
                           const externalLinkUrl =
-                            yt.tiktokUrl || yt.instagramUrl || yt.youtubeUrl;
+                            yt.tiktokUrl ||
+                            yt.instagramUrl ||
+                            (yt.dmId && !yt.youtubeId
+                              ? `https://www.dailymotion.com/video/${yt.dmId}`
+                              : yt.youtubeUrl);
                           const isThisSegmentQueued = queuedSegments.some(
                             (q) =>
                               q.video.id === yt.id &&
@@ -3119,7 +3202,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                       >
                                         <div
                                           className={`px-3 py-1.5 rounded-full text-white text-xs font-bold flex items-center gap-1.5 shadow-xl ${
-                                            yt.sourcePlatform === 'tiktok'
+                                            isDailymotionCard || yt.sourcePlatform === 'archive'
+                                              ? 'bg-emerald-600 group-hover:bg-emerald-500'
+                                              : yt.sourcePlatform === 'tiktok'
                                               ? 'bg-pink-600 group-hover:bg-pink-500'
                                               : yt.sourcePlatform === 'instagram'
                                               ? 'bg-fuchsia-600 group-hover:bg-fuchsia-500'
@@ -3193,19 +3278,21 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                   {/* Top-Right Source Platform Badge */}
                                   <span
                                     className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold shadow ${
-                                      yt.sourcePlatform === 'tiktok'
+                                      isDailymotionCard || yt.sourcePlatform === 'archive' || isCuttableDirect
+                                        ? 'bg-emerald-600 text-white'
+                                        : yt.sourcePlatform === 'tiktok'
                                         ? 'bg-pink-600 text-white'
                                         : yt.sourcePlatform === 'instagram'
                                         ? 'bg-gradient-to-r from-fuchsia-600 to-amber-500 text-white'
-                                        : yt.sourcePlatform === 'archive'
-                                        ? 'bg-emerald-600 text-white'
                                         : yt.sourcePlatform === 'shorts'
                                         ? 'bg-red-600 text-white'
                                         : 'bg-slate-900/90 text-sky-300 border border-sky-500/40'
                                     }`}
                                   >
                                     {yt.platformBadge ||
-                                      (yt.sourcePlatform === 'tiktok'
+                                      (isDailymotionCard
+                                        ? '✅ Cắt MP4 100% · Dailymotion'
+                                        : yt.sourcePlatform === 'tiktok'
                                         ? '🎵 TikTok'
                                         : yt.sourcePlatform === 'instagram'
                                         ? '📸 Instagram Reels'
@@ -3306,6 +3393,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                   <div className="flex items-center justify-between gap-2 mt-0.5">
                                     <p className="text-[10px] text-slate-400 truncate">
                                       Kênh: {yt.channel} {yt.viewsLabel ? `· ${yt.viewsLabel}` : ''}
+                                      {yt.durationSec > 0 ? ` · ${formatMmSs(yt.durationSec)}` : ''}
                                     </p>
                                     {externalLinkUrl && (
                                       <a
@@ -3313,12 +3401,26 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                         target="_blank"
                                         rel="noreferrer"
                                         className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 shrink-0 underline"
-                                        title="Mở xem link gốc trên YouTube / TikTok / Instagram"
+                                        title="Mở xem link gốc trên Dailymotion / YouTube / TikTok"
                                       >
                                         ↗ Link gốc
                                       </a>
                                     )}
                                   </div>
+                                  {!isCuttableDirect && (
+                                    <div className="mt-1 flex items-center justify-between gap-1.5 px-2 py-1 rounded bg-amber-950/50 border border-amber-500/30 text-[10px] text-amber-200">
+                                      <span className="truncate">
+                                        🔍 YouTube chỉ xem trước — bấm cắt sẽ tự tìm bản MP4 khớp
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setVideoSourceSubFilter('cuttable-100')}
+                                        className="px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 font-bold shrink-0 border border-emerald-400/40"
+                                      >
+                                        Kho MP4 100%
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Target Scene Selector (Chọn Đoạn/Cảnh Đích Bất Kỳ Trên Timeline) */}
@@ -3501,7 +3603,9 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                                     <>
                                       <Scissors className="w-3.5 h-3.5 shrink-0" />
                                       <span className="truncate">
-                                        ✅ Chấp Nhận Cắt ({startSec}s→{endSec}s) &amp; Thay Vào{' '}
+                                        {isCuttableDirect
+                                          ? `✅ Chấp Nhận Cắt (${startSec}s→${endSec}s) & Thay Vào `
+                                          : `✂️ Tìm Bản MP4 Khớp & Cắt (${startSec}s→${endSec}s) → `}
                                         {getSceneBadgeById(chosenSceneId)
                                           .split(' (')[0]
                                           .replace('Đoạn', 'Phần')}
