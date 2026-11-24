@@ -876,7 +876,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
     setIsCuttingYouTube(true);
     setCuttingCardId(vid.id);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 60000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 110000);
     try {
       const res = await fetch('/api/youtube/cut-clips', {
         method: 'POST',
@@ -1067,7 +1067,7 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
 
     setIsCuttingYouTube(true);
     const cutCtrl = new AbortController();
-    const cutTimeout = setTimeout(() => cutCtrl.abort(), 60000);
+    const cutTimeout = setTimeout(() => cutCtrl.abort(), 110000);
     try {
       const clipsPayload = segmentsToCut.map((seg) => ({
         id: seg.video.id,
@@ -1160,6 +1160,11 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
             return;
           }
           resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          setJustCutBanner(
+            '⚠️ Không thể tải luồng MP4 từ video này để cắt. Hãy chọn video có nhãn "✂️ Cắt Trực Tiếp MP4" (Dailymotion / Archive) hoặc up file MP4 từ máy!'
+          );
+          resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         }
       } else {
         const errData = await res.json().catch(() => null);
@@ -1167,11 +1172,13 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
           errData?.error ||
             '⚠️ Máy chủ nguồn video phản hồi chậm hoặc đang bận. Vui lòng thử cắt lại hoặc chọn video khác!'
         );
+        resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch {
       setJustCutBanner(
-        '⏱️ Quá thời gian chờ tải nguồn video (45s). Hệ thống đã tự ngắt để không bị treo — bạn hãy thử bấm cắt lại hoặc chọn đoạn ngắn hơn!'
+        '⏱️ Quá thời gian chờ tải nguồn video. Hệ thống đã tự ngắt để không bị treo — bạn hãy thử bấm cắt lại hoặc chọn video có nhãn "✂️ Cắt Trực Tiếp MP4"!'
       );
+      resultsBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       clearTimeout(cutTimeout);
       setIsCuttingYouTube(false);

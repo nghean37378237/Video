@@ -4194,13 +4194,18 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             ) {
               continue;
             }
-            const combinedMeta = `${docTitle} ${docDesc} ${docCreator} ${identifier}`;
-            const matchesActor = doesTitleMatchSubjectIdentity(combinedMeta, subjectTokens, true);
-            const matchesKnownFilm = searchPhrases.some((p) =>
-              combinedMeta
-                .toLowerCase()
-                .includes(p.toLowerCase().replace(/\s+trailer$/i, "").trim())
-            );
+            const coreMeta = `${docTitle} ${docCreator} ${identifier}`;
+            const descLower = docDesc.toLowerCase();
+            const matchesActor =
+              doesTitleMatchSubjectIdentity(coreMeta, subjectTokens, true) ||
+              (subjectFullPhrase.length >= 6 && descLower.includes(subjectFullPhrase));
+            const matchesKnownFilm = searchPhrases.some((p) => {
+              const phraseClean = p.toLowerCase().replace(/\s+trailer$/i, "").trim();
+              return (
+                phraseClean !== lowerSubject &&
+                coreMeta.toLowerCase().includes(phraseClean)
+              );
+            });
             if (!matchesActor && !matchesKnownFilm) continue;
             seenIdentifiers.add(identifier);
             matchingDocs.push(doc);
@@ -5033,12 +5038,31 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       });
       if (!mRes.ok) return null;
       const mText = await mRes.text();
-      const streamUrls = mText
-        .split("\n")
+      const lines = mText.split("\n");
+      const variantCandidates: Array<{ height: number; url: string }> = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("#EXT-X-STREAM-INF")) {
+          const nextUrl = (lines[i + 1] || "").trim().split("#")[0].trim();
+          if (nextUrl.startsWith("https://")) {
+            const resMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
+            const h = resMatch ? Number(resMatch[1]) || 480 : 480;
+            variantCandidates.push({ height: h, url: nextUrl });
+          }
+        }
+      }
+      if (variantCandidates.length > 0) {
+        // Prefer 480p–720p variant for crisp 720x960 cut in ~4–5s without 1080p stalling
+        const preferred =
+          variantCandidates.find((v) => v.height >= 480 && v.height <= 720) ||
+          variantCandidates.find((v) => v.height >= 360) ||
+          variantCandidates[0];
+        return preferred.url;
+      }
+      const streamUrls = lines
         .filter((line) => line.trim().startsWith("https://"))
         .map((line) => line.split("#")[0].trim());
       if (streamUrls.length === 0) return null;
-      // Pick mid/480p-720p stream for ~2-3s cutting
       return streamUrls[Math.min(1, streamUrls.length - 1)];
     } catch {
       return null;
@@ -5189,7 +5213,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     rawQuery: string
   ): boolean {
     const lowerTitle = title.toLowerCase();
-    const lowerChar = cleanChar.toLowerCase();
+    const lowerChar = cleanChar
+      .toLowerCase()
+      .replace(/\b(18|19|20)\d{2}s?\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const charTokens = lowerChar.split(/\s+/).filter((t) => t.length >= 3);
 
     // Exclude unrelated manufacturing parts, weapons, firearm accessories, or modern namesakes
@@ -5219,26 +5247,41 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       return false;
     }
 
+    // Exclude single common first names / ambiguous surnames from matching solo
+    const ambiguousSingleNames = new Set([
+      "john", "will", "steve", "paul", "jack", "james", "robert", "david", "michael",
+      "richard", "george", "mark", "chris", "peter", "frank", "henry", "charles",
+      "thomas", "joseph", "daniel", "kevin", "brian", "scott", "jason", "ryan",
+      "eric", "adam", "alex", "wayne", "moore", "greene", "ford", "smith", "jones",
+      "brown", "king", "young", "grant", "taylor", "miller", "wilson", "martin",
+      "jackson", "white", "harris", "clark", "lewis", "walker", "hall", "allen",
+    ]);
+
     // Match full character name or compact hashtag (#willsampson / #stevemcqueen)
     const compactChar = charTokens.join("");
     if (
-      lowerTitle.includes(lowerChar) ||
-      (compactChar.length >= 5 && lowerTitle.includes(compactChar))
+      (lowerChar && lowerTitle.includes(lowerChar)) ||
+      (compactChar.length >= 6 && lowerTitle.includes(compactChar))
     ) {
       return true;
     }
 
-    // Match any significant token of the character name (e.g. "mcqueen", "sampson", "eastwood", "brynner")
-    const lastToken = charTokens[charTokens.length - 1];
-    if (lastToken && lastToken.length >= 5 && lowerTitle.includes(lastToken)) {
-      return true;
-    }
-
-    // Match first + last token
+    // Match first + last token when there are >= 2 person/subject tokens (e.g. "John" + "Wayne")
     if (
       charTokens.length >= 2 &&
       lowerTitle.includes(charTokens[0]) &&
       lowerTitle.includes(charTokens[charTokens.length - 1])
+    ) {
+      return true;
+    }
+
+    // Match rare distinctive surname alone ONLY if it's not a common/ambiguous name
+    const lastToken = charTokens[charTokens.length - 1];
+    if (
+      lastToken &&
+      lastToken.length >= 6 &&
+      !ambiguousSingleNames.has(lastToken) &&
+      new RegExp(`\\b${lastToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(lowerTitle)
     ) {
       return true;
     }
@@ -5262,13 +5305,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     }
     if (
       lowerChar.includes("lorne greene") &&
-      /\b(greene|bonanza|cartwright|ponderosa|battlestar|adama)\b/i.test(lowerTitle)
+      /\b(bonanza|cartwright|ponderosa|battlestar|adama)\b/i.test(lowerTitle)
     ) {
       return true;
     }
     if (
       lowerChar.includes("clayton moore") &&
-      /\b(clayton|lone\s+ranger|tonto|hi-yo\s+silver)\b/i.test(lowerTitle)
+      /\b(lone\s+ranger|tonto|hi-yo\s+silver)\b/i.test(lowerTitle)
     ) {
       return true;
     }
@@ -5281,23 +5324,21 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       return true;
     }
 
-    // Also allow matching when at least 2 meaningful tokens (>=3 chars) appear, or short single-word titles
+    // Single-word subject
     if (charTokens.length === 1 && charTokens[0].length >= 3 && lowerTitle.includes(charTokens[0])) {
       return true;
     }
-    const matchedCharTokenCount = charTokens.filter((t) => lowerTitle.includes(t)).length;
-    if (charTokens.length >= 2 && matchedCharTokenCount >= 2) {
-      return true;
-    }
 
-    // Also allow matching explicit custom keywords typed by the user
-    const queryTokens = rawQuery
+    // Also allow matching explicit non-subject film/topic keywords (NEVER matching person name tokens or generic words alone!)
+    const nonSubjectQueryTokens = rawQuery
       .toLowerCase()
       .replace(/\b(18|19|20)\d{2}s?\b/g, "")
       .split(/\s+/)
       .filter(
         (w) =>
-          w.length >= 4 &&
+          w.length >= 5 &&
+          !charTokens.includes(w) &&
+          !ambiguousSingleNames.has(w) &&
           ![
             "shorts",
             "short",
@@ -5308,11 +5349,41 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             "reels",
             "reel",
             "video",
+            "videos",
             "actor",
+            "actress",
             "portrait",
+            "trailer",
+            "movie",
+            "movies",
+            "film",
+            "films",
+            "scene",
+            "scenes",
+            "clip",
+            "clips",
+            "official",
+            "best",
+            "moments",
+            "moment",
+            "ambush",
+            "appreciate",
+            "viral",
+            "romantic",
+            "comedy",
+            "action",
+            "drama",
+            "classic",
+            "tribute",
+            "interview",
           ].includes(w)
       );
-    if (queryTokens.length > 0 && queryTokens.some((qt) => lowerTitle.includes(qt))) {
+    if (
+      nonSubjectQueryTokens.length > 0 &&
+      nonSubjectQueryTokens.some((qt) =>
+        new RegExp(`\\b${qt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(lowerTitle)
+      )
+    ) {
       return true;
     }
 
@@ -6238,7 +6309,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         ? VERIFIED_ACTOR_REAL_VIDEO_REELS[matchedCuratedKey]
         : [];
 
-      const ytDlpBin = await ensureYtDlpBinary();
+      const hasSocialClipUrl = clips.some((c: any) =>
+        Boolean(c?.tiktokUrl || c?.instagramUrl || ((c?.youtubeUrl || c?.youtubeId) && Date.now() - lastYtDlpYouTubeBlockedAt >= 15 * 60 * 1000))
+      );
+      const ytDlpBin = hasSocialClipUrl ? await ensureYtDlpBinary() : null;
 
       const isHtmlSocialPageUrl = (u: string): boolean =>
         /(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|dailymotion\.com|dai\.ly)/i.test(u);
@@ -6315,7 +6389,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               ...(isRemoteHttp
                 ? [
                     "-rw_timeout",
-                    "8000000",
+                    "6000000",
                     "-user_agent",
                     BROWSER_USER_AGENT,
                     ...(!isHlsPlaylist
@@ -6330,8 +6404,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                       : []),
                   ]
                 : []),
-              "-fflags",
-              "+fastseek",
+              ...(!isHlsPlaylist ? ["-fflags", "+fastseek"] : []),
               "-ss",
               String(Math.max(0, seekSec)),
               "-i",
@@ -6463,51 +6536,105 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       };
 
       // Lazy live lookup of Dailymotion candidates (strictly verified to match the searched subject & optional specific film/clip keywords)
+      const dmSubjectAnchor = cleanChar
+        .replace(/\b(18|19|20)\d{2}s?\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || cleanChar;
+      const personAnchor =
+        String(characterName || "")
+          .replace(/[—–-].*$/, "")
+          .replace(/\b(18|19|20)\d{2}s?\b/g, " ")
+          .replace(/\s+/g, " ")
+          .trim() || dmSubjectAnchor;
+      const personTokens = extractSubjectIdentityTokens(personAnchor);
+      const dmExtraFilmTokens = dmSubjectAnchor
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length >= 4 && !personTokens.includes(w));
+      const dmStopWords = new Set([
+        "the", "duke", "you", "your", "they", "them", "this", "that", "with", "from", "have",
+        "here", "what", "when", "where", "just", "like", "love", "more", "very", "much",
+        "before", "hit", "ground", "dead", "youtube", "shorts", "short", "tiktok", "reels",
+        "reel", "video", "videos", "official", "hd", "4k", "edit", "viral", "moments",
+        "moment", "best", "most", "scene", "scenes", "clip", "clips", "ambush", "appreciate",
+        "romantic", "trailer", "movie", "film", "song", "cover", "reaction", "review",
+      ]);
+      const isStrictDmMatch = (candidateTitle: string): boolean => {
+        const tl = candidateTitle.toLowerCase();
+        if (personTokens.length >= 2) {
+          if (doesTitleMatchSubjectIdentity(candidateTitle, personTokens, true)) return true;
+          if (dmExtraFilmTokens.length >= 1 && dmExtraFilmTokens.some((ft) => new RegExp(`\\b${ft}\\b`, "i").test(tl)) && personTokens.some((pt) => new RegExp(`\\b${pt}\\b`, "i").test(tl))) {
+            return true;
+          }
+          return false;
+        }
+        return isVideoRelevantToSubject(candidateTitle, personAnchor, "");
+      };
+
       let liveSubjectDmListPromise: Promise<Array<{ id: string; duration: number; title: string }>> | null = null;
       const getSubjectDmFallbacks = (specificTitle?: string) => {
         if (specificTitle) {
           return (async () => {
             try {
-              const subjectToks = extractSubjectIdentityTokens(cleanChar);
               const cleanedClipKeywords = specificTitle
                 .replace(/https?:\/\/\S+/gi, "")
                 .replace(/#\S+/g, "")
+                .replace(/\b(18|19|20)\d{2}s?\b/g, " ")
                 .replace(/["'“”‘’|💀🔫🔥🎬📱✅✂️]/g, " ")
-                .replace(/\b(the duke|you'll be|before i hit|ground|youtube|shorts|tiktok|reels|video|official|hd|4k|edit|viral|moments|best scenes)\b/gi, " ")
                 .replace(/[^\p{L}\p{N}\s]/gu, " ")
                 .replace(/\s+/g, " ")
                 .trim();
               const topicWords = cleanedClipKeywords
                 .split(/\s+/)
-                .filter((w) => w.length >= 3 && !subjectToks.includes(w.toLowerCase()));
+                .filter((w) => {
+                  const wl = w.toLowerCase();
+                  return w.length >= 4 && !personTokens.includes(wl) && !dmStopWords.has(wl);
+                });
               const queries = Array.from(
                 new Set([
-                  `${cleanChar} ${topicWords.slice(0, 4).join(" ")}`.trim(),
-                  ...(topicWords.length > 0 ? [`${topicWords.slice(0, 3).join(" ")} ${cleanChar}`.trim()] : []),
+                  dmSubjectAnchor,
+                  ...(topicWords.length > 0 ? [`${personAnchor} ${topicWords.slice(0, 4).join(" ")}`.trim()] : []),
+                  personAnchor,
                 ])
               );
               const seen = new Set<string>();
               const matched: Array<{ id: string; duration: number; title: string; score: number }> = [];
-              for (const q of queries) {
-                const r = await fetch(
-                  `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&limit=10&fields=id,title,duration`,
-                  {
-                    headers: { "User-Agent": BROWSER_USER_AGENT },
-                    signal: AbortSignal.timeout(3000),
-                  }
-                );
-                if (!r.ok) continue;
-                const j: any = await r.json();
-                for (const it of j?.list || []) {
-                  if (!it?.id || seen.has(it.id) || (it?.duration || 0) < 12) continue;
-                  const t = String(it.title || "");
-                  if (!isVideoRelevantToSubject(t, cleanChar, cleanChar)) continue;
-                  seen.add(it.id);
-                  const tl = t.toLowerCase();
-                  const overlap = topicWords.filter((tw) => tl.includes(tw.toLowerCase())).length;
-                  matched.push({ id: String(it.id), duration: Number(it.duration) || 60, title: t, score: overlap });
-                }
-              }
+              await Promise.all(
+                queries.slice(0, 3).map(async (q) => {
+                  try {
+                    const r = await fetch(
+                      `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&limit=10&fields=id,title,duration`,
+                      {
+                        headers: { "User-Agent": BROWSER_USER_AGENT },
+                        signal: AbortSignal.timeout(2800),
+                      }
+                    );
+                    if (!r.ok) return;
+                    const j: any = await r.json();
+                    for (const it of j?.list || []) {
+                      const dur = Number(it?.duration) || 0;
+                      if (!it?.id || seen.has(it.id) || dur < 12) continue;
+                      const t = String(it.title || "");
+                      if (!isStrictDmMatch(t)) continue;
+                      seen.add(it.id);
+                      const tl = t.toLowerCase();
+                      let score = 0;
+                      if (personTokens.length >= 2 && doesTitleMatchSubjectIdentity(t, personTokens, true)) {
+                        score += 3;
+                      }
+                      for (const ft of dmExtraFilmTokens) {
+                        if (new RegExp(`\\b${ft}\\b`, "i").test(tl)) score += 4;
+                      }
+                      for (const tw of topicWords) {
+                        if (new RegExp(`\\b${tw.toLowerCase()}\\b`, "i").test(tl)) score += 2;
+                      }
+                      if (/\b(song\s+by|karaoke|lyrics|audio|podcast|review)\b/i.test(tl)) score -= 3;
+                      if (dur >= 15 && dur <= 360) score += 1;
+                      matched.push({ id: String(it.id), duration: dur || 60, title: t, score });
+                    }
+                  } catch {}
+                })
+              );
               matched.sort((a, b) => b.score - a.score);
               return matched;
             } catch {
@@ -6520,17 +6647,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             try {
               const r = await fetch(
                 `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-                  cleanChar
+                  personAnchor
                 )}&limit=15&fields=id,title,duration`,
                 {
                   headers: { "User-Agent": BROWSER_USER_AGENT },
-                  signal: AbortSignal.timeout(3500),
+                  signal: AbortSignal.timeout(3000),
                 }
               );
               if (!r.ok) return [];
               const j: any = await r.json();
               return (j?.list || [])
-                .filter((it: any) => it?.id && (it?.duration || 0) >= 12 && isVideoRelevantToSubject(String(it.title || ""), cleanChar, cleanChar))
+                .filter((it: any) => it?.id && (it?.duration || 0) >= 12 && isStrictDmMatch(String(it.title || "")))
                 .map((it: any) => ({ id: String(it.id), duration: Number(it.duration) || 60, title: String(it.title || "") }));
             } catch {
               return [];
@@ -6614,7 +6741,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                16000
+                14000
               );
               if (!cutSucceeded && trimStartSec > 25) {
                 cutSucceeded = await runFastFfmpegCut(
@@ -6624,7 +6751,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   vf34Filter,
                   outMp4Path,
                   outJpgPath,
-                  14000
+                  12000
                 );
               }
             }
@@ -6640,7 +6767,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
               vf34Filter,
               outMp4Path,
               outJpgPath,
-              16000
+              14000
             );
             if (!cutSucceeded && trimStartSec > 45) {
               cutSucceeded = await runFastFfmpegCut(
@@ -6650,71 +6777,85 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 vf34Filter,
                 outMp4Path,
                 outJpgPath,
-                14000
+                12000
               );
             }
           }
 
-          // 4. PRIORITY 4: YouTube card -> try yt-dlp directly first; if blocked by YouTube bot-check, find title-matched Dailymotion/Archive clip
-          if (!cutSucceeded && youtubeUrl && /youtube\.com|youtu\.be/i.test(youtubeUrl)) {
-            cutSucceeded = await downloadAndCutSocialWithYtDlp(
-              youtubeUrl,
-              trimStartSec,
-              durationSec,
-              vf34Filter,
-              outMp4Path,
-              outJpgPath
-            );
-            if (cutSucceeded) {
-              usedSourceUrl = youtubeUrl;
+          // 4. PRIORITY 4: YouTube card -> fast 3.5s stream probe (-g); if blocked by YouTube bot-check, immediately use Dailymotion/Archive fallback!
+          if (
+            !cutSucceeded &&
+            youtubeUrl &&
+            /youtube\.com|youtu\.be/i.test(youtubeUrl) &&
+            Date.now() - lastYtDlpYouTubeBlockedAt >= 15 * 60 * 1000
+          ) {
+            const directYtStream = await resolveSocialOrDmStreamWithYtDlp(youtubeUrl);
+            if (directYtStream) {
+              usedSourceUrl = directYtStream;
+              cutSucceeded = await runFastFfmpegCut(
+                directYtStream,
+                trimStartSec,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                12000
+              );
+            } else {
+              lastYtDlpYouTubeBlockedAt = Date.now();
             }
           }
 
-          // 5. Title-Matched Dailymotion fallback (e.g. "El Dorado 1966 John Wayne" -> "John Wayne - El Dorado" x2lm9pk)
+          // 5. Title-Matched Dailymotion fallback (resolve candidate .m3u8 streams in parallel so cutting takes ~5–10s instead of 50s!)
           if (!cutSucceeded) {
             const [titleMatchedDm, subjectDmList] = await Promise.all([
               getSubjectDmFallbacks(title),
               getSubjectDmFallbacks(),
             ]);
-            // Prioritize clips that actually matched topic keywords from the card's title
             const mergedDm = [...titleMatchedDm, ...subjectDmList].filter(
               (d, i, arr) =>
                 d.id !== explicitDmId &&
                 !dmRejectedIdsCache.has(d.id) &&
                 arr.findIndex((x) => x.id === d.id) === i
             );
-            for (const dmCand of mergedDm.slice(0, 3)) {
-              if (cutSucceeded) break;
-              const dmStream = await resolveDailymotionStreamUrl(dmCand.id);
-              if (dmStream) {
-                usedSourceUrl = dmStream;
-                // Skip black intro cards on longer videos if user picked 0-5s on a Short
-                const minSafeStart = dmCand.duration > 100 && trimStartSec < 10 ? 12 : trimStartSec;
-                const maxSafeStart = Math.max(2, dmCand.duration - durationSec - 2);
-                const safeDmSeek = Math.min(minSafeStart, maxSafeStart);
-                cutSucceeded = await runFastFfmpegCut(
-                  dmStream,
-                  safeDmSeek,
-                  durationSec,
-                  vf34Filter,
-                  outMp4Path,
-                  outJpgPath,
-                  16000
-                );
-                if (cutSucceeded) {
-                  matchedSourceTitle = dmCand.title;
-                }
+            const resolvedStreams = await Promise.all(
+              mergedDm.slice(0, 2).map(async (dmCand) => ({
+                dmCand,
+                stream: await resolveDailymotionStreamUrl(dmCand.id),
+              }))
+            );
+            for (const { dmCand, stream } of resolvedStreams) {
+              if (cutSucceeded || !stream) continue;
+              usedSourceUrl = stream;
+              const minSafeStart = dmCand.duration > 100 && trimStartSec < 10 ? 12 : trimStartSec;
+              const maxSafeStart = Math.max(2, dmCand.duration - durationSec - 2);
+              const safeDmSeek = Math.min(minSafeStart, maxSafeStart);
+              cutSucceeded = await runFastFfmpegCut(
+                stream,
+                safeDmSeek,
+                durationSec,
+                vf34Filter,
+                outMp4Path,
+                outJpgPath,
+                20000
+              );
+              if (cutSucceeded) {
+                matchedSourceTitle = dmCand.title;
               }
             }
           }
 
-          // 6. Live Internet Archive MP4 fallback STRICTLY matching cleanChar
+          // 6. Live Internet Archive MP4 fallback STRICTLY matching clean person/subject
           if (!cutSucceeded) {
+            const archSubject =
+              String(characterName || "").trim() ||
+              dmSubjectAnchor.split(" ").slice(0, 2).join(" ") ||
+              cleanChar;
             const liveArch = await searchRealArchivalVideos(
-              cleanChar,
+              dmSubjectAnchor,
               4,
               new Set<string>(),
-              cleanChar
+              archSubject
             ).catch(() => []);
             const liveMp4s = liveArch
               .map((a) => {
@@ -7987,7 +8128,17 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       });
     }
   });
+  app.get("/healthz", (_req, res) => {
+    res.status(200).send("ok");
+  });
 }
+
+process.on("unhandledRejection", (reason) => {
+  console.error("UnhandledRejection (non-fatal):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("UncaughtException (non-fatal):", err);
+});
 
 registerRoutes();
 
@@ -7995,30 +8146,17 @@ async function startServer() {
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
-    let viteMiddleware: any = null;
-    const viteReadyPromise = (async () => {
-      const vitePkg = "vite";
-      const { createServer: createViteServer } = await import(vitePkg);
-      const vite = await createViteServer({
-        server: {
-          middlewareMode: true,
-          hmr: false,
-          watch: null,
-        },
-        appType: "spa",
-      });
-      viteMiddleware = vite.middlewares;
-      return viteMiddleware;
-    })();
-
-    app.use(async (req, res, next) => {
-      try {
-        const mw = viteMiddleware || (await viteReadyPromise);
-        return mw(req, res, next);
-      } catch (err) {
-        return next(err);
-      }
+    const vitePkg = "vite";
+    const { createServer: createViteServer } = await import(vitePkg);
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: null,
+      },
+      appType: "spa",
     });
+    app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
@@ -8027,9 +8165,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = app.listen(PORT, "0.0.0.0", () => {
     console.log(`LegendCut Studio server running on http://localhost:${PORT}`);
   });
+  httpServer.keepAliveTimeout = 65_000;
+  httpServer.headersTimeout = 66_000;
 }
 
 if (!process.env.VERCEL) {
