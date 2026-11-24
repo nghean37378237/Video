@@ -1764,14 +1764,14 @@ export default function App() {
 
     try {
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        `${cleanTopic} -poster -cover -newspaper -plaque -autograph`
-      )}&gsrnamespace=6&gsrlimit=25&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=1080&format=json&origin=*`;
+        `${cleanTopic} portrait -poster -cover -newspaper -plaque -autograph -collage -montage -split -comparison -airport`
+      )}&gsrnamespace=6&gsrlimit=30&prop=imageinfo&iiprop=url|dimensions|mime|extmetadata&iiurlwidth=1080&format=json&origin=*`;
       const res = await fetch(commonsUrl);
       if (res.ok) {
         const json = await res.json();
         const pages = Object.values(json?.query?.pages || {}) as any[];
         const textOverlayOrJunkRegex =
-          /\b(uss|hms|radar|destroyer|ship|station|county|bridge|pronunciation|spoken|poster|posters|affiche|plakat|locandina|lobby|cover|magazine|newspaper|clipping|article|headline|book|dvd|vhs|quote|quotes|caption|subtitled|watermark|autograph|signed|signature|text|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|certificate|document|letter|page|script|stamp|ticket|logo|collage|montage)\b/i;
+          /\b(uss|hms|radar|destroyer|ship|station|county|bridge|airport|pronunciation|spoken|poster|posters|affiche|plakat|locandina|lobby|cover|magazine|newspaper|clipping|article|headline|book|dvd|vhs|quote|quotes|caption|subtitled|watermark|autograph|signed|signature|text|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|certificate|document|letter|page|script|stamp|ticket|logo|collage|montage|composite|split|diptych|triptych|comparison|evolution|before\s+and\s+after|then\s+and\s+now|mugshot|reunion|reuni[aã]o|meeting|ceremony|group|crowd|audience|couple|cast|filmography|with|and|et|con|mit)\b/i;
 
         for (const page of pages) {
           const info = page?.imageinfo?.[0];
@@ -1781,8 +1781,9 @@ export default function App() {
             .replace(/^File:/i, '')
             .replace(/\.[a-z0-9]+$/i, '')
             .replace(/[_-]+/g, ' ');
-          const lowerTitle = cleanTitle.toLowerCase();
-          if (textOverlayOrJunkRegex.test(lowerTitle)) continue;
+          const descRaw = String(info?.extmetadata?.ImageDescription?.value || '').replace(/<[^>]+>/g, ' ');
+          const combinedText = `${cleanTitle} ${descRaw}`.toLowerCase();
+          if (textOverlayOrJunkRegex.test(combinedText)) continue;
 
           if (
             mime.includes('webm') ||
@@ -1794,7 +1795,7 @@ export default function App() {
               .split(/\s+/)
               .filter((w) => w.length >= 3);
             const hasFullActorName =
-              topicWords.length > 0 && topicWords.every((w) => lowerTitle.includes(w));
+              topicWords.length > 0 && topicWords.every((w) => combinedText.includes(w));
             if (info.url && info.thumburl && hasFullActorName) {
               allPhotos.push({
                 title: cleanTitle,
@@ -1812,13 +1813,16 @@ export default function App() {
             mime.includes('webp')
           ) {
             const imgUrl = info.thumburl || info.url;
-            if (imgUrl) {
+            const w = Number(info.thumbwidth || info.width || 0);
+            const h = Number(info.thumbheight || info.height || 0);
+            const aspect = w > 0 && h > 0 ? w / h : 1;
+            if (imgUrl && Math.min(w, h) >= 280 && aspect >= 0.45 && aspect <= 1.25) {
               allPhotos.push({
                 title: cleanTitle,
                 dataUrl: imgUrl,
                 mediaKind: 'image',
-                width: info.thumbwidth || info.width || 1080,
-                height: info.thumbheight || info.height || 1440,
+                width: w || 1080,
+                height: h || 1440,
               });
             }
           }
@@ -1832,7 +1836,15 @@ export default function App() {
       (s) => s.sceneType === 'video' || s.sceneType === 'image'
     );
     const videoItems = allPhotos.filter((p) => p.mediaKind === 'video');
-    const imageItems = allPhotos.filter((p) => p.mediaKind !== 'video');
+    const imageItems = allPhotos
+      .filter((p) => p.mediaKind !== 'video')
+      .sort((a, b) => {
+        const ra = a.width / Math.max(1, a.height);
+        const rb = b.width / Math.max(1, b.height);
+        const sa = (ra >= 0.58 && ra <= 0.92 ? 3 : 0) + (ra <= 1.05 ? 1 : 0);
+        const sb = (rb >= 0.58 && rb <= 0.92 ? 3 : 0) + (rb <= 1.05 ? 1 : 0);
+        return sb - sa;
+      });
 
     // Place any video items at RANDOM scene positions across the timeline (never fixed at index 0)
     const shuffledVisual = [...visualScenes].sort(() => Math.random() - 0.5);

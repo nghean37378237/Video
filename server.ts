@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import fs from "fs";
 import path from "path";
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -2506,15 +2506,123 @@ For every scene, ensure smooth chronological transitions from one scene to the n
   const BROWSER_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+  async function detectCollageOrCompositeImage(
+    buf: Buffer
+  ): Promise<{ isCollage: boolean; reason?: string }> {
+    return new Promise((resolve) => {
+      try {
+        const p = spawn("ffmpeg", [
+          "-v",
+          "error",
+          "-i",
+          "pipe:0",
+          "-vf",
+          "scale=72:96",
+          "-frames:v",
+          "1",
+          "-f",
+          "rawvideo",
+          "-pix_fmt",
+          "rgb24",
+          "pipe:1",
+        ]);
+        const chunks: Buffer[] = [];
+        const timer = setTimeout(() => {
+          try {
+            p.kill();
+          } catch {}
+          resolve({ isCollage: false });
+        }, 2200);
+        p.stdout.on("data", (c: Buffer) => chunks.push(c));
+        p.on("close", () => {
+          clearTimeout(timer);
+          const raw = Buffer.concat(chunks);
+          const W = 72;
+          const H = 96;
+          if (raw.length < W * H * 3) return resolve({ isCollage: false });
+          const lum = (x: number, y: number) => {
+            const i = (y * W + x) * 3;
+            return 0.299 * raw[i] + 0.587 * raw[i + 1] + 0.114 * raw[i + 2];
+          };
+          let maxVertEdgeFrac = 0;
+          let hasSolidVertBar = false;
+          for (let x = 16; x <= 56; x++) {
+            let edgeCount = 0;
+            let sum = 0;
+            let sumSq = 0;
+            let adjDiff = 0;
+            for (let y = 4; y < H - 4; y++) {
+              const v = lum(x, y);
+              sum += v;
+              sumSq += v * v;
+              const d = Math.abs(lum(x + 1, y) - lum(x - 1, y));
+              const leftSmooth = Math.abs(lum(x - 1, y) - lum(x - 2, y));
+              const rightSmooth = Math.abs(lum(x + 2, y) - lum(x + 1, y));
+              if (d > 24 && d > (leftSmooth + rightSmooth) * 1.4 + 10) edgeCount++;
+              adjDiff += Math.abs(v - lum(x - 2, y)) + Math.abs(v - lum(x + 2, y));
+            }
+            const n = H - 8;
+            const mean = sum / n;
+            const std = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+            if (std < 9 && adjDiff / (2 * n) > 18) hasSolidVertBar = true;
+            maxVertEdgeFrac = Math.max(maxVertEdgeFrac, edgeCount / n);
+          }
+
+          let maxHorizEdgeFrac = 0;
+          let hasSolidHorizBar = false;
+          for (let y = 22; y <= 74; y++) {
+            let edgeCount = 0;
+            let sum = 0;
+            let sumSq = 0;
+            let adjDiff = 0;
+            for (let x = 4; x < W - 4; x++) {
+              const v = lum(x, y);
+              sum += v;
+              sumSq += v * v;
+              const d = Math.abs(lum(x, y + 1) - lum(x, y - 1));
+              const topSmooth = Math.abs(lum(x, y - 1) - lum(x, y - 2));
+              const botSmooth = Math.abs(lum(x, y + 2) - lum(x, y + 1));
+              if (d > 24 && d > (topSmooth + botSmooth) * 1.4 + 10) edgeCount++;
+              adjDiff += Math.abs(v - lum(x, y - 2)) + Math.abs(v - lum(x, y + 2));
+            }
+            const n = W - 8;
+            const mean = sum / n;
+            const std = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+            if (std < 9 && adjDiff / (2 * n) > 18) hasSolidHorizBar = true;
+            maxHorizEdgeFrac = Math.max(maxHorizEdgeFrac, edgeCount / n);
+          }
+
+          if (
+            hasSolidVertBar ||
+            hasSolidHorizBar ||
+            maxVertEdgeFrac >= 0.72 ||
+            maxHorizEdgeFrac >= 0.72
+          ) {
+            return resolve({
+              isCollage: true,
+              reason: `seam-detected(v=${maxVertEdgeFrac.toFixed(2)},h=${maxHorizEdgeFrac.toFixed(2)})`,
+            });
+          }
+          resolve({ isCollage: false });
+        });
+        p.stdin.on("error", () => {});
+        p.stdin.end(buf);
+      } catch {
+        resolve({ isCollage: false });
+      }
+    });
+  }
+
   async function resolveImageToDataUrlOrDirect(
     primaryUrl: string,
-    fallbackThumbUrl?: string
-  ): Promise<string> {
+    fallbackThumbUrl?: string,
+    rejectCollagePixels = false
+  ): Promise<string | null> {
     const urlsToTry = [primaryUrl, fallbackThumbUrl].filter(Boolean) as string[];
     for (const targetUrl of urlsToTry) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2600);
+        const timeout = setTimeout(() => controller.abort(), 3000);
         const isWiki =
           targetUrl.includes("wikimedia.org") || targetUrl.includes("wikipedia.org");
         const imgRes = await fetch(targetUrl, {
@@ -2533,9 +2641,16 @@ For every scene, ensure smooth chronological transitions from one scene to the n
             cType.includes("png") ||
             cType.includes("webp")
           ) {
-            const buf = await imgRes.arrayBuffer();
-            if (buf.byteLength > 3500) {
-              return `data:${cType};base64,${Buffer.from(buf).toString("base64")}`;
+            const ab = await imgRes.arrayBuffer();
+            if (ab.byteLength > 4500) {
+              const buf = Buffer.from(ab);
+              if (rejectCollagePixels) {
+                const check = await detectCollageOrCompositeImage(buf);
+                if (check.isCollage) {
+                  return null;
+                }
+              }
+              return `data:${cType};base64,${buf.toString("base64")}`;
             }
           }
         }
@@ -2543,7 +2658,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
         // Try next URL in urlsToTry
       }
     }
-    return fallbackThumbUrl || primaryUrl;
+    return rejectCollagePixels ? null : fallbackThumbUrl || primaryUrl;
   }
 
   const GENERIC_QUERY_STOPWORDS = new Set([
@@ -2625,15 +2740,10 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       return normalized.includes(subjectTokens[0]);
     }
 
+    // Require BOTH first and last name tokens so surname-only matches (e.g. Deborah Sampson, Alex Sampson, Sampson County) NEVER leak in for Will Sampson
     const firstToken = subjectTokens[0];
     const lastToken = subjectTokens[subjectTokens.length - 1];
-    if (normalized.includes(firstToken) && normalized.includes(lastToken)) {
-      return true;
-    }
-    if (!strictFullName && lastToken.length >= 6 && normalized.includes(lastToken)) {
-      return true;
-    }
-    return false;
+    return normalized.includes(firstToken) && normalized.includes(lastToken);
   }
 
   function extractPhotoYear(text: string): number | null {
@@ -2653,7 +2763,103 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       .replace(/[^a-z0-9]/g, "");
   }
 
-  // Helper: Search Bing Web Images + Wikipedia + Wikimedia Commons for STRICTLY VERIFIED real historical photos of the subject
+  const COMPOSITE_OR_COLLAGE_REGEX =
+    /\b(collage|montage|grid|photogrid|composite|split|splitscreen|side[\s_-]?by[\s_-]?side|diptych|triptych|quad|multi[\s_-]?panel|2[\s_-]?panel|3[\s_-]?panel|4[\s_-]?panel|before[\s_-]?and[\s_-]?after|then[\s_-]?and[\s_-]?now|then[\s_-]?vs[\s_-]?now|young[\s_-]?and[\s_-]?old|through[\s_-]?the[\s_-]?years|over[\s_-]?the[\s_-]?years|years[\s_-]?later|how[\s_-]?changed|comparison|compared|evolution|transformation|timeline|contact[\s_-]?sheet|filmography|cast[\s_-]?list|ranked|top\s+\d+|every[\s_-]?movie|all\s+\d+\s+roles|lookalike|doppelganger|mashup|compilation|memorial|obituary|in[\s_-]?loving[\s_-]?memory|rest[\s_-]?in[\s_-]?peace|listicle|slideshow|gallery|set\s+of|collection\s+of)\b/i;
+
+  const MULTI_PERSON_SOLO_REJECT_REGEX =
+    /\b(with|couple|husband|wife|spouse|boyfriend|girlfriend|group|cast|ensemble|crew|family|kids|children|reunion|meeting|reuniao|reunião|conference|press[\s_-]?conference|gathering|ceremony|audience|crowd|friends|trio|quartet|duet|band|team|co[\s_-]?star|costar|costars|starring\s+with|with\s+fans|me\s+and|at\s+table|panel)\b|&/i;
+
+  const AI_ART_OR_FAKE_REGEX =
+    /\b(digital[\s_-]?art|digital[\s_-]?painting|concept[\s_-]?art|fan[\s_-]?art|fanart|3d[\s_-]?render|illustration|illustrated|watercolor|oil[\s_-]?painting|acrylic|ai[\s_-]?generated|ai[\s_-]?image|ai[\s_-]?art|premium[\s_-]?ai|craiyon|seaart|midjourney|stable[\s_-]?diffusion|dall[\s_-]?e|freepik|deviantart|artstation|lexica|civitai|openart|nightcafe|playgroundai|wallpaper|wallpapers)\b/i;
+
+  function isBadCompositeOrNonSoloPhoto(
+    combinedText: string,
+    allowMultiSubject: boolean,
+    rawTitle?: string
+  ): boolean {
+    if (COMPOSITE_OR_COLLAGE_REGEX.test(combinedText)) return true;
+    if (AI_ART_OR_FAKE_REGEX.test(combinedText)) return true;
+    if (
+      /(i\.ytimg\.com|maxresdefault|hqdefault|mqdefault|sddefault|dailymotion\.com\/thumbnail|vimeocdn\.com)/i.test(
+        combinedText
+      )
+    ) {
+      return true;
+    }
+    if (!allowMultiSubject) {
+      if (MULTI_PERSON_SOLO_REJECT_REGEX.test(combinedText)) return true;
+      if (rawTitle) {
+        const cleanedCaseTitle = rawTitle.replace(/\bblack\s+(?:and|&)\s+white\b/gi, " ");
+        if (/\b(?:and|with|vs\.?|versus|feat\.?|featuring)\s+[A-Z][a-z]{2,}/.test(cleanedCaseTitle)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  const ddgImageCache = new Map<string, any[]>();
+  let ddgCooldownUntil = 0;
+  let ddgQueuePromise: Promise<void> = Promise.resolve();
+
+  function runDdgImageSearchSerialized(ddgQuery: string): Promise<any[]> {
+    const cacheKey = ddgQuery.toLowerCase().trim();
+    if (ddgImageCache.has(cacheKey)) {
+      return Promise.resolve(ddgImageCache.get(cacheKey)!);
+    }
+    if (Date.now() < ddgCooldownUntil) {
+      return Promise.resolve([]);
+    }
+
+    const task = ddgQueuePromise.then(async () => {
+      if (ddgImageCache.has(cacheKey)) return ddgImageCache.get(cacheKey)!;
+      if (Date.now() < ddgCooldownUntil) return [];
+      try {
+        const r1 = await fetch(
+          `https://duckduckgo.com/?q=${encodeURIComponent(ddgQuery)}&iax=images&ia=images`,
+          {
+            headers: { "User-Agent": BROWSER_USER_AGENT, "Accept-Language": "en-US,en;q=0.9" },
+            signal: AbortSignal.timeout(3200),
+          }
+        );
+        const h1 = r1.ok ? await r1.text() : "";
+        const vqdMatch = h1.match(/vqd=["']?([0-9-]+)["']?/);
+        if (!vqdMatch) return [];
+        await new Promise((r) => setTimeout(r, 250));
+        const r2 = await fetch(
+          `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(
+            ddgQuery
+          )}&vqd=${encodeURIComponent(vqdMatch[1])}&f=,,,,,&p=1`,
+          {
+            headers: {
+              "User-Agent": BROWSER_USER_AGENT,
+              Referer: "https://duckduckgo.com/",
+            },
+            signal: AbortSignal.timeout(3500),
+          }
+        );
+        if (r2.status === 202 || r2.status === 403 || r2.status === 429) {
+          ddgCooldownUntil = Date.now() + 60_000;
+          return [];
+        }
+        if (!r2.ok) return [];
+        const d2: any = await r2.json();
+        const items = Array.isArray(d2?.results) ? d2.results : [];
+        ddgImageCache.set(cacheKey, items);
+        return items;
+      } catch {
+        return [];
+      }
+    });
+
+    ddgQueuePromise = task.then(
+      () => undefined,
+      () => undefined
+    );
+    return task;
+  }
+
+  // Helper: Search Verified Solo Portrait Sources (IMDb Person CDN, TVMaze, Wikipedia media-list, Openverse, Wikimedia Commons, and rate-guarded DuckDuckGo)
   async function searchRealArchivalPhotos(
     rawQuery: string,
     limit: number,
@@ -2682,11 +2888,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
     const subjectAnchor = (requiredSubjectName || cleanQuery).trim();
     const subjectTokens = extractSubjectIdentityTokens(subjectAnchor);
     const subjectFullPhrase = subjectTokens.slice(0, 3).join(" ");
+    const allowMultiSubject = /\b(and|with|cast|couple|wedding|anniversary|kids|family)\b|&/i.test(
+      `${rawQuery} ${subjectAnchor}`
+    );
 
     const words = cleanQuery.split(" ").filter(Boolean);
     const candidateQueries: string[] = [];
 
-    // Always anchor every query with the subject's name so search never returns random off-topic photos
     if (
       subjectFullPhrase &&
       !cleanQuery.toLowerCase().includes(subjectTokens[subjectTokens.length - 1] || "")
@@ -2710,319 +2918,430 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       width: number;
       height: number;
       year: number | null;
+      score: number;
     }[] = [];
 
-    // Strictly ban any image with overlaid text, birthday greeting cards, PNG cutouts, or multi-photo collages
+    // Strictly ban posters, text overlays, greeting cards, mugshots, statues, drawings, collages, AI art, and video thumbnails
     const bannedTitleWords =
-      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|memorial|obituary|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|composite|split|before\s+and\s+after|then\s+and\s+now|evolution|transformation|happy\s*birthday|birthday\s*card|wishes|greeting|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|ebay|etsy|transparent\s+png|cutout|sticker|clipart|png)\b/i;
+      /\b(poster|posters|affiche|plakat|locandina|cartel|lobby_card|lobby\s+card|title_card|title\s+card|intertitle|one_sheet|one\s+sheet|cover|magazine|newspaper|clipping|article|headline|pressbook|advertisement|print\s+ad|billboard|flyer|brochure|pamphlet|book|paperback|hardcover|novel|comic|program|playbill|sheet_music|sheet\s+music|album|sleeve|soundtrack|dvd|vhs|blu-ray|bluray|laserdisc|box_art|quote|quotes|meme|caption|captioned|subtitled|watermark|watermarked|inscribed|inscription|autograph|autographed|signed|signature|handwriting|text|typography|banner|sign|plaque|grave|gravestone|headstone|tombstone|tomb|memorial|obituary|cemetery|birthplace|childhood_home|residence|mansion|trading_card|trading\s+card|postcard|ticket|infographic|timeline|collage|montage|grid|composite|split|before\s+and\s+after|then\s+and\s+now|evolution|transformation|happy\s*birthday|birthday\s*card|wishes|greeting|logo|icon|map|flag|coat_of_arms|diagram|chart|stamp|statue|sculpture|wax|caricature|cartoon|drawing|sketch|svg|lego|building|house|hotel|exterior|airport|courthouse|water\s*tower|certificate|document|letter|manuscript|page|script|screenplay|contract|census|draft_card|walk_of_fame|star_on|t-shirt|hoodie|mug|mugshot|ebay|etsy|transparent\s+png|cutout|sticker|clipart|png)\b/i;
 
     const watermarkedStockDomains =
-      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com|stickpng\.com|pngwing\.com|pngtree\.com|cleanpng\.com|pngitem\.com|klipartz\.com|kindpng\.com|nicepng\.com|seekpng\.com|favpng\.com)\b/i;
+      /\b(alamy\.com|shutterstock\.com|dreamstime\.com|depositphotos\.com|123rf\.com|istockphoto\.com|vecteezy\.com|gettyimages\.com|impawards\.com|moviepostershop\.com|allposters\.com|cinematerial\.com|amazon\.com|goodreads\.com|abebooks\.com|ebay\.com|etsy\.com|pinterest\.com|quotefancy\.com|azquotes\.com|brainyquote\.com|izquotes\.com|redbubble\.com|teepublic\.com|zazzle\.com|newspapers\.com|worthpoint\.com|heritageauctions\.com|ha\.com|stickpng\.com|pngwing\.com|pngtree\.com|cleanpng\.com|pngitem\.com|klipartz\.com|kindpng\.com|nicepng\.com|seekpng\.com|favpng\.com|ytimg\.com|boredpanda\.com|brightside\.me|nickiswift\.com|looper\.com|thethings\.com|freepik\.com|craiyon\.com|seaart\.ai|lexica\.art|civitai\.com|deviantart\.com|artstation\.com)\b/i;
 
-    for (const q of candidateQueries) {
-      if (candidates.length >= limit) break;
+    const scoreCandidate = (title: string, url: string, w: number, h: number) => {
+      let s = 2;
+      const ratio = w / Math.max(1, h);
+      // Ideal 3:4 / 4:5 vertical single portrait for video generation
+      if (ratio >= 0.58 && ratio <= 0.92) s += 8;
+      else if (ratio > 0.92 && ratio <= 1.1) s += 4;
+      else if (ratio > 1.25) s -= 6;
+      if (w >= 550 && h >= 700) s += 4;
+      else if (w >= 400 && h >= 480) s += 2;
+      if (/\b(solo|single|portrait|studio|editorial|still|tiff|premiere|headshot|fashion|candid|young)\b/i.test(`${title} ${url}`)) {
+        s += 3;
+      }
+      if (/\b(black\s+and\s+white|monochrome|bw)\b/i.test(`${title} ${url}`)) {
+        s -= 1;
+      }
+      return s;
+    };
 
-      // 1. Search Bing Web Images FIRST prioritizing full-body, glamorous, attractive tall-aspect photography (no close-up headshots, posters, or collages)
-      try {
-        const cleanedQ = q
-          .replace(/\b(happy|birthday|wishes|collage|headshot|close[\s-]?up|closeup)\b/gi, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-        const isYouthOrChildhood = /\b(childhood|kid|baby|young|teen)\b/i.test(cleanedQ);
-        const alreadyHasGlamourOrBody = /\b(full[\s-]?body|full[\s-]?length|glam|glamorous|red[\s-]?carpet|photoshoot|fashion|editorial|hot|sexy|stunning|gorgeous|bikini|outfit)\b/i.test(
-          cleanedQ
-        );
-        const basePhotoQuery = alreadyHasGlamourOrBody
-          ? cleanedQ
-          : isYouthOrChildhood
-          ? `${cleanedQ} full length photo`
-          : `${cleanedQ} full body glamorous red carpet photoshoot`;
-        const bingQuery = `${basePhotoQuery} -poster -cover -magazine -quote -autograph -newspaper -text -collage -birthday -card -wishes -split -grid -meme -headshot -mugshot`;
-
-        const fetchBingBatch = async (extraQft: string) => {
-          const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
-            bingQuery
-          )}&first=0&count=${Math.min(45, limit * 3 + 15)}${extraQft}&adlt=moderate`;
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3200);
+    // Canonical verified solo portrait lookup (IMDb Person CDN + TVMaze + Wikipedia Subject Article media-list)
+    if (subjectTokens.length > 0) {
+      const subjectNorm = subjectTokens.join(" ");
+      const [imdbHits, tvmazeHits, wikiMediaHits] = await Promise.all([
+        // A. IMDb Person Suggestion CDN (verified nm* person portraits, 1000-4000px crisp solo headshots)
+        (async () => {
+          const out: typeof candidates = [];
           try {
-            const bingRes = await fetch(bingUrl, {
-              headers: {
-                "User-Agent": BROWSER_USER_AGENT,
-                "Accept-Language": "en-US,en;q=0.9",
-              },
-              signal: controller.signal,
-            });
-            return bingRes.ok ? await bingRes.text() : "";
-          } finally {
-            clearTimeout(timeout);
-          }
-        };
-
-        const [tallHtml, generalHtml] = await Promise.all([
-          fetchBingBatch("&qft=+filterui:aspect-tall").catch(() => ""),
-          fetchBingBatch("").catch(() => ""),
-        ]);
-
-        const htmlBatches: Array<{ html: string; isTallAspect: boolean }> = [
-          { html: tallHtml, isTallAspect: true },
-          { html: generalHtml, isTallAspect: false },
-        ];
-
-        const parsedItems: Array<{
-          title: string;
-          murl: string;
-          turl: string;
-          purl: string;
-          idKey: string;
-          cleanScore: number;
-          isTallAspect: boolean;
-        }> = [];
-
-        const fullBodyGlamourRegex =
-          /\b(full[\s-]?body|full[\s-]?length|red[\s-]?carpet|glam|glamor|glamorous|stunning|gorgeous|hot|sexy|attractive|handsome|bombshell|bikini|swimsuit|lingerie|gown|dress|outfit|fashion|runway|vogue|gq|esquire|vanity\s*fair|maxim|sports\s*illustrated|met\s*gala|premiere|photoshoot|editorial|standing|posing|fit|abs|physique|charismatic)\b/i;
-        const tightCloseUpPenaltyRegex =
-          /\b(headshot|close[\s-]?up|closeup|mugshot|passport|id\s*photo|face\s*crop)\b/i;
-
-        for (const batch of htmlBatches) {
-          if (!batch.html) continue;
-          const matches = [...batch.html.matchAll(/m="([^"]+)"/g)];
-          for (const m of matches) {
-            const decoded = m[1]
-              .replace(/&quot;/g, '"')
-              .replace(/&amp;/g, "&")
-              .replace(/&#39;/g, "'");
-            try {
-              const obj = JSON.parse(decoded);
-              const title = String(obj.t || obj.desc || "").trim();
-              const murl = String(obj.murl || "").trim();
-              const turl = String(obj.turl || "").trim();
-              const purl = String(obj.purl || "").trim();
-              if (!turl && !murl) continue;
-
-              const idMatch = turl.match(/id=([^&]+)/);
-              const idKey = idMatch ? idMatch[1] : normalizeTitleKey(murl || title);
-              const combinedText = `${title} ${murl} ${purl}`;
-
-              if (
-                !idKey ||
-                usedSourceUrls.has(idKey) ||
-                usedSourceUrls.has(murl) ||
-                usedSourceUrls.has(turl) ||
-                watermarkedStockDomains.test(combinedText) ||
-                bannedTitleWords.test(combinedText)
-              ) {
-                continue;
-              }
-
-              // Strictly verify that the web photo belongs to the character
-              if (!doesTitleMatchSubjectIdentity(combinedText, subjectTokens)) {
-                continue;
-              }
-
-              let score = 1;
-              if (fullBodyGlamourRegex.test(combinedText)) score += 6;
-              if (
-                /\b(full[\s-]?body|full[\s-]?length|bikini|swimsuit|lingerie|gown|vogue|gq|esquire|vanity\s*fair|maxim|sports\s*illustrated|bombshell|hot|sexy|glamorous|stunning|gorgeous|photoshoot|editorial)\b/i.test(
-                  combinedText
-                )
-              ) {
-                score += 3;
-              }
-              if (batch.isTallAspect) score += 4;
-              if (/\b(still|photograph|candid|publicity|carpet|stage|concert|event|gala|award)\b/i.test(combinedText)) {
-                score += 2;
-              }
-              const isMultiSubjectQuery = /\b(and|with|cast|couple|wedding|anniversary|kids|family)\b|&/i.test(
-                q
-              );
-              if (
-                !isMultiSubjectQuery &&
-                (/\b(with|and|couple|husband|wife|boyfriend|girlfriend|spouse|cast|group|co-star|costar)\b|&|,\s*[A-Z][a-z]+\s+[A-Z]/i.test(
-                  title
-                ))
-              ) {
-                score -= 5;
-              }
-              if (tightCloseUpPenaltyRegex.test(combinedText)) score -= 5;
-              if (/\b(black\s+and\s+white|monochrome|grayscale)\b/i.test(combinedText)) score -= 2;
-
-              parsedItems.push({
-                title: title || `${subjectAnchor} Full Body`,
-                murl,
-                turl: turl ? `${turl}&w=720` : murl,
-                purl,
-                idKey,
-                cleanScore: score,
-                isTallAspect: batch.isTallAspect,
+            const ch = subjectNorm[0] || "a";
+            const slug = subjectNorm.replace(/\s+/g, "_");
+            const r = await fetch(
+              `https://v3.sg.media-imdb.com/suggestion/${encodeURIComponent(ch)}/${encodeURIComponent(slug)}.json`,
+              { headers: { "User-Agent": BROWSER_USER_AGENT }, signal: AbortSignal.timeout(2800) }
+            );
+            if (!r.ok) return out;
+            const d: any = await r.json();
+            for (const item of d?.d || []) {
+              const idStr = String(item?.id || "");
+              const label = String(item?.l || "").trim();
+              const imgUrl = String(item?.i?.imageUrl || "").trim();
+              const w = Number(item?.i?.width) || 0;
+              const h = Number(item?.i?.height) || 0;
+              const ratio = w > 0 && h > 0 ? w / h : 0.75;
+              if (!idStr.startsWith("nm") || !imgUrl) continue;
+              const labelNorm = label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+              if (labelNorm !== subjectNorm && !doesTitleMatchSubjectIdentity(labelNorm, subjectTokens, true)) continue;
+              // Reject distinct middle-named people (e.g. "William Tanner Sampson" or "John Wayne Gacy" for "John Wayne")
+              if (subjectTokens.length >= 2 && labelNorm !== subjectNorm && labelNorm.split(" ").length > subjectTokens.length) continue;
+              if (w > 0 && h > 0 && (ratio > 1.25 || ratio < 0.45 || Math.min(w, h) < 280)) continue;
+              // Resize IMDb master URL to clean ~900px width for fast fetch & FFmpeg check
+              const sizedUrl = imgUrl.replace(/\._V1_\.(jpg|jpeg|png)$/i, "._V1_UX900_.$1");
+              out.push({
+                title: `${label} (Chân dung gốc)`,
+                thumbUrl: sizedUrl,
+                fallbackThumbUrl: imgUrl,
+                width: Math.min(900, w || 900),
+                height: w > 0 && h > 0 ? Math.round((Math.min(900, w) * h) / w) : 1200,
+                year: null,
+                score: scoreCandidate(label, imgUrl, w || 900, h || 1200) + 10,
               });
-            } catch {
-              // Ignore malformed item
             }
-          }
-        }
+          } catch {}
+          return out;
+        })(),
 
-        // Prioritize full-body, tall-aspect, glamorous attractive photography
-        parsedItems.sort((a, b) => b.cleanScore - a.cleanScore);
-
-        for (const item of parsedItems) {
-          if (candidates.length >= limit) break;
-          const titleKey = normalizeTitleKey(item.title);
-          if (usedSourceUrls.has(item.idKey)) continue;
-
-          usedSourceUrls.add(item.idKey);
-          if (item.murl) usedSourceUrls.add(item.murl);
-          if (item.turl) usedSourceUrls.add(item.turl);
-          if (titleKey) usedTitleKeys.add(titleKey);
-
-          candidates.push({
-            title: item.title.replace(/\s*\|\s*.*$/, "").slice(0, 48),
-            thumbUrl: item.murl || item.turl,
-            fallbackThumbUrl: item.turl,
-            width: item.isTallAspect ? 720 : 800,
-            height: item.isTallAspect ? 960 : 900,
-            year: extractPhotoYear(`${item.title} ${item.murl}`),
-          });
-        }
-      } catch {
-        // Continue to Wikipedia / Wikimedia Commons
-      }
-
-      if (candidates.length >= limit) break;
-
-      // 2. Search Wikipedia PageImages API for verified biography/film portraits (excluding posters/covers)
-      try {
-        const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-          q
-        )}&gsrlimit=10&prop=pageimages&piprop=thumbnail|name&pithumbsize=860&format=json`;
-        const wpRes = await fetch(wpUrl, {
-          headers: { "User-Agent": WIKI_USER_AGENT },
-        });
-        if (wpRes.ok) {
-          const wpData: any = await wpRes.json();
-          const wpPages = wpData?.query?.pages
-            ? Object.values(wpData.query.pages)
-            : [];
-          for (const page of wpPages as any[]) {
-            if (candidates.length >= limit) break;
-            const thumbUrl: string | undefined = page?.thumbnail?.source;
-            const pageTitle = String(page?.title || "");
-            const pageImageName = String(page?.pageimage || "");
-            const titleKey = normalizeTitleKey(pageImageName || pageTitle);
-
-            if (
-              !thumbUrl ||
-              usedSourceUrls.has(thumbUrl) ||
-              (titleKey && usedTitleKeys.has(titleKey)) ||
-              bannedTitleWords.test(thumbUrl) ||
-              bannedTitleWords.test(pageTitle) ||
-              bannedTitleWords.test(pageImageName)
-            ) {
-              continue;
+        // B. TVMaze People API (verified official actor portraits)
+        (async () => {
+          const out: typeof candidates = [];
+          try {
+            const r = await fetch(
+              `https://api.tvmaze.com/search/people?q=${encodeURIComponent(subjectFullPhrase || subjectAnchor)}`,
+              { headers: { "User-Agent": BROWSER_USER_AGENT }, signal: AbortSignal.timeout(2500) }
+            );
+            if (!r.ok) return out;
+            const d: any[] = await r.json();
+            for (const row of Array.isArray(d) ? d : []) {
+              const name = String(row?.person?.name || "").trim();
+              const img = String(row?.person?.image?.original || row?.person?.image?.medium || "").trim();
+              if (!name || !img) continue;
+              const nameNorm = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+              if (nameNorm !== subjectNorm) continue;
+              out.push({
+                title: `${name} (Ảnh chân dung)`,
+                thumbUrl: img,
+                width: 680,
+                height: 1000,
+                year: null,
+                score: 18,
+              });
             }
-            if ((page?.thumbnail?.width || 0) < 220 || (page?.thumbnail?.height || 0) < 220) {
-              continue;
+          } catch {}
+          return out;
+        })(),
+
+        // C. Wikipedia Subject Article REST media-list (captures real portrait photos on the person's Wiki page even if filename has a typo like File:Willsamson.jpg)
+        (async () => {
+          const out: typeof candidates = [];
+          try {
+            const searchRes = await fetch(
+              `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+                subjectFullPhrase || subjectAnchor
+              )}&srlimit=3&format=json`,
+              { headers: { "User-Agent": WIKI_USER_AGENT }, signal: AbortSignal.timeout(2800) }
+            );
+            if (!searchRes.ok) return out;
+            const searchJson: any = await searchRes.json();
+            const matchedArticle = (searchJson?.query?.search || []).find((s: any) =>
+              doesTitleMatchSubjectIdentity(String(s?.title || ""), subjectTokens, true)
+            );
+            if (!matchedArticle?.title) return out;
+            const articleTitle = String(matchedArticle.title);
+            const mediaRes = await fetch(
+              `https://en.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(
+                articleTitle.replace(/ /g, "_")
+              )}`,
+              { headers: { "User-Agent": WIKI_USER_AGENT }, signal: AbortSignal.timeout(2800) }
+            );
+            if (!mediaRes.ok) return out;
+            const mediaJson: any = await mediaRes.json();
+            for (const item of mediaJson?.items || []) {
+              if (item?.type !== "image") continue;
+              const fileTitle = String(item?.title || "").replace(/^File:/i, "").replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+              const srcRaw = String(item?.srcset?.[item.srcset.length - 1]?.src || item?.srcset?.[0]?.src || "").trim();
+              const imgUrl = srcRaw.startsWith("//") ? `https:${srcRaw}` : srcRaw;
+              if (!imgUrl || /\.(svg|gif)(\?|$)/i.test(imgUrl)) continue;
+              if (bannedTitleWords.test(fileTitle) || isBadCompositeOrNonSoloPhoto(fileTitle, allowMultiSubject, fileTitle)) continue;
+              // Must mention at least one token of the subject (prevents partner/band/unrelated article photos like "Alexandra Grant 2014", while keeping typo filenames like "Willsamson" or "Keanu Reves")
+              const fileLower = fileTitle.toLowerCase();
+              if (!subjectTokens.some((tok) => fileLower.includes(tok))) continue;
+              // Request clean 700px thumb or original if Wikimedia thumbnail URL
+              const upscaled = imgUrl.replace(/\/\d+px-/, "/720px-");
+              out.push({
+                title: fileTitle.slice(0, 52) || articleTitle,
+                thumbUrl: upscaled,
+                fallbackThumbUrl: imgUrl,
+                width: 600,
+                height: 820,
+                year: extractPhotoYear(fileTitle),
+                score: scoreCandidate(fileTitle, upscaled, 600, 820) + 6,
+              });
             }
-            if (
-              !doesTitleMatchSubjectIdentity(
-                `${pageTitle} ${pageImageName}`,
-                subjectTokens
-              )
-            ) {
-              continue;
-            }
+          } catch {}
+          return out;
+        })(),
+      ]);
 
-            usedSourceUrls.add(thumbUrl);
-            if (titleKey) usedTitleKeys.add(titleKey);
-            candidates.push({
-              title: pageTitle.slice(0, 48),
-              thumbUrl,
-              width: page?.thumbnail?.width || 720,
-              height: page?.thumbnail?.height || 960,
-              year: extractPhotoYear(`${pageTitle} ${pageImageName}`),
-            });
-          }
-        }
-      } catch {
-        // Continue
-      }
-
-      if (candidates.length >= limit) break;
-
-      // 3. Search Wikimedia Commons bitmap photographs (excluding posters, lobby cards, covers, newspapers, plaques)
-      try {
-        const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-          `filetype:bitmap ${q} -poster -cover -newspaper -plaque -autograph`
-        )}&gsrnamespace=6&gsrlimit=${Math.min(
-          45,
-          limit * 4 + 10
-        )}&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=860&format=json`;
-
-        const wikiRes = await fetch(commonsUrl, {
-          headers: { "User-Agent": WIKI_USER_AGENT },
-        });
-        if (wikiRes.ok) {
-          const wikiData: any = await wikiRes.json();
-          const pages = wikiData?.query?.pages
-            ? Object.values(wikiData.query.pages)
-            : [];
-
-          for (const page of pages as any[]) {
-            if (candidates.length >= limit) break;
-            const info = page?.imageinfo?.[0];
-            const thumbUrl: string | undefined = info?.thumburl || info?.url;
-            const mime = String(info?.mime || "image/jpeg");
-            const rawTitle = String(page?.title || "");
-
-            const cleanTitle = rawTitle
-              .replace(/^File:/i, "")
-              .replace(/\.[^/.]+$/, "")
-              .replace(/_/g, " ");
-            const titleKey = normalizeTitleKey(cleanTitle);
-
-            if (
-              !thumbUrl ||
-              usedSourceUrls.has(thumbUrl) ||
-              (titleKey && usedTitleKeys.has(titleKey)) ||
-              (!mime.includes("jpeg") && !mime.includes("png")) ||
-              bannedTitleWords.test(rawTitle) ||
-              bannedTitleWords.test(cleanTitle)
-            ) {
-              continue;
-            }
-            if ((info?.width || 0) < 220 || (info?.height || 0) < 220) continue;
-
-            const aspect = (info?.width || 1) / Math.max(1, info?.height || 1);
-            // Exclude tall narrow newspaper columns or ultra-wide banners
-            if (aspect > 2.2 || aspect < 0.45) continue;
-
-            if (!doesTitleMatchSubjectIdentity(cleanTitle, subjectTokens)) {
-              continue;
-            }
-
-            usedSourceUrls.add(thumbUrl);
-            if (titleKey) usedTitleKeys.add(titleKey);
-            candidates.push({
-              title: cleanTitle.slice(0, 48),
-              thumbUrl,
-              width: info.thumbwidth || info.width || 720,
-              height: info.thumbheight || info.height || 960,
-              year: extractPhotoYear(cleanTitle),
-            });
-          }
-        }
-      } catch {
-        // Continue
+      for (const item of [...imdbHits, ...tvmazeHits, ...wikiMediaHits]) {
+        const urlKey = normalizeTitleKey(item.thumbUrl);
+        const titleKey = normalizeTitleKey(item.title);
+        if (usedSourceUrls.has(item.thumbUrl) || (urlKey && usedTitleKeys.has(urlKey)) || (titleKey && titleKey.length >= 12 && usedTitleKeys.has(titleKey))) continue;
+        usedSourceUrls.add(item.thumbUrl);
+        if (urlKey) usedTitleKeys.add(urlKey);
+        if (titleKey && titleKey.length >= 12) usedTitleKeys.add(titleKey);
+        candidates.push(item);
       }
     }
 
-    // Resolve candidate thumbnails in parallel (with fallbackThumbUrl so 100% of web images succeed)
-    const resolved = await Promise.all(
-      candidates.slice(0, limit).map(async (c) => {
+    let ddgFetchedForThisCall = false;
+
+    for (const q of candidateQueries) {
+      if (candidates.length >= limit * 2) break;
+
+      const cleanedQ = q
+        .replace(/\b(happy|birthday|wishes|collage|headshot|close[\s-]?up|closeup|composite|montage|grid)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const isYouthOrChildhood = /\b(childhood|kid|baby|young|teen)\b/i.test(cleanedQ);
+      const ddgBaseQuery = isYouthOrChildhood
+        ? `${cleanedQ} solo portrait photo`
+        : allowMultiSubject
+        ? `${cleanedQ} clean photo`
+        : `${cleanedQ} solo single portrait photograph`;
+      const ddgQuery = `${ddgBaseQuery} -collage -montage -split -comparison -grid -poster -cover -mugshot -"then and now" -"before and after"`;
+
+      const shouldQueryDdg = !ddgFetchedForThisCall;
+      ddgFetchedForThisCall = true;
+
+      // Run DuckDuckGo (at most 1 rate-guarded call), Openverse (tall/square), Wikipedia PageImages, and Wikimedia Commons in parallel!
+      const [ddgList, ovList, wpList, wmList] = await Promise.all([
+        // 1. DuckDuckGo Images (exact width/height pre-filter before download, cached & serialized)
+        (async () => {
+          const out: typeof candidates = [];
+          if (!shouldQueryDdg) return out;
+          try {
+            const results = await runDdgImageSearchSerialized(ddgQuery);
+            for (const item of results) {
+              const imgUrl = String(item?.image || "").trim();
+              const thumb = String(item?.thumbnail || "").trim();
+              const title = String(item?.title || "").trim();
+              const w = Number(item?.width) || 0;
+              const h = Number(item?.height) || 0;
+              const combinedText = `${title} ${imgUrl} ${item?.url || ""}`;
+              if (!imgUrl && !thumb) continue;
+              if (w > 0 && h > 0) {
+                const ratio = w / h;
+                // Strictly reject wide horizontal collages/banners or tiny thumbnails
+                if (ratio > 1.25 || ratio < 0.45 || Math.min(w, h) < 320) continue;
+              }
+              if (
+                watermarkedStockDomains.test(combinedText) ||
+                bannedTitleWords.test(combinedText) ||
+                isBadCompositeOrNonSoloPhoto(combinedText, allowMultiSubject, title) ||
+                !doesTitleMatchSubjectIdentity(combinedText, subjectTokens, true)
+              ) {
+                continue;
+              }
+              out.push({
+                title: title.replace(/\s*\|\s*.*$/, "").slice(0, 52) || `${subjectAnchor}`,
+                thumbUrl: imgUrl || thumb,
+                fallbackThumbUrl: thumb || undefined,
+                width: w || 720,
+                height: h || 960,
+                year: extractPhotoYear(combinedText),
+                score: scoreCandidate(title, imgUrl, w || 720, h || 960) + 3,
+              });
+            }
+          } catch {
+            // ignore DDG failure
+          }
+          return out;
+        })(),
+
+        // 2. Openverse CC Photos (strict portrait & square single photos)
+        (async () => {
+          const out: typeof candidates = [];
+          try {
+            const ovRes = await fetch(
+              `https://api.openverse.org/v1/images/?q=${encodeURIComponent(
+                q
+              )}&aspect_ratio=tall,square&page_size=${Math.min(20, limit * 2 + 6)}`,
+              {
+                headers: { "User-Agent": WIKI_USER_AGENT },
+                signal: AbortSignal.timeout(3200),
+              }
+            );
+            if (!ovRes.ok) return out;
+            const ovData: any = await ovRes.json();
+            for (const item of ovData?.results || []) {
+              const imgUrl = String(item?.url || "").trim();
+              const thumb = String(item?.thumbnail || "").trim();
+              const title = String(item?.title || "").trim();
+              const tags = Array.isArray(item?.tags)
+                ? item.tags.map((t: any) => t?.name || "").join(" ")
+                : "";
+              const w = Number(item?.width) || 720;
+              const h = Number(item?.height) || 960;
+              const ratio = w / Math.max(1, h);
+              const combinedText = `${title} ${tags} ${imgUrl}`;
+              if (!imgUrl || ratio > 1.22 || ratio < 0.48 || Math.min(w, h) < 350) continue;
+              if (
+                watermarkedStockDomains.test(combinedText) ||
+                bannedTitleWords.test(combinedText) ||
+                isBadCompositeOrNonSoloPhoto(combinedText, allowMultiSubject, title) ||
+                !doesTitleMatchSubjectIdentity(`${title} ${tags}`, subjectTokens, true)
+              ) {
+                continue;
+              }
+              out.push({
+                title: title.slice(0, 52) || `${subjectAnchor}`,
+                thumbUrl: thumb || imgUrl,
+                fallbackThumbUrl: imgUrl,
+                width: w,
+                height: h,
+                year: extractPhotoYear(combinedText),
+                score: scoreCandidate(title, imgUrl, w, h) + 2,
+              });
+            }
+          } catch {
+            // ignore
+          }
+          return out;
+        })(),
+
+        // 3. Wikipedia PageImages API (strict full-name identity, no composite/disambiguation)
+        (async () => {
+          const out: typeof candidates = [];
+          try {
+            const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+              q
+            )}&gsrlimit=10&prop=pageimages&piprop=thumbnail|name&pithumbsize=900&format=json`;
+            const wpRes = await fetch(wpUrl, {
+              headers: { "User-Agent": WIKI_USER_AGENT },
+              signal: AbortSignal.timeout(3200),
+            });
+            if (!wpRes.ok) return out;
+            const wpData: any = await wpRes.json();
+            const wpPages = wpData?.query?.pages ? Object.values(wpData.query.pages) : [];
+            for (const page of wpPages as any[]) {
+              const thumbUrl: string | undefined = page?.thumbnail?.source;
+              const pageTitle = String(page?.title || "");
+              const pageImageName = String(page?.pageimage || "");
+              const w = page?.thumbnail?.width || 0;
+              const h = page?.thumbnail?.height || 0;
+              const ratio = w / Math.max(1, h);
+              const combinedText = `${pageTitle} ${pageImageName} ${thumbUrl || ""}`;
+              if (!thumbUrl || w < 280 || h < 300 || ratio > 1.25 || ratio < 0.45) continue;
+              if (
+                bannedTitleWords.test(combinedText) ||
+                isBadCompositeOrNonSoloPhoto(combinedText, allowMultiSubject, pageTitle) ||
+                !doesTitleMatchSubjectIdentity(`${pageTitle} ${pageImageName}`, subjectTokens, true)
+              ) {
+                continue;
+              }
+              out.push({
+                title: pageTitle.slice(0, 52),
+                thumbUrl,
+                width: w,
+                height: h,
+                year: extractPhotoYear(combinedText),
+                score: scoreCandidate(pageTitle, thumbUrl, w, h) + 2,
+              });
+            }
+          } catch {
+            // ignore
+          }
+          return out;
+        })(),
+
+        // 4. Wikimedia Commons bitmap photographs with categories + extmetadata ImageDescription inspection
+        (async () => {
+          const out: typeof candidates = [];
+          try {
+            const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+              `filetype:bitmap ${q} -poster -cover -newspaper -plaque -autograph -collage -composite`
+            )}&gsrnamespace=6&gsrlimit=${Math.min(
+              40,
+              limit * 3 + 12
+            )}&prop=imageinfo|categories&iiprop=url|dimensions|mime|extmetadata&cllimit=8&iiurlwidth=860&format=json`;
+            const wikiRes = await fetch(commonsUrl, {
+              headers: { "User-Agent": WIKI_USER_AGENT },
+              signal: AbortSignal.timeout(3500),
+            });
+            if (!wikiRes.ok) return out;
+            const wikiData: any = await wikiRes.json();
+            const pages = wikiData?.query?.pages ? Object.values(wikiData.query.pages) : [];
+            for (const page of pages as any[]) {
+              const info = page?.imageinfo?.[0];
+              const thumbUrl: string | undefined = info?.thumburl || info?.url;
+              const mime = String(info?.mime || "image/jpeg");
+              const rawTitle = String(page?.title || "");
+              const cleanTitle = rawTitle
+                .replace(/^File:/i, "")
+                .replace(/\.[^/.]+$/, "")
+                .replace(/_/g, " ");
+              const cats = Array.isArray(page?.categories)
+                ? page.categories.map((c: any) => String(c?.title || "")).join(" ")
+                : "";
+              const desc = String(info?.extmetadata?.ImageDescription?.value || "")
+                .replace(/<[^>]+>/g, " ")
+                .trim();
+              const w = info?.thumbwidth || info?.width || 0;
+              const h = info?.thumbheight || info?.height || 0;
+              const aspect = w / Math.max(1, h);
+              const combinedText = `${rawTitle} ${cleanTitle} ${cats} ${desc}`;
+
+              if (
+                !thumbUrl ||
+                (!mime.includes("jpeg") && !mime.includes("png")) ||
+                w < 280 ||
+                h < 300 ||
+                aspect > 1.25 ||
+                aspect < 0.45 ||
+                bannedTitleWords.test(combinedText) ||
+                isBadCompositeOrNonSoloPhoto(combinedText, allowMultiSubject, cleanTitle) ||
+                !doesTitleMatchSubjectIdentity(`${cleanTitle} ${cats}`, subjectTokens, true)
+              ) {
+                continue;
+              }
+              out.push({
+                title: cleanTitle.slice(0, 52),
+                thumbUrl,
+                width: w || 720,
+                height: h || 960,
+                year: extractPhotoYear(combinedText),
+                score: scoreCandidate(cleanTitle, thumbUrl, w || 720, h || 960),
+              });
+            }
+          } catch {
+            // ignore
+          }
+          return out;
+        })(),
+      ]);
+
+      for (const item of [...ddgList, ...ovList, ...wpList, ...wmList]) {
+        const urlKey = normalizeTitleKey(item.thumbUrl);
+        const titleKey = normalizeTitleKey(item.title);
+        if (usedSourceUrls.has(item.thumbUrl) || (urlKey && usedTitleKeys.has(urlKey)) || (titleKey && titleKey.length >= 12 && usedTitleKeys.has(titleKey))) continue;
+        usedSourceUrls.add(item.thumbUrl);
+        if (urlKey) usedTitleKeys.add(urlKey);
+        if (titleKey && titleKey.length >= 12) usedTitleKeys.add(titleKey);
+        candidates.push(item);
+      }
+    }
+
+    // Sort highest-scoring clean vertical solo portraits first before downloading & pixel-inspecting
+    candidates.sort((a, b) => b.score - a.score);
+
+    const poolToVerify = candidates.slice(0, Math.min(candidates.length, limit * 2 + 4));
+    const verified: {
+      title: string;
+      dataUrl: string;
+      sourceUrl: string;
+      width: number;
+      height: number;
+      year: number | null;
+    }[] = [];
+
+    const resolvedBatch = await Promise.all(
+      poolToVerify.map(async (c) => {
         const dataUrl = await resolveImageToDataUrlOrDirect(
           c.thumbUrl,
-          c.fallbackThumbUrl
+          c.fallbackThumbUrl,
+          true // Run FFmpeg pixel-seam & frame check to reject collages/splits!
         );
+        if (!dataUrl) return null;
         return {
           title: c.title,
           dataUrl,
@@ -3034,7 +3353,13 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       })
     );
 
-    return resolved;
+    for (const r of resolvedBatch) {
+      if (!r) continue;
+      verified.push(r);
+      if (verified.length >= limit) break;
+    }
+
+    return verified;
   }
 
   const ACTOR_ICONIC_FILM_QUERIES: Record<string, string[]> = {
@@ -4038,7 +4363,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
     const resolved = await Promise.all(
       expandedCandidates.slice(0, limit).map(async (c, idx) => {
-        const dataUrl = c.thumbUrl ? await resolveImageToDataUrlOrDirect(c.thumbUrl) : "";
+        const dataUrl = c.thumbUrl ? (await resolveImageToDataUrlOrDirect(c.thumbUrl)) || "" : "";
         const win = cutWindows[idx % cutWindows.length];
         return {
           title: c.title,
@@ -4410,11 +4735,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const requestedVideoCount = Math.max(8, Math.min(18, Number(videoLimit) || 14));
 
-      const photoSearchPhrase = /\b(full\s*body|glamor|sexy|hot|red\s*carpet|photoshoot|fashion|childhood|young)\b/i.test(
+      const photoSearchPhrase = /\b(solo|single|portrait|full\s*body|childhood|young)\b/i.test(
         rawSearch
       )
         ? rawSearch
-        : `${rawSearch} full body glamorous photoshoot`;
+        : `${rawSearch} solo portrait photo`;
 
       const [videos, exactPhotos, contextualPhotos] = await Promise.all([
         searchRealArchivalVideos(
@@ -4432,7 +4757,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           anchorForSearch,
           usedTitles
         ),
-        // Also fetch Wikimedia Commons scene/context photos matching the query directly
+        // Also fetch Wikimedia Commons scene/context solo photos matching the query directly (no collages / group shots)
         (async () => {
           const extra: Array<{
             title: string;
@@ -4443,8 +4768,8 @@ For every scene, ensure smooth chronological transitions from one scene to the n
           }> = [];
           try {
             const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-              `filetype:bitmap ${rawSearch} -poster -cover -logo -newspaper -plaque`
-            )}&gsrnamespace=6&gsrlimit=18&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=860&format=json`;
+              `filetype:bitmap ${rawSearch} -poster -cover -logo -newspaper -plaque -collage -composite`
+            )}&gsrnamespace=6&gsrlimit=18&prop=imageinfo|categories&iiprop=url|dimensions|mime|extmetadata&cllimit=6&iiurlwidth=860&format=json`;
             const wikiRes = await fetch(commonsUrl, {
               headers: { "User-Agent": WIKI_USER_AGENT },
             });
@@ -4458,6 +4783,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 height: number;
                 year: number | null;
               }> = [];
+              const subjectAnchorTokens = extractSubjectIdentityTokens(cleanChar || propChar);
               for (const page of pages as any[]) {
                 if (rawItems.length >= 8) break;
                 const info = page?.imageinfo?.[0];
@@ -4468,36 +4794,54 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                   .replace(/^File:/i, "")
                   .replace(/\.[^/.]+$/, "")
                   .replace(/_/g, " ");
+                const desc = String(info?.extmetadata?.ImageDescription?.value || "").replace(/<[^>]+>/g, " ");
+                const cats = Array.isArray(page?.categories)
+                  ? page.categories.map((c: any) => String(c?.title || "")).join(" ")
+                  : "";
+                const w = info?.thumbwidth || info?.width || 0;
+                const h = info?.thumbheight || info?.height || 0;
+                const aspect = w / Math.max(1, h);
+                const combined = `${cleanTitle} ${desc} ${cats}`;
                 if (
                   !thumbUrl ||
                   usedUrls.has(thumbUrl) ||
                   (!mime.includes("jpeg") && !mime.includes("png")) ||
-                  /\b(poster|cover|magazine|newspaper|plaque|grave|marker|logo|icon|map|diagram|signature|autograph)\b/i.test(
-                    cleanTitle
-                  )
+                  aspect > 1.25 ||
+                  aspect < 0.45 ||
+                  /\b(poster|cover|magazine|newspaper|plaque|grave|marker|logo|icon|map|diagram|signature|autograph|courthouse|water\s*tower|county|township)\b/i.test(
+                    combined
+                  ) ||
+                  isBadCompositeOrNonSoloPhoto(combined, false, cleanTitle) ||
+                  !doesTitleMatchSubjectIdentity(combined, subjectAnchorTokens, true)
                 ) {
                   continue;
                 }
-                if ((info?.width || 0) < 240 || (info?.height || 0) < 220) continue;
+                if (w < 260 || h < 260) continue;
                 usedUrls.add(thumbUrl);
                 rawItems.push({
                   title: cleanTitle.slice(0, 52),
                   thumbUrl,
-                  width: info.thumbwidth || info.width || 720,
-                  height: info.thumbheight || info.height || 540,
-                  year: extractPhotoYear(cleanTitle),
+                  width: w || 720,
+                  height: h || 960,
+                  year: extractPhotoYear(combined),
                 });
               }
               const resolvedExtra = await Promise.all(
-                rawItems.map(async (item) => ({
-                  title: item.title,
-                  dataUrl: await resolveImageToDataUrlOrDirect(item.thumbUrl),
-                  width: item.width,
-                  height: item.height,
-                  year: item.year,
-                }))
+                rawItems.map(async (item) => {
+                  const dataUrl = await resolveImageToDataUrlOrDirect(item.thumbUrl, undefined, true);
+                  if (!dataUrl) return null;
+                  return {
+                    title: item.title,
+                    dataUrl,
+                    width: item.width,
+                    height: item.height,
+                    year: item.year,
+                  };
+                })
               );
-              extra.push(...resolvedExtra.filter((x) => Boolean(x.dataUrl)));
+              extra.push(
+                ...resolvedExtra.filter((x): x is NonNullable<typeof x> => Boolean(x && x.dataUrl))
+              );
             }
           } catch {
             // ignore
@@ -6635,11 +6979,11 @@ For every scene, ensure smooth chronological transitions from one scene to the n
 
       const usedUrls = new Set<string>();
       const usedTitles = new Set<string>();
-      const glamourPhotoQuery = /\b(full\s*body|glamor|sexy|hot|red\s*carpet|photoshoot|fashion)\b/i.test(
+      const glamourPhotoQuery = /\b(solo|single|portrait|full\s*body)\b/i.test(
         query
       )
         ? query
-        : `${query} full body glamorous red carpet photoshoot`;
+        : `${query} solo single portrait photograph`;
       const [videos, photos] = await Promise.all([
         searchRealArchivalVideos(query, 3, usedUrls, query, usedTitles),
         searchRealArchivalPhotos(glamourPhotoQuery, Number(limit) || 12, usedUrls, query, usedTitles),
@@ -6893,23 +7237,23 @@ For every scene, ensure smooth chronological transitions from one scene to the n
       if (cleanTopic) {
         const eraQueries = isFilmCastMode
           ? [
-              `${cleanTopic} ${resolvedFilmMeta.year || ""} full body glamorous movie star photo`.trim(),
-              `${cleanTopic} cast actors full length red carpet photo`,
-              `${cleanTopic} behind the scenes cast full body`,
-              `${cleanTopic} classic movie photoshoot stars`,
+              `${cleanTopic} ${resolvedFilmMeta.year || ""} actor solo portrait`.trim(),
+              `${cleanTopic} lead actor single portrait photo`,
+              `${cleanTopic} movie star solo headshot portrait`,
+              `${cleanTopic} classic cinema actor portrait`,
             ]
           : secondaryPerson
           ? [
-              `${cleanTopic} ${secondaryPerson} full length red carpet glamorous outfit photo`,
-              `${cleanTopic} young full body glamorous photoshoot`,
-              `${cleanTopic} ${secondaryPerson} anniversary full length photo`,
-              `${cleanTopic} glamorous fashion editorial full body`,
+              `${cleanTopic} ${secondaryPerson} portrait photo`,
+              `${cleanTopic} young solo portrait photo`,
+              `${cleanTopic} solo classic portrait`,
+              `${cleanTopic} single portrait photograph`,
             ]
           : [
-              `${cleanTopic} full body red carpet glamorous fashion photoshoot`,
-              `${cleanTopic} full length gorgeous stunning outfit premiere photo`,
-              `${cleanTopic} magazine editorial photoshoot hot charismatic`,
-              `${cleanTopic} young early career full length candid photo`,
+              `${cleanTopic} solo single portrait photograph`,
+              `${cleanTopic} studio portrait clean photo`,
+              `${cleanTopic} premiere solo portrait`,
+              `${cleanTopic} young early career solo portrait`,
             ];
 
         const [foundVideos, ...eraPhotoLists] = await Promise.all([
@@ -6956,7 +7300,7 @@ For every scene, ensure smooth chronological transitions from one scene to the n
                 .trim();
               const subjectHint = actorAnchor.split(" ").slice(0, 3).join(" ") || kw;
               const hits = await searchRealArchivalPhotos(
-                `${subjectHint} full body red carpet glamorous photoshoot`,
+                `${subjectHint} solo single portrait photo`,
                 3,
                 usedUrls,
                 subjectHint,

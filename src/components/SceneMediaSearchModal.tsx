@@ -1208,10 +1208,27 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
       height: v.height || 900,
     }));
 
+  const nonCompositeSoloRegex =
+    /\b(collage|montage|grid|composite|split|diptych|triptych|comparison|before[\s_-]?and[\s_-]?after|then[\s_-]?and[\s_-]?now|mugshot|grave|tombstone|poster|cover|magazine|newspaper|reunion|reuni[aã]o|meeting|ceremony|group|crowd|audience|couple|cast|digital[\s_-]?art|digital[\s_-]?painting|premium[\s_-]?ai|seaart|craiyon|midjourney|ai[\s_-]?art)\b/i;
+
   const combinedPhotos = [
     ...photoOptions,
     ...vaultPhotoExtras.filter((vp) => !photoOptions.some((po) => po.dataUrl === vp.dataUrl)),
-  ];
+  ]
+    .filter((p) => {
+      if (nonCompositeSoloRegex.test(p.title || '')) return false;
+      const w = p.width || 720;
+      const h = p.height || 960;
+      if (w / Math.max(1, h) > 1.32) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const ra = (a.width || 720) / Math.max(1, a.height || 960);
+      const rb = (b.width || 720) / Math.max(1, b.height || 960);
+      const sa = ra >= 0.55 && ra <= 0.95 ? 1 : 0;
+      const sb = rb >= 0.55 && rb <= 0.95 ? 1 : 0;
+      return sb - sa;
+    });
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -3709,17 +3726,19 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
               {/* SECTION B: Real Photos (when scene needs an image or Grok/Kling reference photo) */}
               {(filterTab === 'all' || filterTab === 'image') && effectiveScene && (
                 <div className="space-y-3 pt-2 border-t border-slate-800">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-emerald-400" />
                       <span>
-                        Chọn Ảnh Thật Sạch Chữ Khác Cho Cảnh {sceneNumLabel} ({combinedPhotos.length} ảnh)
+                        Chọn Ảnh Đơn Sạch Đẹp Để Vẽ Video (Đã Lọc Bỏ Ảnh Tổng Hợp / Ghép) — Cảnh {sceneNumLabel} ({combinedPhotos.length} ảnh)
                       </span>
                     </h3>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {combinedPhotos.map((photo, idx) => (
+                    {combinedPhotos.map((photo, idx) => {
+                      const isPortraitRatio = (photo.width || 720) <= (photo.height || 960) * 1.02;
+                      return (
                       <div
                         key={photo.id}
                         className="rounded-lg bg-[#111827] border border-slate-800 hover:border-emerald-400/70 p-2.5 flex flex-col justify-between gap-2 transition-all"
@@ -3730,11 +3749,16 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                               src={photo.dataUrl}
                               alt={photo.title}
                               referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover object-top"
                             />
                             <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-600/90 text-white">
-                              Ảnh #{idx + 1}
+                              Ảnh Đơn #{idx + 1}
                             </span>
+                            {isPortraitRatio && (
+                              <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/80 text-amber-300 border border-amber-400/40">
+                                ✨ Vẽ Video Đẹp
+                              </span>
+                            )}
                           </div>
                           <p
                             className="text-[11px] font-semibold text-slate-200 line-clamp-1"
@@ -3801,7 +3825,8 @@ export const SceneMediaSearchModal: React.FC<SceneMediaSearchModalProps> = ({
                           )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
